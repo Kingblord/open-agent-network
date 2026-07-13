@@ -17,6 +17,7 @@ interface Agent {
 export default function MyAgentsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [myAgentsLoading, setMyAgentsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -29,10 +30,14 @@ export default function MyAgentsPage() {
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !loading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [mounted, user, loading, router]);
 
   useEffect(() => {
     if (user) {

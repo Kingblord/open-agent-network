@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -9,12 +9,17 @@ import { Button } from '@/components/ui/button';
 export default function Page() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !loading && user) {
       router.push('/dashboard');
     }
-  }, [user, loading, router]);
+  }, [mounted, user, loading, router]);
 
   if (loading) {
     return (

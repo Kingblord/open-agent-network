@@ -18,14 +18,19 @@ interface Hiring {
 export default function DashboardPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [hirings, setHirings] = useState<Hiring[]>([]);
   const [hiringsLoading, setHiringsLoading] = useState(true);
 
   useEffect(() => {
-    if (!loading && !user) {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !loading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [mounted, user, loading, router]);
 
   useEffect(() => {
     if (user) {

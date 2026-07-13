@@ -26,6 +26,7 @@ interface HiringResponse {
 export default function AgentsPage() {
   const { user, loading, refreshUser } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [hiringId, setHiringId] = useState<string | null>(null);
@@ -33,10 +34,14 @@ export default function AgentsPage() {
   const [taskDesc, setTaskDesc] = useState('');
 
   useEffect(() => {
-    if (!loading && !user) {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !loading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [mounted, user, loading, router]);
 
   useEffect(() => {
     fetchAgents();
