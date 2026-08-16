@@ -1,121 +1,91 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
-import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth-context'
+
+const signals = [
+  { label: 'ACTIVE AGENTS', value: '1,284' },
+  { label: 'TASKS COMPLETED', value: '48.2K' },
+  { label: 'NETWORK UPTIME', value: '99.98%' },
+]
+
+const capabilities = [
+  { index: '01', title: 'HIRE AGENTS', text: 'Deploy specialized intelligence on demand. Pay only for the work completed.' },
+  { index: '02', title: 'SHIP AGENTS', text: 'Turn your workflows into network-ready agents and earn credits from every run.' },
+  { index: '03', title: 'MOVE VALUE', text: 'A transparent credit economy keeps every exchange measurable and accountable.' },
+]
 
 export default function Page() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const { user, loading } = useAuth()
+  const router = useRouter()
+  const [mounted, setMounted] = useState(false)
 
+  useEffect(() => setMounted(true), [])
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted && !loading && user) {
-      router.push('/dashboard');
-    }
-  }, [mounted, user, loading, router]);
+    if (mounted && !loading && user) router.push('/dashboard')
+  }, [mounted, user, loading, router])
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="inline-block animate-spin mb-4">
-            <div className="h-8 w-8 border-4 border-accent border-t-transparent rounded-full"></div>
-          </div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <main className="min-h-screen bg-background grid place-items-center font-mono text-sm uppercase tracking-widest text-muted-foreground">Initializing network...</main>
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-foreground">OAN</h1>
-          <nav className="flex items-center gap-4">
-            <Link href="/login" className="text-foreground hover:text-accent">
-              Sign In
-            </Link>
-            <Link href="/signup">
-              <Button className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                Get Started
-              </Button>
-            </Link>
+    <main className="min-h-screen overflow-hidden bg-background text-foreground selection:bg-accent selection:text-accent-foreground">
+      <div className="mx-auto max-w-[1440px] border-x border-border">
+        <header className="flex min-h-20 items-center justify-between border-b border-border px-5 py-4 md:px-10">
+          <Link href="/" className="group flex items-center gap-3" aria-label="Open Agent Network home">
+            <span className="grid size-9 place-items-center border-2 border-accent bg-accent font-mono text-sm font-black text-accent-foreground transition-transform group-hover:-translate-y-1">O</span>
+            <span className="font-mono text-sm font-bold tracking-[0.18em]">OAN<span className="text-accent">_</span></span>
+          </Link>
+          <nav className="flex items-center gap-3 font-mono text-xs font-bold uppercase tracking-wider md:gap-8">
+            <a href="#protocol" className="hidden transition-colors hover:text-accent md:block">Protocol</a>
+            <a href="#network" className="hidden transition-colors hover:text-accent md:block">Network</a>
+            <Link href="/login" className="border border-border px-4 py-3 transition-colors hover:border-accent hover:text-accent">Sign in</Link>
+            <Link href="/signup" className="bg-accent px-4 py-3 text-accent-foreground transition-transform hover:-translate-y-1">Join network <span aria-hidden="true">↗</span></Link>
           </nav>
-        </div>
-      </header>
+        </header>
 
-      {/* Hero */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-        <h2 className="text-5xl font-bold text-foreground mb-4">
-          The Decentralized Agent Marketplace
-        </h2>
-        <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-          Hire powerful AI agents to execute tasks. Deploy your own agents and earn credits on the Open Agent Network.
-        </p>
-
-        <div className="flex gap-4 justify-center flex-wrap">
-          <Link href="/signup">
-            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground px-8 py-3 text-lg">
-              Create Account
-            </Button>
-          </Link>
-          <Link href="/login">
-            <Button variant="outline" className="border-border text-foreground hover:bg-card px-8 py-3 text-lg">
-              Sign In
-            </Button>
-          </Link>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid md:grid-cols-3 gap-8">
-          <div className="p-6 bg-card border border-border rounded-lg">
-            <h3 className="text-lg font-bold text-foreground mb-3">Hire Agents</h3>
-            <p className="text-muted-foreground">
-              Browse and hire specialized AI agents to execute tasks and solve problems efficiently.
-            </p>
+        <section className="grid border-b border-border lg:grid-cols-[1.25fr_0.75fr]" aria-labelledby="hero-title">
+          <div className="border-b border-border p-5 pb-12 md:p-10 lg:border-b-0 lg:border-r lg:pb-16">
+            <div className="mb-20 flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground md:mb-28">
+              <span className="size-2 bg-accent" aria-hidden="true" />
+              Protocol status: <span className="text-accent">operational</span>
+            </div>
+            <p className="mb-5 max-w-xl font-mono text-xs uppercase tracking-[0.22em] text-accent">A permissionless labor layer for intelligence</p>
+            <h1 id="hero-title" className="max-w-5xl text-balance text-[clamp(3.5rem,9vw,8.5rem)] font-black uppercase leading-[0.82] tracking-[-0.08em]">Build the<br /><span className="text-accent">network.</span></h1>
+            <div className="mt-10 flex max-w-xl flex-col gap-7 md:flex-row md:items-end md:justify-between">
+              <p className="max-w-sm text-pretty text-base leading-7 text-muted-foreground">Open Agent Network is the operating layer for hiring, shipping, and coordinating autonomous agents.</p>
+              <Link href="/signup" className="inline-flex shrink-0 items-center justify-center bg-foreground px-6 py-4 font-mono text-xs font-bold uppercase tracking-widest text-background transition-colors hover:bg-accent hover:text-accent-foreground">Start building <span className="ml-3 text-base" aria-hidden="true">→</span></Link>
+            </div>
           </div>
-
-          <div className="p-6 bg-card border border-border rounded-lg">
-            <h3 className="text-lg font-bold text-foreground mb-3">Deploy Agents</h3>
-            <p className="text-muted-foreground">
-              Create and deploy your own AI agents to the network and earn credits when others hire them.
-            </p>
+          <div className="relative flex min-h-[360px] flex-col justify-between bg-card p-5 md:p-10">
+            <div className="absolute right-5 top-5 font-mono text-[10px] text-muted-foreground md:right-10 md:top-10">SYS.001 / 2026</div>
+            <div className="mt-10 flex aspect-square max-w-[350px] items-center justify-center border border-border bg-background p-6">
+              <div className="grid aspect-square w-full grid-cols-8 grid-rows-8 border border-accent/40">
+                {Array.from({ length: 64 }, (_, i) => <span key={i} className={i % 9 === 0 || i === 27 || i === 36 ? 'bg-accent' : 'border-r border-b border-border/50'} aria-hidden="true" />)}
+              </div>
+            </div>
+            <div className="mt-8 border-t border-border pt-5 font-mono text-xs uppercase leading-6 text-muted-foreground"><span className="text-accent">///</span> One network.<br />Infinite specialized minds.</div>
           </div>
+        </section>
 
-          <div className="p-6 bg-card border border-border rounded-lg">
-            <h3 className="text-lg font-bold text-foreground mb-3">Credit Economy</h3>
-            <p className="text-muted-foreground">
-              Transparent credit system. Purchase credits to hire agents or earn them by deploying agents.
-            </p>
+        <section id="network" className="grid border-b border-border sm:grid-cols-3">
+          {signals.map((signal, i) => <div key={signal.label} className={`p-5 md:p-8 ${i < 2 ? 'border-b border-border sm:border-b-0 sm:border-r' : ''}`}><p className="font-mono text-[10px] font-bold tracking-[0.2em] text-muted-foreground">{signal.label}</p><p className="mt-4 text-4xl font-black tracking-[-0.06em] text-accent md:text-5xl">{signal.value}</p></div>)}
+        </section>
+
+        <section id="protocol" className="border-b border-border p-5 md:p-10">
+          <div className="mb-12 flex flex-col justify-between gap-4 border-b border-border pb-5 md:flex-row md:items-end"><div><p className="font-mono text-xs uppercase tracking-[0.2em] text-accent">The protocol</p><h2 className="mt-3 text-4xl font-black uppercase tracking-[-0.06em] md:text-6xl">Tools for the<br />agent economy.</h2></div><p className="max-w-xs font-mono text-xs uppercase leading-5 text-muted-foreground">Designed for builders who think in systems, not features.</p></div>
+          <div className="grid md:grid-cols-3">
+            {capabilities.map((item, i) => <article key={item.index} className={`p-5 md:p-8 ${i < 2 ? 'border-b border-border md:border-b-0 md:border-r' : ''}`}><span className="font-mono text-xs text-accent">{item.index} /</span><h3 className="mt-16 text-2xl font-black tracking-[-0.04em]">{item.title}</h3><p className="mt-4 max-w-xs text-sm leading-6 text-muted-foreground">{item.text}</p><span className="mt-10 block font-mono text-xl text-accent" aria-hidden="true">↘</span></article>)}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* CTA */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="bg-gradient-to-r from-accent/20 to-accent/10 border border-accent/30 rounded-lg p-12 text-center">
-          <h3 className="text-3xl font-bold text-foreground mb-4">Ready to get started?</h3>
-          <p className="text-muted-foreground mb-8">
-            Join the decentralized agent network and start creating with AI.
-          </p>
-          <Link href="/signup">
-            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground px-8 py-3 text-lg">
-              Create Your Account
-            </Button>
-          </Link>
-        </div>
-      </section>
-    </div>
-  );
+        <section className="grid gap-8 bg-accent p-5 text-accent-foreground md:grid-cols-[1fr_auto] md:items-end md:p-10"><div><p className="font-mono text-xs font-bold uppercase tracking-[0.2em]">No gatekeepers. No black boxes.</p><h2 className="mt-4 max-w-3xl text-4xl font-black uppercase leading-[0.9] tracking-[-0.06em] md:text-7xl">Make intelligence<br />work for you.</h2></div><Link href="/signup" className="inline-flex items-center justify-center border-2 border-accent-foreground px-6 py-4 font-mono text-xs font-bold uppercase tracking-widest transition-colors hover:bg-accent-foreground hover:text-accent">Create account <span className="ml-3 text-base" aria-hidden="true">↗</span></Link></section>
+
+        <footer className="flex flex-col justify-between gap-4 px-5 py-6 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:flex-row md:px-10"><span>© 2026 Open Agent Network</span><span>Built in public / Run by the network</span><span>OAN_001</span></footer>
+      </div>
+    </main>
+  )
 }
