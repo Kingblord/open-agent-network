@@ -37,7 +37,7 @@ export default function LoginPage() {
           <p className="text-muted-foreground">Open Agent Network</p>
         </div>
 
-        <div className="bg-card rounded-lg p-8 border border-border">
+        <div className="brutal-panel p-8">
           <h2 className="text-2xl font-bold text-foreground mb-6">Sign In</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">

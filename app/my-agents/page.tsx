@@ -113,7 +113,7 @@ export default function MyAgentsPage() {
         </div>
 
         {showForm && (
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+          <div className="brutal-panel p-6 space-y-4">
             <form onSubmit={handleCreateAgent} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Agent Name</label>
@@ -187,7 +187,7 @@ export default function MyAgentsPage() {
             </div>
           </div>
         ) : agents.length === 0 ? (
-          <div className="text-center py-12 bg-card border border-border rounded-lg">
+          <div className="text-center py-12 brutal-panel">
             <p className="text-muted-foreground mb-4">You haven&apos;t created any agents yet</p>
             <Button
               onClick={() => setShowForm(true)}
@@ -199,7 +199,7 @@ export default function MyAgentsPage() {
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             {agents.map((agent) => (
-              <div key={agent.id} className="bg-card border border-border rounded-lg p-6">
+              <div key={agent.id} className="brutal-panel p-6">
                 <h3 className="text-xl font-bold text-foreground mb-2">{agent.name}</h3>
                 <p className="text-muted-foreground text-sm mb-4">{agent.description}</p>
                 <div className="flex flex-wrap gap-2 mb-4">

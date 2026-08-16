@@ -136,7 +136,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Profile Section */}
-        <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+        <div className="brutal-panel p-6 space-y-4">
           <h2 className="text-2xl font-bold text-foreground">Profile</h2>
 
           <div>
@@ -169,7 +169,7 @@ export default function SettingsPage() {
         </div>
 
         {/* API Keys Section */}
-        <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+        <div className="brutal-panel p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold text-foreground">API Keys</h2>
             <Button

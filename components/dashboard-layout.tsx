@@ -5,6 +5,14 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 
+const navigation = [
+  { href: '/dashboard', label: 'Overview', code: '00' },
+  { href: '/agents', label: 'Browse agents', code: '01' },
+  { href: '/my-agents', label: 'My agents', code: '02' },
+  { href: '/history', label: 'Credit ledger', code: '03' },
+  { href: '/settings', label: 'Settings', code: '04' },
+];
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -18,119 +26,41 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/');
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Sidebar */}
-      <div className="fixed top-0 left-0 h-screen w-64 border-r border-border bg-card p-6 flex flex-col">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">OAN</h1>
-          <p className="text-sm text-muted-foreground">Agent Network</p>
+    <div className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[260px_1fr]">
+      <aside className="border-b-2 border-border bg-sidebar lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-[260px] lg:flex-col lg:border-b-0 lg:border-r-2">
+        <div className="flex items-start justify-between border-b-2 border-border p-5 lg:block">
+          <div>
+            <Link href="/dashboard" className="font-sans text-3xl font-black tracking-[-0.08em] text-foreground">
+              OAN<span className="text-accent">_</span>
+            </Link>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Open Agent Network</p>
+          </div>
+          <span className="border border-accent px-2 py-1 font-mono text-[10px] font-bold text-accent">LIVE</span>
         </div>
 
-        <nav className="flex-1 space-y-2">
-          <Link href="/dashboard">
-            <div
-              className={`px-4 py-2 rounded-lg cursor-pointer transition ${
-                isActive('/dashboard') && pathname === '/dashboard'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-foreground hover:bg-background'
-              }`}
-            >
-              Dashboard
-            </div>
-          </Link>
-
-          <Link href="/agents">
-            <div
-              className={`px-4 py-2 rounded-lg cursor-pointer transition ${
-                isActive('/agents')
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-foreground hover:bg-background'
-              }`}
-            >
-              Browse Agents
-            </div>
-          </Link>
-
-          <Link href="/my-agents">
-            <div
-              className={`px-4 py-2 rounded-lg cursor-pointer transition ${
-                isActive('/my-agents')
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-foreground hover:bg-background'
-              }`}
-            >
-              My Agents
-            </div>
-          </Link>
-
-          <Link href="/history">
-            <div
-              className={`px-4 py-2 rounded-lg cursor-pointer transition ${
-                isActive('/history')
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-foreground hover:bg-background'
-              }`}
-            >
-              History
-            </div>
-          </Link>
-
-          <Link href="/settings">
-            <div
-              className={`px-4 py-2 rounded-lg cursor-pointer transition ${
-                isActive('/settings')
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-foreground hover:bg-background'
-              }`}
-            >
-              Settings
-            </div>
-          </Link>
+        <nav aria-label="Primary navigation" className="grid grid-cols-2 gap-px bg-border p-px lg:flex lg:flex-1 lg:flex-col lg:gap-0 lg:bg-transparent lg:p-4">
+          {navigation.map((item) => (
+            <Link key={item.href} href={item.href} className={`group flex min-h-11 items-center gap-3 px-4 py-3 font-mono text-xs uppercase tracking-wider ${isActive(item.href) ? 'bg-accent font-bold text-accent-foreground' : 'bg-sidebar text-muted-foreground hover:bg-card hover:text-foreground'}`}>
+              <span className="text-[10px] opacity-60">{item.code}</span>
+              <span>{item.label}</span>
+            </Link>
+          ))}
         </nav>
 
-        <div className="border-t border-border pt-4">
-          <div className="text-sm text-muted-foreground mb-4">
-            {user && (
-              <>
-                <div className="font-medium text-foreground">{user.name}</div>
-                <div className="text-xs">{user.email}</div>
-              </>
-            )}
-          </div>
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="w-full border-border text-foreground hover:bg-background"
-          >
-            Sign Out
-          </Button>
+        <div className="border-t-2 border-border p-4">
+          {user && <div className="mb-4 border-l-2 border-accent pl-3"><p className="truncate text-sm font-bold text-foreground">{user.name}</p><p className="truncate font-mono text-[10px] text-muted-foreground">{user.email}</p></div>}
+          <Button onClick={handleLogout} variant="outline" className="h-11 w-full border-2 border-border bg-transparent font-mono text-xs uppercase tracking-wider text-foreground hover:border-accent hover:bg-transparent hover:text-accent">Sign out / exit</Button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Content */}
-      <div className="ml-64">
-        {/* Top Bar */}
-        <header className="border-b border-border bg-card sticky top-0 z-40">
-          <div className="px-8 py-4 flex justify-between items-center">
-            <div></div>
-            {user && (
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="text-sm font-medium text-foreground">{user.credits} Credits</div>
-                  <div className="text-xs text-muted-foreground">Balance</div>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
-                  <div className="text-sm font-bold text-accent">{user.name.charAt(0)}</div>
-                </div>
-              </div>
-            )}
+      <div className="min-w-0 lg:col-start-2 lg:ml-0">
+        <header className="sticky top-0 z-40 border-b-2 border-border bg-background/95 backdrop-blur">
+          <div className="flex min-h-16 items-center justify-between px-5 py-3 lg:px-8">
+            <div><p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Console / {pathname.slice(1) || 'overview'}</p><p className="mt-1 text-sm font-bold text-foreground">Network control surface</p></div>
+            {user && <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="font-mono text-[10px] uppercase text-muted-foreground">Available credits</p><p className="font-sans text-xl font-black text-accent">{user.credits}</p></div><div aria-hidden="true" className="grid size-10 place-items-center border-2 border-accent bg-accent font-sans font-black text-accent-foreground">{user.name.charAt(0).toUpperCase()}</div></div>}
           </div>
         </header>
-
-        {/* Page Content */}
-        <main className="p-8">
-          {children}
-        </main>
+        <main className="p-5 lg:p-8">{children}</main>
       </div>
     </div>
   );

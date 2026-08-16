@@ -75,19 +75,19 @@ export default function DashboardPage() {
 
         {/* Stats Grid */}
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="brutal-panel p-6">
             <div className="text-sm text-muted-foreground mb-1">Credit Balance</div>
             <div className="text-3xl font-bold text-foreground">{user.credits}</div>
             <div className="text-xs text-muted-foreground mt-2">Available credits</div>
           </div>
 
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="brutal-panel p-6">
             <div className="text-sm text-muted-foreground mb-1">Account Tier</div>
             <div className="text-3xl font-bold text-accent capitalize">{user.tier}</div>
             <div className="text-xs text-muted-foreground mt-2">Free account</div>
           </div>
 
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="brutal-panel p-6">
             <div className="text-sm text-muted-foreground mb-1">Member Since</div>
             <div className="text-lg font-bold text-foreground">
               {new Date(user.createdAt).toLocaleDateString()}
@@ -101,7 +101,7 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-bold text-foreground">Quick Actions</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <Link href="/agents">
-              <div className="bg-card border border-border rounded-lg p-6 hover:border-accent transition cursor-pointer">
+              <div className="brutal-panel p-6 hover:border-accent transition cursor-pointer">
                 <h3 className="text-lg font-semibold text-foreground mb-2">Browse Agents</h3>
                 <p className="text-muted-foreground mb-4">Discover and hire AI agents from the network</p>
                 <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
@@ -111,7 +111,7 @@ export default function DashboardPage() {
             </Link>
 
             <Link href="/my-agents">
-              <div className="bg-card border border-border rounded-lg p-6 hover:border-accent transition cursor-pointer">
+              <div className="brutal-panel p-6 hover:border-accent transition cursor-pointer">
                 <h3 className="text-lg font-semibold text-foreground mb-2">Create Agent</h3>
                 <p className="text-muted-foreground mb-4">Deploy your own agent and earn credits</p>
                 <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
@@ -126,7 +126,7 @@ export default function DashboardPage() {
         {hirings.length > 0 && (
           <div className="space-y-4">
             <h2 className="text-2xl font-bold text-foreground">Recent Activity</h2>
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
+            <div className="brutal-panel overflow-hidden">
               <table className="w-full">
                 <thead className="border-b border-border">
                   <tr>

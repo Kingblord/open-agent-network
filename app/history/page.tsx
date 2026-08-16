@@ -71,11 +71,11 @@ export default function HistoryPage() {
             </div>
           </div>
         ) : transactions.length === 0 ? (
-          <div className="text-center py-12 bg-card border border-border rounded-lg">
+          <div className="text-center py-12 brutal-panel">
             <p className="text-muted-foreground">No transactions yet</p>
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="brutal-panel overflow-hidden">
             <table className="w-full">
               <thead className="border-b border-border bg-background/50">
                 <tr>

@@ -139,7 +139,7 @@ export default function AgentsPage() {
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             {agents.map((agent) => (
-              <div key={agent.id} className="bg-card border border-border rounded-lg p-6 space-y-4">
+              <div key={agent.id} className="brutal-panel p-6 space-y-4">
                 <div>
                   <h3 className="text-xl font-bold text-foreground">{agent.name}</h3>
                   <p className="text-muted-foreground text-sm mt-1">{agent.description}</p>
