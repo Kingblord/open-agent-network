@@ -38,15 +38,21 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">OAN</h1>
-          <p className="text-muted-foreground">Open Agent Network</p>
-        </div>
-
-        <div className="brutal-panel p-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">Create Account</h2>
+    <div className="min-h-screen bg-background px-4 py-10 sm:px-6">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center justify-center">
+        <div className="grid w-full gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div className="hidden border-l-4 border-accent pl-6 lg:block">
+            <p className="mb-4 font-mono text-xs uppercase tracking-[0.3em] text-accent">OAN // NEW OPERATOR</p>
+            <h1 className="max-w-xl text-6xl font-black uppercase leading-[0.9] tracking-[-0.06em] text-foreground">Deploy your first agent identity.</h1>
+            <p className="mt-6 max-w-md font-mono text-sm leading-6 text-muted-foreground">LOCAL AUTH // NO FIRESTORE // BROWSER-FIRST OPERATOR REGISTRY</p>
+          </div>
+          <div className="w-full">
+            <div className="mb-4 flex items-center justify-between border-b-2 border-border pb-3 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+              <span>02 / SIGN UP</span><span>STATUS: READY</span>
+            </div>
+            <div className="brutal-panel p-6 sm:p-8">
+              <h2 className="mb-2 text-3xl font-black uppercase tracking-tight text-foreground">Create Account</h2>
+              <p className="mb-6 font-mono text-xs uppercase tracking-widest text-muted-foreground">Register operator</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -58,7 +64,7 @@ export default function SignupPage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="Your name"
                 required
               />
@@ -73,7 +79,7 @@ export default function SignupPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="your@email.com"
                 required
               />
@@ -88,7 +94,7 @@ export default function SignupPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="••••••••"
                 required
               />
@@ -103,7 +109,7 @@ export default function SignupPage() {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="••••••••"
                 required
               />
@@ -118,24 +124,23 @@ export default function SignupPage() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-medium py-2 rounded-lg transition"
+              className="brutal-button w-full"
             >
               {isLoading ? 'Creating account...' : 'Sign Up'}
             </Button>
           </form>
 
-          <p className="text-center text-muted-foreground mt-6">
-            Already have an account?{' '}
-            <Link href="/login" className="text-accent hover:text-accent/90 font-medium">
-              Sign in
-            </Link>
-          </p>
-        </div>
-
-        <div className="mt-8 p-4 bg-card border border-border rounded-lg text-center">
-          <p className="text-sm text-muted-foreground mb-3">Demo Account:</p>
-          <p className="text-xs font-mono text-foreground">Email: demo@example.com</p>
-          <p className="text-xs font-mono text-foreground">Pass: DemoPass123</p>
+              <p className="mt-6 text-center font-mono text-xs uppercase tracking-wide text-muted-foreground">
+                Already have an account?{' '}
+                <Link href="/login" className="font-bold text-accent underline underline-offset-4">Sign in</Link>
+              </p>
+            </div>
+            <div className="mt-4 border-2 border-border bg-secondary p-4 font-mono text-xs text-secondary-foreground">
+              <p className="mb-2 uppercase tracking-widest text-accent">Demo credentials</p>
+              <p>EMAIL: demo@example.com</p>
+              <p>PASS: DemoPass123</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

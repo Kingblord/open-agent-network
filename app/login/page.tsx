@@ -30,15 +30,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">OAN</h1>
-          <p className="text-muted-foreground">Open Agent Network</p>
-        </div>
-
-        <div className="brutal-panel p-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">Sign In</h2>
+    <div className="min-h-screen bg-background px-4 py-10 sm:px-6">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center justify-center">
+        <div className="grid w-full gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div className="hidden border-l-4 border-accent pl-6 lg:block">
+            <p className="mb-4 font-mono text-xs uppercase tracking-[0.3em] text-accent">OAN // ACCESS GATE</p>
+            <h1 className="max-w-xl text-6xl font-black uppercase leading-[0.9] tracking-[-0.06em] text-foreground">Operate on the open agent network.</h1>
+            <p className="mt-6 max-w-md font-mono text-sm leading-6 text-muted-foreground">LOCAL AUTH // NO FIRESTORE // SESSION PERSISTED IN BROWSER STORAGE</p>
+          </div>
+          <div className="w-full">
+            <div className="mb-4 flex items-center justify-between border-b-2 border-border pb-3 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+              <span>01 / LOGIN</span><span>STATUS: READY</span>
+            </div>
+            <div className="brutal-panel p-6 sm:p-8">
+              <h2 className="mb-2 text-3xl font-black uppercase tracking-tight text-foreground">Sign In</h2>
+              <p className="mb-6 font-mono text-xs uppercase tracking-widest text-muted-foreground">Identify operator</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -50,7 +56,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="your@email.com"
                 required
               />
@@ -65,7 +71,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-background border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                className="brutal-input w-full placeholder:text-muted-foreground"
                 placeholder="••••••••"
                 required
               />
@@ -80,18 +86,20 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-medium py-2 rounded-lg transition"
+              className="brutal-button w-full"
             >
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
 
-          <p className="text-center text-muted-foreground mt-6">
-            Don&apos;t have an account?{' '}
-            <Link href="/signup" className="text-accent hover:text-accent/90 font-medium">
-              Sign up
-            </Link>
-          </p>
+              <p className="mt-6 text-center font-mono text-xs uppercase tracking-wide text-muted-foreground">
+                Don&apos;t have an account?{' '}
+                <Link href="/signup" className="font-bold text-accent underline underline-offset-4">
+                  Sign up
+                </Link>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
