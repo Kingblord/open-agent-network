@@ -121,8 +121,8 @@ export default function AgentsPage() {
         </div>
 
         {hiringId && (
-          <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <p className="text-green-400">Agent hired successfully! ID: {hiringId.slice(0, 8)}...</p>
+          <div className="p-4 bg-sky-500/10 border border-sky-500/20 rounded-lg">
+            <p className="text-sky-400">Agent hired successfully! ID: {hiringId.slice(0, 8)}...</p>
           </div>
         )}
 

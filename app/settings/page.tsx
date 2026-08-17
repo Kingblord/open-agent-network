@@ -181,8 +181,8 @@ export default function SettingsPage() {
           </div>
 
           {newKey && (
-            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg space-y-2">
-              <p className="text-sm text-green-400 font-medium">API Key Created! Copy it now (you won&apos;t see it again):</p>
+            <div className="p-4 bg-sky-500/10 border border-sky-500/20 rounded-lg space-y-2">
+              <p className="text-sm text-sky-400 font-medium">API Key Created! Copy it now (you won&apos;t see it again):</p>
               <div className="font-mono text-xs text-foreground break-all bg-background p-3 rounded border border-border">
                 {newKey.apiKey}
               </div>

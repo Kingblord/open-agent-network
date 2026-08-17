@@ -96,7 +96,7 @@ export default function HistoryPage() {
                       <span
                         className={`px-2 py-1 rounded text-xs font-medium ${
                           tx.type === 'earned'
-                            ? 'bg-green-500/20 text-green-400'
+                            ? 'bg-sky-500/20 text-sky-400'
                             : tx.type === 'spent'
                             ? 'bg-red-500/20 text-red-400'
                             : 'bg-blue-500/20 text-blue-400'
@@ -108,7 +108,7 @@ export default function HistoryPage() {
                     <td className="px-6 py-3 text-sm text-muted-foreground">{tx.reason}</td>
                     <td
                       className={`px-6 py-3 text-sm text-right font-semibold ${
-                        tx.amount > 0 ? 'text-green-400' : 'text-red-400'
+                        tx.amount > 0 ? 'text-sky-400' : 'text-red-400'
                       }`}
                     >
                       {tx.amount > 0 ? '+' : ''}{tx.amount}
