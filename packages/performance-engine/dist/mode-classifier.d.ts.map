@@ -1,0 +1,1 @@
+{"version":3,"file":"mode-classifier.d.ts","sourceRoot":"","sources":["../src/mode-classifier.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;GAUG;AAEH,MAAM,MAAM,aAAa,GAAG,MAAM,GAAG,SAAS,GAAG,WAAW,CAAC;AAE7D,MAAM,WAAW,wBAAwB;IACvC,IAAI,EAAE,aAAa,CAAC;IACpB,MAAM,EAAE,MAAM,CAAC;CAChB;AAED,wBAAgB,qBAAqB,CACnC,OAAO,EAAE,MAAM,GAAG,IAAI,GAAG,SAAS,EAClC,cAAc,EAAE,MAAM,GACrB,wBAAwB,CA4B1B"}

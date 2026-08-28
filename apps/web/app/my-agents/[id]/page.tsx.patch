@@ -1,0 +1,40 @@
+<div className="pt-2 space-y-2">
+                {agent.status === 'ACTIVE' ? (
+                  <LoadingButton
+                    onClick={() => handleLifecycle('pause')}
+                    loading={actionLoading === 'pause'}
+                    loadingLabel="Pausing..."
+                    variant="primary"
+                  >
+                    PAUSE AGENT
+                  </LoadingButton>
+                ) : agent.status === 'REVOKED' ? (
+                  <button type="button" disabled className="w-full bg-[#1A1A1A] border border-[#333] text-gray-500 font-black text-xs py-3.5 tracking-[0.15em] uppercase cursor-not-allowed">
+                    REVOKED (TERMINAL)
+                  </button>
+                ) : (
+                  <LoadingButton
+                    onClick={() => handleLifecycle('activate')}
+                    loading={actionLoading === 'activate'}
+                    loadingLabel="Activating..."
+                    variant="primary"
+                  >
+                    ACTIVATE AGENT
+                  </LoadingButton>
+                )}
+                {/* Manual closed-loop trigger (M18) — safe: never fabricates a receipt. */}
+                <LoadingButton
+                  onClick={handleRunCycle}
+                  loading={actionLoading === 'run'}
+                  loadingLabel="Running..."
+                  variant="secondary"
+                  disabled={agent.status !== 'ACTIVE'}
+                >
+                  RUN CYCLE NOW
+                </LoadingButton>
+                {agent.status !== 'REVOKED' && (
+                  <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-[#333] text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
+                    {actionLoading === 'revoke' ? 'REVOKING...' : 'REVOKE ACCESS'}
+                  </button>
+                )}
+              </div>

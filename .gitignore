@@ -9,6 +9,13 @@ __v0_jsx-dev-runtime.ts
 # Environment variables
 .env*.local
 
+# Secrets — never commit
+FILE.TXT
+FILE*.txt
+service-account.json
+*service-account*.json
+*.pem
+
 # Common ignores
 node_modules
 .next/

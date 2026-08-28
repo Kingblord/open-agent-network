@@ -1,0 +1,363 @@
+{
+  "dashboard": {
+    "portfolioValue": 2845.62,
+    "portfolioChange": "+12.43%",
+    "activeAgentCount": 4,
+    "sessionExpiry": "18h 23m",
+    "spendLimit": {
+      "used": 100.00,
+      "max": 500.00
+    },
+    "chartPoints": "0,70 30,65 60,75 90,55 120,60 150,40 180,48 210,28 240,20 270,15 300,12",
+    "agents": [
+      {
+        "id": "yield-optimizer-001",
+        "name": "Yield Optimizer",
+        "strategyId": "yield",
+        "status": "ACTIVE",
+        "riskLevel": "MEDIUM",
+        "description": "Automatically allocates funds to highest APY lending pools",
+        "apy": "21.67%",
+        "protocol": "Venus Protocol",
+        "totalTrades": 156,
+        "successRate": "94.2%",
+        "mode": "LIVE"
+      },
+      {
+        "id": "health-monitor-002",
+        "name": "Health Factor Monitor",
+        "strategyId": "health",
+        "status": "ACTIVE",
+        "riskLevel": "LOW",
+        "description": "Monitors lending positions and auto-repays to avoid liquidation",
+        "apy": null,
+        "protocol": "Venus Protocol",
+        "totalTrades": 89,
+        "successRate": "99.1%",
+        "mode": "LIVE"
+      },
+      {
+        "id": "lp-rebalancer-003",
+        "name": "LP Rebalancer",
+        "strategyId": "lp",
+        "status": "ACTIVE",
+        "riskLevel": "MEDIUM",
+        "description": "Maintains optimal LP position ratios across DEX pools",
+        "apy": "18.24%",
+        "protocol": "PancakeSwap",
+        "totalTrades": 234,
+        "successRate": "91.5%",
+        "mode": "LIVE"
+      },
+      {
+        "id": "grid-trader-004",
+        "name": "Grid Trading Bot",
+        "strategyId": "grid",
+        "status": "ACTIVE",
+        "riskLevel": "HIGH",
+        "description": "Executes grid trading strategy on volatile pairs",
+        "apy": null,
+        "protocol": "PancakeSwap",
+        "totalTrades": 412,
+        "successRate": "87.3%",
+        "mode": "LIVE",
+        "pnl7d": "+8.91%"
+      }
+    ],
+    "recentActivity": [
+      {
+        "id": "act-001",
+        "agentId": "yield-optimizer-001",
+        "agentName": "Yield Optimizer",
+        "eventType": "TRANSACTION_CONFIRMED",
+        "description": "Deposited 25.3 USDT into Venus USDT Pool",
+        "timestamp": "2025-01-15T14:30:00Z",
+        "status": "CONFIRMED"
+      },
+      {
+        "id": "act-002",
+        "agentId": "grid-trader-004",
+        "agentName": "Grid Trading Bot",
+        "eventType": "TRANSACTION_CONFIRMED",
+        "description": "Executed buy order: 0.15 BNB at $605.21",
+        "timestamp": "2025-01-15T14:15:00Z",
+        "status": "CONFIRMED"
+      },
+      {
+        "id": "act-003",
+        "agentId": "health-monitor-002",
+        "agentName": "Health Factor Monitor",
+        "eventType": "TRANSACTION_CONFIRMED",
+        "description": "Repaid 12.8 USDT on Venus",
+        "timestamp": "2025-01-15T13:45:00Z",
+        "status": "CONFIRMED"
+      }
+    ]
+  },
+  "portfolio": {
+    "totalValue": 2845.62,
+    "change24h": "+12.43%",
+    "timeframes": {
+      "1H": "+0.52%",
+      "24H": "+12.43%",
+      "7D": "+28.91%",
+      "30D": "+64.72%",
+      "ALL": "+156.32%"
+    },
+    "chartPoints": "0,75 20,72 40,78 60,70 80,82 100,68 120,85 140,65 160,90 180,70 200,95 220,60 240,88 260,55 280,92 300,48",
+    "allocation": [
+      {
+        "label": "Stablecoins",
+        "pct": 42.1,
+        "value": 1197.45,
+        "color": "#F0B90B"
+      },
+      {
+        "label": "LP Positions",
+        "pct": 28.7,
+        "value": 816.13,
+        "color": "#888888"
+      },
+      {
+        "label": "Lending",
+        "pct": 17.3,
+        "value": 492.18,
+        "color": "#666666"
+      },
+      {
+        "label": "Trading",
+        "pct": 11.9,
+        "value": 339.86,
+        "color": "#333333"
+      }
+    ],
+    "assets": [
+      {
+        "symbol": "USDT",
+        "name": "Tether",
+        "price": 1.00,
+        "holdings": "1197.45 USDT",
+        "value": 1197.45,
+        "changePct": "+0.01%"
+      },
+      {
+        "symbol": "BNB",
+        "name": "BNB",
+        "price": 623.11,
+        "holdings": "1.0 BNB",
+        "value": 623.11,
+        "changePct": "+1.62%"
+      },
+      {
+        "symbol": "CAKE",
+        "name": "PancakeSwap",
+        "price": 2.95,
+        "holdings": "120.45 CAKE",
+        "value": 354.82,
+        "changePct": "+2.35%"
+      },
+      {
+        "symbol": "vUSDT",
+        "name": "Venus USDT",
+        "price": 1.01,
+        "holdings": "492.18 vUSDT",
+        "value": 492.18,
+        "changePct": "+3.11%"
+      },
+      {
+        "symbol": "WBNB",
+        "name": "Wrapped BNB",
+        "price": 623.11,
+        "holdings": "0.354 WBNB",
+        "value": 177.06,
+        "changePct": "+1.62%"
+      }
+    ],
+    "performance": {
+      "24H": "+12.43%",
+      "7D": "+28.91%",
+      "30D": "+64.72%"
+    }
+  },
+  "agentDetails": {
+    "overview": {
+      "id": "ban_agent_yield_001",
+      "name": "Yield Optimizer",
+      "status": "ACTIVE",
+      "protocol": "Venus Protocol",
+      "riskLevel": "MEDIUM",
+      "description": "AI agent that finds and allocates to the best yield opportunities across DeFi protocols to maximize returns.",
+      "expectedApy": "21.67%",
+      "tvlManaged": 1197.45,
+      "performance30d": "+14.32%",
+      "spendLimit": {
+        "used": 100.00,
+        "max": 500.00
+      },
+      "maxTxAmount": 25.00,
+      "allowedProtocols": ["PancakeSwap", "Venus", "Alpaca", "ApeSwap", "Biswap"],
+      "sessionExpiry": "18h 23m",
+      "emergencyStop": false
+    },
+    "analytics": {
+      "allocation": [
+        { "label": "Venus USDT", "pct": 42.1, "value": 504.12, "color": "#F0B90B" },
+        { "label": "PancakeSwap LP", "pct": 28.7, "value": 343.58, "color": "#888888" },
+        { "label": "BNB Vault", "pct": 17.3, "value": 207.12, "color": "#666666" },
+        { "label": "Others", "pct": 11.9, "value": 142.63, "color": "#333333" }
+      ],
+      "holdings": [
+        { "symbol": "USDT", "name": "Tether", "amount": "250.12 USDT", "value": "$250.12" },
+        { "symbol": "vUSDT", "name": "Venus USDT", "amount": "584.20 vUSDT", "value": "$584.20" },
+        { "symbol": "CAKE", "name": "PancakeSwap", "amount": "120.45 CAKE", "value": "$198.21" },
+        { "symbol": "BNB", "name": "BNB", "amount": "0.215 BNB", "value": "$144.92" },
+        { "symbol": "XVS", "name": "Venus", "amount": "12.35 XVS", "value": "$99.88" }
+      ],
+      "aiReasoning": {
+        "quote": "The APY on Venus USDT Pool (21.67%) is significantly higher than alternatives after accounting for risk and fees. Utilization is within safe threshold and position size is within policy limits.",
+        "confidence": 92
+      },
+      "agentInfo": {
+        "agentId": "ban_agent_yield_001",
+        "created": "Aug 05, 2025",
+        "lastActive": "2m ago",
+        "model": "GPT-4o",
+        "version": "v1.2.0"
+      },
+      "related": [
+        { "label": "View on BscScan", "href": "https://bscscan.com" },
+        { "label": "View Transactions", "href": "/history" },
+        { "label": "Agent Docs", "href": "/agents" }
+      ]
+    },
+    "liveActivity": [
+      {
+        "time": "11:13:04",
+        "icon": "observation",
+        "title": "Observed new yield opportunity",
+        "subtitle": "Venus USDT Pool"
+      },
+      {
+        "time": "11:12:58",
+        "icon": "brain",
+        "title": "Evaluated 3 strategies",
+        "subtitle": "Best APY: 21.67%"
+      },
+      {
+        "time": "11:12:45",
+        "icon": "clipboard",
+        "title": "Proposed action",
+        "subtitle": "Deposit 25.3 USDT"
+      },
+      {
+        "time": "11:12:35",
+        "icon": "shield",
+        "title": "Policy check",
+        "subtitle": "Approved"
+      },
+      {
+        "time": "11:12:05",
+        "icon": "plane",
+        "title": "Transaction submitted",
+        "subtitle": "0x0af3...a15d"
+      },
+      {
+        "time": "11:10:18",
+        "icon": "check",
+        "title": "Transaction confirmed",
+        "subtitle": "View on BscScan"
+      }
+    ],
+    "performance": {
+      "timeframes": {
+        "7D": "+5.23%",
+        "30D": "+14.32%",
+        "90D": "+38.91%",
+        "ALL": "+67.45%"
+      },
+      "chartPoints": "0,60 30,58 60,65 90,52 120,55 150,40 180,45 210,32 240,35 270,22 300,18"
+    }
+  },
+  "marketplace": {
+    "agents": [
+      {
+        "id": "yield-optimizer-001",
+        "name": "Yield Optimizer",
+        "description": "Automatically allocates funds to highest APY lending pools across Venus, Alpaca, and other BNB Chain protocols",
+        "category": "YIELD",
+        "status": "ACTIVE",
+        "riskLevel": "MEDIUM",
+        "costPerExecution": 10,
+        "apy": "21.67%",
+        "protocols": ["Venus", "Alpaca", "PancakeSwap"],
+        "capabilities": ["yield-optimization", "auto-compound", "risk-management"]
+      },
+      {
+        "id": "grid-trader-001",
+        "name": "Grid Trading Bot",
+        "description": "Executes grid trading strategy on volatile BNB pairs with dynamic range adjustment",
+        "category": "TRADING",
+        "status": "ACTIVE",
+        "riskLevel": "HIGH",
+        "costPerExecution": 15,
+        "apy": null,
+        "protocols": ["PancakeSwap", "Biswap"],
+        "capabilities": ["grid-trading", "volatility-arbitrage", "auto-rebalance"]
+      },
+      {
+        "id": "health-monitor-001",
+        "name": "Health Factor Monitor",
+        "description": "Monitors lending positions and auto-repays to avoid liquidation",
+        "category": "SAFETY",
+        "status": "ACTIVE",
+        "riskLevel": "LOW",
+        "costPerExecution": 5,
+        "apy": null,
+        "protocols": ["Venus", "Radiant"],
+        "capabilities": ["liquidation-protection", "auto-repay", "health-monitoring"]
+      },
+      {
+        "id": "lp-rebalancer-001",
+        "name": "LP Auto Rebalancer",
+        "description": "Maintains optimal LP position ratios and auto-compounds rewards",
+        "category": "REBALANCE",
+        "status": "ACTIVE",
+        "riskLevel": "MEDIUM",
+        "costPerExecution": 8,
+        "apy": "18.24%",
+        "protocols": ["PancakeSwap", "ApeSwap", "Biswap"],
+        "capabilities": ["lp-rebalancing", "auto-compound", "impermanent-loss-hedging"]
+      }
+    ]
+  },
+  "profile": {
+    "user": {
+      "id": "0x7a3B...4dF2",
+      "name": "0xBAN_4EVER",
+      "walletAddress": "0x7a3B8c9d2E1F4a5B6c7D8e9F0A1B2C3D4E5F6A7B",
+      "verified": true,
+      "memberSince": "Jan 2024",
+      "tier": "Pro"
+    },
+    "stats": {
+      "agents": 4,
+      "totalValue": 2845,
+      "totalExecuted": 891,
+      "successRate": "93.2%"
+    },
+    "permissions": {
+      "spendLimit24h": { "used": 100.00, "max": 500.00 },
+      "maxTxAmount": 25.00,
+      "allowedProtocols": ["PancakeSwap", "Venus", "Alpaca", "ApeSwap"],
+      "sessionExpiry": "18h 23m",
+      "emergencyStop": false
+    },
+    "preferences": {
+      "notifications": true,
+      "riskProfile": "MODERATE",
+      "defaultSlippage": "0.5%",
+      "language": "EN",
+      "theme": "DARK"
+    }
+  }
+}

@@ -1,0 +1,105 @@
+rules_version = '2';
+
+// BAN Smart Money — Firestore rules.
+// Control plane state: registry, sessions, permissions, proposals, executions,
+// positions, performance, audit. Blockchain is authoritative for financial
+// state; Firestore is a durable cache + audit store.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Users ----
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ---- Agents: readable by all authenticated users; owned by ownerId ----
+    match /agents/{agentId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---- Agent sessions: owner only ----
+    match /agent_sessions/{sessionId} {
+      allow read, create, update, delete: if request.auth != null
+        && resource.data.agentId in get(/databases/$(database)/documents/agents/{agentId}).data.ownerId;
+    }
+
+    // ---- Agent permissions: owner only ----
+    match /agent_permissions/{permissionId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ---- Strategies (public catalogue) ----
+    match /strategies/{strategyId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ---- Action proposals ----
+    match /action_proposals/{proposalId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false; // proposals are immutable after creation
+    }
+
+    // ---- Executions ----
+    match /executions/{executionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false; // execution records are append-only
+    }
+
+    // ---- Jobs ----
+    match /jobs/{jobId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false; // created/updated by trusted workers only
+    }
+
+    // ---- Positions ----
+    match /positions/{positionId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    // ---- Market data ----
+    match /market_data/{marketDataId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- Performance ----
+    match /performance/{performanceId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ---- Audit events (append-only by trusted workers) ----
+    match /audit_events/{eventId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ---- Agent events ----
+    match /agent_events/{eventId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ---- Protocol configs (readable public, admin writes) ----
+    match /protocol_configs/{configId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- Developer credits (legacy dummy backwards-compat) ----
+    match /developers/{developerId} {
+      allow read, write: if request.auth != null && request.auth.uid == developerId;
+    }
+  }
+}
