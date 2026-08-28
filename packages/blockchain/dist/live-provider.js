@@ -211,13 +211,21 @@ export class LiveDataProvider {
                 let token1;
                 let fee;
                 try {
-                    [slot0, liquidity, token0, token1, fee] = await Promise.all([
+                    // Boundary cast: viem's typed-ABI inference widens int24/uint24/etc.
+                    // reads (number vs bigint) differently across versions. We own the
+                    // exact shape we consume, so we cross the viem boundary explicitly.
+                    const reads = (await Promise.all([
                         this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'slot0' }),
                         this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'liquidity' }),
                         this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'token0' }),
                         this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'token1' }),
                         this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'fee' }),
-                    ]);
+                    ]));
+                    slot0 = reads[0];
+                    liquidity = reads[1];
+                    token0 = reads[2];
+                    token1 = reads[3];
+                    fee = reads[4];
                 }
                 catch (err) {
                     throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `PancakeSwap V3 pool read failed for ${poolAddress}: ${err.message}`, { retryable: true });
@@ -284,6 +292,8 @@ export class LiveDataProvider {
                         functionName: 'tokenOfOwnerByIndex',
                         args: [owner, 0n],
                     }));
+                    // Boundary cast (same rationale as getPoolState): viem's typed ABI
+                    // widens the int24/uint24 fields; we own the consumed shape.
                     const pos = (await this.publicClient.readContract({
                         address: positionManager,
                         abi: nftAbi,

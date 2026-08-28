@@ -275,13 +275,27 @@ export class LiveDataProvider implements ToolAdapters {
         let token1: `0x${string}`;
         let fee: number;
         try {
-          [slot0, liquidity, token0, token1, fee] = await Promise.all([
+          // Boundary cast: viem's typed-ABI inference widens int24/uint24/etc.
+          // reads (number vs bigint) differently across versions. We own the
+          // exact shape we consume, so we cross the viem boundary explicitly.
+          const reads = (await Promise.all([
             this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'slot0' }),
             this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'liquidity' }),
             this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'token0' }),
             this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'token1' }),
             this.publicClient.readContract({ address: pool, abi: ABIS.PANCAKE_V3_POOL, functionName: 'fee' }),
-          ]);
+          ])) as unknown as readonly [
+            readonly [bigint, number, number, number, number, number, boolean],
+            bigint,
+            `0x${string}`,
+            `0x${string}`,
+            number,
+          ];
+          slot0 = reads[0];
+          liquidity = reads[1];
+          token0 = reads[2];
+          token1 = reads[3];
+          fee = reads[4];
         } catch (err) {
           throw new BANError(
             ErrorCode.PROVIDER_UNAVAILABLE,
@@ -351,12 +365,14 @@ export class LiveDataProvider implements ToolAdapters {
             functionName: 'tokenOfOwnerByIndex',
             args: [owner as `0x${string}`, 0n],
           })) as bigint;
+          // Boundary cast (same rationale as getPoolState): viem's typed ABI
+          // widens the int24/uint24 fields; we own the consumed shape.
           const pos = (await this.publicClient.readContract({
             address: positionManager as `0x${string}`,
             abi: nftAbi,
             functionName: 'positions',
             args: [tokenId],
-          })) as readonly [
+          })) as unknown as readonly [
             bigint, `0x${string}`, `0x${string}`, `0x${string}`,
             number, number, number, bigint,
             bigint, bigint, bigint, bigint,
