@@ -12,4 +12,5 @@ export * from './protocol-registry.js';
 export * from './deployment-registry.js';
 export * from './contract-registry.js';
 export * from './abi-registry.js';
+export * from './bnb-mainnet.js';
 //# sourceMappingURL=index.d.ts.map

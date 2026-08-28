@@ -18,6 +18,7 @@
     "@ban/blockchain": "workspace:*",
     "@ban/performance-engine": "workspace:*",
     "@ban/policy-engine": "workspace:*",
+    "@ban/registry": "workspace:*",
     "@ban/schemas": "workspace:*",
     "@ban/shared": "workspace:*",
     "@ban/signers": "workspace:*",

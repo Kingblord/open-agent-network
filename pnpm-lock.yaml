@@ -32,6 +32,9 @@ importers:
       '@ban/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
+      '@ban/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
       '@ban/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

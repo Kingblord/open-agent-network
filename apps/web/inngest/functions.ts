@@ -70,6 +70,7 @@ async function runQueueWorkflow(event: QueueEvent, step: { run: (id: string, fn:
     eventType: 'JOB_SUCCEEDED',
     correlationId: event.correlationId,
     jobId,
+    agentId: event.agentId,
     payload: { jobType, agentId: event.agentId, userId: event.userId, idempotencyKey: event.idempotencyKey },
   });
   logger.info('job_succeeded', { jobId, jobType, correlationId: event.correlationId, attempt });
@@ -120,6 +121,7 @@ async function handleFailure({ error, event }: { error: Error; event: any }) {
     eventType: 'JOB_DEAD_LETTERED',
     correlationId,
     jobId,
+    agentId: data.agentId,
     payload: { jobType, reason: classification.reason, attempt },
   });
 }
@@ -196,6 +198,25 @@ export const banAgentTick = inngest.createFunction(
           userId: agent.ownerId,
           correlationId,
         });
+
+        // Heartbeat: proves the Inngest cron reached THIS agent and records
+        // the real cycle outcome (observability, Rule 10). The event is written
+        // in the exact shape /activity reads (eventType / agentId / payload /
+        // createdAt) so it shows up in the agent's live feed + Scheduler
+        // Heartbeat card. The stage is NEVER fabricated — it is the literal
+        // CycleResult from runAgentCycle (observed|decided|awaited|confirmed).
+        await writeAuditEvent({
+          eventType: 'AGENT_TICK',
+          correlationId,
+          jobId: `tick_${agent.id}`,
+          agentId: agent.id,
+          payload: {
+            source: 'inngest-cron',
+            schedule: '*/2 * * * *',
+            cycleResult: result,
+          },
+        });
+
         logger.info('agent_tick_cycle', {
           agentId: agent.id,
           result: result,

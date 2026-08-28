@@ -8,19 +8,81 @@ import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { sessionManagerFactory } from '@/lib/session-manager-factory';
-import { ErrorCode } from '@ban/shared';
+import { banDeployments, banTokens } from '@/lib/ban-registry';
+import { getAdminDb, collections } from '@/lib/firebase-admin';
+import { BANError, ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.agents.sessions');
 
 /**
  * M4 - Session collection under an agent.
  *
- * POST /api/agents/:id/sessions  -> create a scoped, PENDING session.
+ * POST /api/agents/:id/sessions  -> create + REGISTER a scoped session.
  * GET  /api/agents/:id/sessions  -> list sessions for an agent.
  *
  * Requires an authenticated developer, and the agent must be owned by the
  * caller. The SessionManager (via the factory) owns the session records.
+ *
+ * mustflow §6 (bounded authority):
+ *   - The UI submits USD-denominated limits, protocol ids and token symbols.
+ *   - The server RESOLVES those choices through the BAN registries
+ *     (@ban/registry, fail-closed) into canonical contract/token addresses —
+ *     never hardcoding addresses in the client.
+ *   - After `create` the session is REGISTERED with the Altana adapter seam so
+ *     it moves PENDING → ACTIVE and the bounded authority is actually live.
+ *   - Unknown protocols/tokens are denied (POLICY_DENIED / TOKEN_NOT_ALLOWED).
  */
+
+const PROTOCOL_ROLES: Record<string, string> = {
+  pancakeswap: 'v3SwapRouter',
+  venus: 'comptroller',
+};
+
+function resolveAllowedContracts(
+  protocols: string[] | undefined,
+  legacy: string[] | undefined
+): string[] {
+  const contracts = new Set((legacy ?? []).map((c) => c.trim()).filter(Boolean));
+  for (const pid of protocols ?? []) {
+    const id = pid.trim().toLowerCase();
+    if (!id) continue;
+    const role = PROTOCOL_ROLES[id];
+    if (!role) {
+      throw new BANError(
+        ErrorCode.POLICY_DENIED,
+        `Protocol '${pid}' is not registered for session contracts`,
+        { correlationId: getCorrelationId() }
+      );
+    }
+    contracts.add(banDeployments.requireAddress(id, role));
+  }
+  return [...contracts];
+}
+
+function resolveAllowedTokens(
+  tokens: string[] | undefined,
+  legacy: string[] | undefined
+): string[] {
+  const out = new Set((legacy ?? []).map((t) => t.trim()).filter(Boolean));
+  for (const t of tokens ?? []) {
+    const trimmed = t.trim();
+    if (!trimmed) continue;
+    const rec =
+      banTokens.getBySymbol(trimmed) ??
+      banTokens.getById(trimmed) ??
+      banTokens.getByAddress(trimmed);
+    if (!rec) {
+      throw new BANError(
+        ErrorCode.TOKEN_NOT_ALLOWED,
+        `Token '${t}' is not registered in the BAN token registry`,
+        { correlationId: getCorrelationId() }
+      );
+    }
+    out.add(rec.address);
+  }
+  return [...out];
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -57,24 +119,55 @@ export async function POST(
       });
     }
 
+    // mustflow §6: resolve user choices through the fail-closed registries.
+    const allowedContracts = resolveAllowedContracts(body.allowedProtocols, body.allowedContracts);
+    const allowedTokens = resolveAllowedTokens(body.allowedTokens, body.allowedTokensLegacy ?? []);
+
     const manager = sessionManagerFactory();
     const session = await manager.create({
       agentId: id,
-      walletAddress: body.walletAddress,
-      allowedContracts: body.allowedContracts ?? [],
+      walletAddress: body.walletAddress ?? agent.walletAddress ?? '',
+      allowedContracts,
       allowedFunctions: body.allowedFunctions ?? [],
-      allowedTokens: body.allowedTokens ?? [],
+      allowedTokens,
       spendCap: body.spendCap ?? '0',
       perTransactionCap: body.perTransactionCap ?? '0',
       expiresAtMs: body.expiresAtMs,
     });
 
-    logger.info('session_created_via_api', {
-      agentId: id,
-      sessionId: session.sessionId,
-      correlationId: getCorrelationId(),
-    });
-    return NextResponse.json({ ok: true, session }, { status: 201 });
+    // Persist the mustflow §6 risk hint on the session record (informational;
+    // SessionSchema will be extended to model it explicitly in a later pass).
+    if (typeof body.riskLevel === 'string') {
+      const db = getAdminDb();
+      await db
+        .collection(collections.agentSessions)
+        .doc(session.sessionId)
+        .update({ riskLevel: body.riskLevel });
+    }
+
+    // mustflow §6: the bounded authority must actually become live — register
+    // the session with the Altana adapter (PENDING → ACTIVE). If registration
+    // fails, we return the honest PENDING session + registration:'failed' so
+    // the UI surfaces it instead of claiming success.
+    try {
+      const registered = await manager.registerSession(session.sessionId);
+      logger.info('session_created_and_registered', {
+        agentId: id,
+        sessionId: registered.sessionId,
+        correlationId: getCorrelationId(),
+      });
+      return NextResponse.json({ ok: true, session: registered, registration: 'registered' }, { status: 201 });
+    } catch (regErr) {
+      logger.warn('session_registration_failed', {
+        sessionId: session.sessionId,
+        correlationId: getCorrelationId(),
+        err: regErr instanceof Error ? regErr.message : String(regErr),
+      });
+      return NextResponse.json(
+        { ok: true, session, registration: 'failed' as const },
+        { status: 201 }
+      );
+    }
   } catch (err) {
     logger.error('session_create_failed', {}, err);
     return handleError(err);
@@ -82,11 +175,11 @@ export async function POST(
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = getTokenFromRequest(request);
+    const token = getTokenFromRequest(_request);
     const user = token ? verifyToken(token) : null;
     if (!user) {
       return errorResponse(401, 'Unauthorized: missing or invalid token', {

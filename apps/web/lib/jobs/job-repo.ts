@@ -130,17 +130,21 @@ export async function writeAuditEvent(entry: {
   eventType: string;
   correlationId: string;
   jobId: string;
+  /** Optional agent-scoping so /activity can surface the event for an agent. */
+  agentId?: string;
   payload?: Record<string, unknown>;
 }) {
   const db = getAdminDb();
-  await db.collection(collections.auditEvents).add({
+  const doc: Record<string, unknown> = {
     eventId: generateId('evt'),
     eventType: entry.eventType,
     correlationId: entry.correlationId,
     jobId: entry.jobId,
     payload: entry.payload ?? {},
     createdAt: new Date().toISOString(),
-  });
+  };
+  if (entry.agentId) doc.agentId = entry.agentId;
+  await db.collection(collections.auditEvents).add(doc);
 }
 
 // ---------------------------------------------------------------------------

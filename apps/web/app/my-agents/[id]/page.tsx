@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
@@ -117,6 +117,11 @@ const TIMELINE_ICONS: Record<string, React.ReactNode> = {
       <path d="M16 3h5v5L8 21l-5-5z" />
     </svg>
   ),
+  AGENT_TICK: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+    </svg>
+  ),
 };
 
 function getTimelineIcon(eventType: string) {
@@ -138,6 +143,7 @@ function getTimelineTitle(eventType: string) {
     case 'TRANSACTION_CONFIRMED': return 'Transaction confirmed';
     case 'TRANSACTION_FAILED': return 'Transaction failed';
     case 'POSITION_UPDATED': return 'Position updated';
+    case 'AGENT_TICK': return 'Scheduled cycle (Inngest cron)';
     default: return eventType.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
@@ -156,6 +162,14 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
       const amount = typeof payload.amount === 'string' ? payload.amount : '';
       return symbol && amount ? `${amount} ${symbol}` : 'Position record updated';
     }
+    case 'AGENT_TICK': {
+      const cr = (payload.cycleResult ?? {}) as Record<string, unknown>;
+      const stage = typeof cr.stage === 'string' ? cr.stage : '';
+      if (stage === 'confirmed') return 'Cycle confirmed an on-chain transaction';
+      if (stage === 'awaited') return 'Cycle complete — awaiting execution (session/wallet)';
+      if (stage === 'decided') return 'Cycle complete — agent passed (no action)';
+      return stage ? `Cycle finished at stage: ${stage}` : 'Scheduler heartbeat recorded';
+    }
     default: {
       const entries = Object.entries(payload).filter(([k]) => !['correlationId', 'agentId'].includes(k));
       return entries.slice(0, 1).map(([k, v]) => `${k}: ${String(v)}`).join(', ') || 'Operation recorded';
@@ -166,6 +180,22 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
 function renderUsdc(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
+
+// mustflow §6 bounded-authority options (client-side lists; server resolves
+// them through the fail-closed BAN registries into canonical addresses).
+const TOKEN_OPTIONS = [
+  { symbol: 'BNB', label: 'BNB (native)' },
+  { symbol: 'WBNB', label: 'WBNB' },
+  { symbol: 'USDT', label: 'USDT' },
+  { symbol: 'USDC', label: 'USDC' },
+];
+
+const PROTOCOL_OPTIONS = [
+  { id: 'pancakeswap', label: 'PancakeSwap' },
+  { id: 'venus', label: 'Venus' },
+];
+
+const RISK_OPTIONS = ['LOW', 'MEDIUM', 'HIGH'];
 
 export default function MyAgentDetailPage() {
   const { user, loading } = useAuth();
@@ -184,14 +214,17 @@ export default function MyAgentDetailPage() {
   const [activeViewTab, setActiveViewTab] = useState<'overview' | 'analytics'>('overview');
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [sessionForm, setSessionForm] = useState({
-    walletAddress: '',
-    spendCap: '1000000000000000000',
-    perTransactionCap: '100000000000000000',
-    allowedContracts: '',
+    network: 'BNB Smart Chain (56)',
+    maxTxUsd: '100',
+    dailyLimitUsd: '500',
+    allowedTokens: [] as string[],
+    allowedProtocols: [] as string[],
     allowedFunctions: 'deposit, withdraw, swap',
-    allowedTokens: 'USDT, BNB, CAKE',
+    riskLevel: 'LOW',
     expiresAtDays: 30,
   });
+  const [bnbUsdPrice, setBnbUsdPrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (mounted && !loading && !user) router.push('/login'); }, [mounted, user, loading, router]);
@@ -202,6 +235,7 @@ export default function MyAgentDetailPage() {
       fetchActivity();
       fetchPerformance();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);
 
   const fetchAgent = async () => {
@@ -291,62 +325,46 @@ export default function MyAgentDetailPage() {
     }
   };
 
-  const handleRunCycle = async () => {
-    setActionLoading('run');
+  const fetchBnbPrice = async (force = false) => {
+    if (priceLoading) return;
+    if (!force && bnbUsdPrice != null) return;
+    setPriceLoading(true);
     try {
-      const response = await fetch(`/api/agents/${params.id}/run`, { method: 'POST' });
+      const response = await fetch('/api/prices/bnb');
       if (response.ok) {
         const data = await response.json();
-        const stage = data.result?.stage ?? 'unknown';
-        const ok = !!data.ok;
-        const messages: Record<string, string> = {
-          observed: 'Observation complete (no action needed).',
-          decided: 'Cycle complete — agent passed.',
-          awaited: 'Agent is awaiting execution (ensure an ACTIVE session and funded wallet).',
-          confirmed: 'Trade confirmed on-chain!',
-        };
-        if (ok) {
-          toast.success({
-            title: 'Cycle complete',
-            description: messages[stage] || 'Closed-loop cycle finished.',
-          });
-        } else {
-          toast.error({
-            title: 'Cycle result',
-            description: data.result?.reason || 'The cycle did not complete successfully.',
-          });
-        }
-        fetchActivity();
-        fetchPerformance();
-        fetchSessions();
-      } else {
-        const error = await response.json();
-        toast.error({ title: 'Run failed', description: error.error || 'An unexpected error occurred.' });
+        setBnbUsdPrice(data.usd ?? null);
       }
     } catch (error) {
-      console.error('Run cycle error:', error);
-      toast.error({ title: 'Run failed', description: 'An unexpected error occurred.' });
+      console.error('Failed to fetch BNB price:', error);
     } finally {
-      setActionLoading(null);
+      setPriceLoading(false);
     }
   };
 
   const handleCreateSession = async () => {
+    if (!bnbUsdPrice) {
+      // mustflow §6 — never fabricate a rate; ask the user to retry conversion.
+      toast.error({ title: 'Price not available', description: 'Unable to convert USD limits to BNB. Try again.' });
+      return;
+    }
     setSessionLoading(true);
     try {
+      // mustflow §6 USD-denominated limits → wei (native BNB, 18 decimals).
+      const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
+      const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
+
       const body = {
-        walletAddress: sessionForm.walletAddress || agent?.walletAddress || '',
-        spendCap: sessionForm.spendCap,
-        perTransactionCap: sessionForm.perTransactionCap,
-        allowedContracts: sessionForm.allowedContracts
-          ? sessionForm.allowedContracts.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
+        walletAddress: agent?.walletAddress || '',
+        spendCap: dailyWei, // cumulative daily ceiling (USD-denominated daily limit)
+        perTransactionCap: maxTxWei, // mustflow §6 max transaction
+        allowedContracts: [],
         allowedFunctions: sessionForm.allowedFunctions
           ? sessionForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
           : [],
-        allowedTokens: sessionForm.allowedTokens
-          ? sessionForm.allowedTokens.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
+        allowedTokens: sessionForm.allowedTokens,
+        allowedProtocols: sessionForm.allowedProtocols, // resolved server-side via @ban/registry
+        riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
       };
 
@@ -356,13 +374,21 @@ export default function MyAgentDetailPage() {
         body: JSON.stringify(body),
       });
       if (response.ok) {
+        const data = await response.json();
+        if (data.registration === 'failed') {
+          toast.success({
+            title: 'Session created (pending registration)',
+            description: 'The scoped session was saved. Registration with the session registry is pending — it will activate once confirmed.',
+          });
+        } else {
+          toast.success({
+            title: 'Session created',
+            description: 'Your scoped session and limits have been saved and registered.',
+          });
+        }
         await fetchSessions();
         await fetchActivity();
         setShowSessionModal(false);
-        toast.success({
-          title: 'Session created',
-          description: 'Your scoped session and limits have been saved.',
-        });
       } else {
         const error = await response.json();
         toast.error({ title: 'Session failed', description: error.error || 'An unexpected error occurred.' });
@@ -373,6 +399,24 @@ export default function MyAgentDetailPage() {
     } finally {
       setSessionLoading(false);
     }
+  };
+
+  const toggleToken = (sym: string) => {
+    setSessionForm((f) => ({
+      ...f,
+      allowedTokens: f.allowedTokens.includes(sym)
+        ? f.allowedTokens.filter((t) => t !== sym)
+        : [...f.allowedTokens, sym],
+    }));
+  };
+
+  const toggleProtocol = (id: string) => {
+    setSessionForm((f) => ({
+      ...f,
+      allowedProtocols: f.allowedProtocols.includes(id)
+        ? f.allowedProtocols.filter((p) => p !== id)
+        : [...f.allowedProtocols, id],
+    }));
   };
 
   const formatEventTimestamp = (iso: string) => {
@@ -444,6 +488,18 @@ export default function MyAgentDetailPage() {
 
   // Count actual failure/denial events from the live event feed.
   const failedEvents = events.filter((e) => e.eventType === 'TRANSACTION_FAILED' || e.eventType === 'ACTION_DENIED').length;
+
+  // Latest scheduler heartbeat (AGENT_TICK) — events are newest-first.
+  const latestTick = events.find((e) => e.eventType === 'AGENT_TICK') ?? null;
+  const tickStage =
+    latestTick && typeof (latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage === 'string'
+      ? String((latestTick.payload.cycleResult as Record<string, unknown>).stage)
+      : null;
+  const tickStageLabel =
+    tickStage === 'confirmed' ? 'Confirmed on-chain'
+      : tickStage === 'awaited' ? 'Awaiting execution'
+        : tickStage === 'decided' ? 'Agent passed'
+          : tickStage ? 'Observed' : null;
 
   return (
     <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
@@ -526,10 +582,31 @@ export default function MyAgentDetailPage() {
               )}
             </div>
 
+            {/* SCHEDULER HEARTBEAT — proves the Inngest cron reaches this agent (no GitHub Actions). */}
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-white tracking-widest uppercase">Scheduler Heartbeat</span>
+                <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">*/2 min</span>
+              </div>
+              {latestTick ? (
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
+                    <span className="text-white font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
+                  </div>
+                  <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)}</span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  No scheduled ticks yet. Activate the agent — Inngest runs the closed loop every 2 minutes via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
+                </p>
+              )}
+            </div>
+
             <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-white tracking-widest uppercase">PERMISSIONS & LIMITS</span>
-                <button type="button" onClick={() => setShowSessionModal(true)} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">EDIT SESSION</button>
+                <button type="button" onClick={() => { setShowSessionModal(true); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">EDIT SESSION</button>
               </div>
 
               {activeSession ? (
@@ -603,16 +680,6 @@ export default function MyAgentDetailPage() {
                     ACTIVATE AGENT
                   </LoadingButton>
                 )}
-                {/* Manual closed-loop trigger (M18) — safe: never fabricates a receipt. */}
-                <LoadingButton
-                  onClick={handleRunCycle}
-                  loading={actionLoading === 'run'}
-                  loadingLabel="Running..."
-                  variant="outline"
-                  disabled={agent.status !== 'ACTIVE'}
-                >
-                  RUN CYCLE NOW
-                </LoadingButton>
                 {agent.status !== 'REVOKED' && (
                   <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-[#333] text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
                     {actionLoading === 'revoke' ? 'REVOKING...' : 'REVOKE ACCESS'}
@@ -808,19 +875,148 @@ export default function MyAgentDetailPage() {
 
       {showSessionModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4">
+          <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-black text-[#F0B90B] uppercase">Configure Session Limits</h3>
+
+            {/* Network */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1">Spend Cap (wei)</label>
-              <input type="text" value={sessionForm.spendCap} onChange={(e) => setSessionForm({ ...sessionForm, spendCap: e.target.value })} className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded" />
+              <label className="block text-xs font-black text-gray-400 mb-1">Network</label>
+              <div className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-gray-200 rounded">
+                BNB Smart Chain (56) <span className="text-[10px] text-gray-500">— BAN execution chain</span>
+              </div>
             </div>
+
+            {/* USD limits */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-black text-gray-400 mb-1">Max transaction (USD)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={sessionForm.maxTxUsd}
+                  onChange={(e) => setSessionForm({ ...sessionForm, maxTxUsd: e.target.value })}
+                  className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-400 mb-1">Daily limit (USD)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={sessionForm.dailyLimitUsd}
+                  onChange={(e) => setSessionForm({ ...sessionForm, dailyLimitUsd: e.target.value })}
+                  className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                />
+              </div>
+            </div>
+
+            {/* Live USD → BNB rate */}
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>USD → BNB conversion</span>
+              <span className="font-mono text-gray-300">
+                {bnbUsdPrice != null ? `1 BNB = $${bnbUsdPrice.toFixed(2)}` : 'Price unavailable'}
+              </span>
+              {bnbUsdPrice == null && (
+                <button
+                  type="button"
+                  onClick={() => fetchBnbPrice(true)}
+                  disabled={priceLoading}
+                  className="text-[#F0B90B] font-black uppercase text-[10px] disabled:opacity-60"
+                >
+                  {priceLoading ? 'Loading...' : 'Retry'}
+                </button>
+              )}
+            </div>
+
+            {/* Allowed tokens */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1">Allowed Functions</label>
-              <input type="text" value={sessionForm.allowedFunctions} onChange={(e) => setSessionForm({ ...sessionForm, allowedFunctions: e.target.value })} className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded" />
+              <label className="block text-xs font-black text-gray-400 mb-1.5">Allowed tokens</label>
+              <div className="flex flex-wrap gap-1.5">
+                {TOKEN_OPTIONS.map((t) => {
+                  const active = sessionForm.allowedTokens.includes(t.symbol);
+                  return (
+                    <button
+                      key={t.symbol}
+                      type="button"
+                      onClick={() => toggleToken(t.symbol)}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN token registry (fail-closed).</p>
             </div>
+
+            {/* Allowed protocols */}
+            <div>
+              <label className="block text-xs font-black text-gray-400 mb-1.5">Allowed protocols</label>
+              <div className="flex flex-wrap gap-1.5">
+                {PROTOCOL_OPTIONS.map((p) => {
+                  const active = sessionForm.allowedProtocols.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => toggleProtocol(p.id)}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
+            </div>
+
+            {/* Allowed functions */}
+            <div>
+              <label className="block text-xs font-black text-gray-400 mb-1">Allowed functions</label>
+              <input
+                type="text"
+                value={sessionForm.allowedFunctions}
+                onChange={(e) => setSessionForm({ ...sessionForm, allowedFunctions: e.target.value })}
+                placeholder="e.g. swap, deposit, withdraw"
+                className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+              />
+            </div>
+
+            {/* Risk */}
+            <div>
+              <label className="block text-xs font-black text-gray-400 mb-1.5">Risk level</label>
+              <div className="flex flex-wrap gap-1.5">
+                {RISK_OPTIONS.map((r) => {
+                  const active = sessionForm.riskLevel === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSessionForm({ ...sessionForm, riskLevel: r })}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Duration */}
+            <div>
+              <label className="block text-xs font-black text-gray-400 mb-1">Session duration (days)</label>
+              <input
+                type="number"
+                min="1"
+                value={sessionForm.expiresAtDays}
+                onChange={(e) => setSessionForm({ ...sessionForm, expiresAtDays: Number(e.target.value) })}
+                className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+              />
+            </div>
+
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={() => setShowSessionModal(false)} disabled={sessionLoading} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
-              <LoadingButton onClick={handleCreateSession} loading={sessionLoading} loadingLabel="Saving..." variant="primary">Save Session</LoadingButton>
+              <LoadingButton onClick={handleCreateSession} loading={sessionLoading} loadingLabel="Saving..." variant="primary" disabled={!bnbUsdPrice}>Save Session</LoadingButton>
             </div>
           </div>
         </div>

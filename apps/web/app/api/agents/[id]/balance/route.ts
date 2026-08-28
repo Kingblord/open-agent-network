@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
 import { bsc } from 'viem/chains';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
+import { getBnbUsdPrice } from '@/lib/bnb-price';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,30 +20,6 @@ export const dynamic = 'force-dynamic';
  */
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-
-let priceCache: { price: number; at: number } | null = null;
-
-async function getBnbUsdPrice(): Promise<number | null> {
-  const now = Date.now();
-  if (priceCache && now - priceCache.at < 60_000) return priceCache.price;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd',
-      { signal: controller.signal }
-    );
-    clearTimeout(timeout);
-    if (!res.ok) return priceCache?.price ?? null;
-    const json = (await res.json()) as { binancecoin?: { usd?: unknown } };
-    const price = Number(json?.binancecoin?.usd);
-    if (!Number.isFinite(price) || price <= 0) return priceCache?.price ?? null;
-    priceCache = { price, at: now };
-    return price;
-  } catch {
-    return priceCache?.price ?? null;
-  }
-}
 
 function formatBnb(value: number): string {
   if (value === 0) return '0';
