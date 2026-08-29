@@ -83,9 +83,19 @@ export async function POST(request: NextRequest) {
     let decoded;
     try {
       decoded = await getFirebaseAuth(getAdminApp()).verifyIdToken(idToken);
-    } catch {
+    } catch (verifyErr) {
+      // Surface the REAL reason (message only contains public claims like
+      // aud/iss — no secrets) so project-mismatch / expiry / signature
+      // failures are diagnosable from the browser console instead of a
+      // generic "INVALID_TOKEN".
+      const verifyDetail = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+      logger.error('firebase_idtoken_verify_failed', { detail: verifyDetail });
       return NextResponse.json(
-        { error: 'Invalid or expired Firebase token', code: 'INVALID_TOKEN' },
+        {
+          error: 'Invalid or expired Firebase token',
+          code: 'INVALID_TOKEN',
+          detail: verifyDetail,
+        },
         { status: 401 }
       );
     }
