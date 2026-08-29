@@ -5,6 +5,7 @@ import { AuthProvider } from '@/lib/auth-context'
 import { ThirdwebProvider } from '@/lib/thirdweb-provider'
 import { WalletProvider } from '@/lib/wallet-context'
 import { ToastProvider } from '@/components/toast-provider'
+import { WalletPromptModal } from '@/components/wallet-prompt-modal'
 
 export const metadata: Metadata = {
   title: 'Open Agent Network',
@@ -50,6 +51,7 @@ export default function RootLayout({
               <ToastProvider>
                 {children}
               </ToastProvider>
+              <WalletPromptModal />
             </WalletProvider>
           </ThirdwebProvider>
         </AuthProvider>

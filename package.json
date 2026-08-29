@@ -13,7 +13,7 @@
     "test": "pnpm build:packages && pnpm --filter \"./packages/registry\" test && pnpm --filter \"./packages/signers\" test && pnpm --filter \"./packages/policy-engine\" test && pnpm --filter \"./packages/execution-engine\" test && pnpm --filter \"./packages/blockchain\" test && pnpm --filter \"./packages/ai\" test && pnpm --filter \"./packages/strategy-yield\" test && pnpm --filter \"./packages/strategy-health\" test && pnpm --filter \"./packages/strategy-lp\" test && pnpm --filter \"./packages/strategy-grid\" test && pnpm --filter \"./packages/performance-engine\" test && npm run test --prefix apps/web"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0"
