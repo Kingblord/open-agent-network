@@ -41,7 +41,22 @@ export const banJobEvent = eventType('ban/job', {
   }),
 });
 
+// ---------------------------------------------------------------------------
+// Inngest Cloud credentials (2-minute ban-agent-tick cron).
+//
+// The cron is scheduled by Inngest Cloud; the SDK requires an event key to
+// sign/register events and a signing key to verify webhooks. Both are read
+// exclusively from environment variables — set them on Vercel:
+//
+//   INNGEST_EVENT_KEY   — app.inngest.com → your app → Settings → Environments
+//   INNGEST_SIGNING_KEY — same screen
+//
+// No hardcoded fallbacks: if either var is missing the SDK falls back to
+// dev mode (local Dev Server only) and the cloud cron will not fire.
+// ---------------------------------------------------------------------------
 export const inngest = new Inngest({
   id: 'ban-smart-money',
   name: 'BAN Smart Money',
+  eventKey: process.env.INNGEST_EVENT_KEY,
+  signingKey: process.env.INNGEST_SIGNING_KEY,
 });

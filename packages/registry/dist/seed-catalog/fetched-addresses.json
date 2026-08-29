@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-08-29T09:26:46.401Z",
+  "candidates": [
+    {
+      "protocolId": "pancakeswap",
+      "role": "MasterChefV3",
+      "usedByAdapterAs": "masterChefV3",
+      "address": "0x556B9306565093C855AEA9AE92A594704c2Cd59e",
+      "source": "https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/deployments/bscMainnet.json"
+    }
+  ]
+}

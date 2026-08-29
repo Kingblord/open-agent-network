@@ -8,6 +8,13 @@ import {
   BnbAddressVerifier,
   isValidAddress,
   assertSameAddress,
+  createBnbRegistries,
+  BNB_MAINNET_CONTRACTS,
+  BNB_MAINNET_TOKENS,
+  PANCAKE_SWAP_ROUTER,
+  VENUS_COMPTROLLER,
+  VENUS_ORACLE,
+  VENUS_VTOKENS,
 } from '../src/index.js';
 import { BANError, ErrorCode } from '@ban/shared';
 
@@ -15,6 +22,17 @@ const MAINNET = 56;
 const ADDR_A = '0x1111111111111111111111111111111111111111';
 const ADDR_B = '0x2222222222222222222222222222222222222222';
 const ADDR_C = '0x3333333333333333333333333333333333333333';
+
+/** Assert a thrown BANError carries the exact ErrorCode (not the message). */
+function throwsCode(fn: () => unknown, code: ErrorCode): void {
+  try {
+    fn();
+  } catch (err) {
+    expect((err as BANError).code).toBe(code);
+    return;
+  }
+  throw new Error(`expected function to throw BANError ${code}, but it did not throw`);
+}
 
 describe('AddressVerifier', () => {
   it('accepts structural 0x + 40 hex', () => {
@@ -51,12 +69,7 @@ describe('TokenRegistry (fail-closed allowlist)', () => {
 
   it('denies an unknown token', () => {
     expect(registry.isEnabled('NOPE')).toBe(false);
-    expect(() => registry.requireEnabled('NOPE')).toThrowError(BANError);
-    try {
-      registry.requireEnabled('NOPE');
-    } catch (err) {
-      expect((err as BANError).code).toBe(ErrorCode.TOKEN_NOT_ALLOWED);
-    }
+    throwsCode(() => registry.requireEnabled('NOPE'), ErrorCode.TOKEN_NOT_ALLOWED);
   });
 
   it('denies a verified but NOT enabled token (verified ≠ enabled)', () => {
@@ -65,15 +78,14 @@ describe('TokenRegistry (fail-closed allowlist)', () => {
   });
 
   it('denies an address actually on testnet (97) since BAN execution chain is 56', () => {
-    try {
-      new TokenRegistry({
-        chainId: MAINNET,
-        tokens: [{ id: 'bad', chainId: 97, address: ADDR_C, symbol: 'BAD', name: 'Bad', decimals: 18, verified: true, enabled: true }],
-      });
-      throw new Error('should not register testnet token on mainnet registry');
-    } catch (err) {
-      expect((err as BANError).code).toBe(ErrorCode.TOKEN_NOT_ALLOWED);
-    }
+    throwsCode(
+      () =>
+        new TokenRegistry({
+          chainId: MAINNET,
+          tokens: [{ id: 'bad', chainId: 97, address: ADDR_C, symbol: 'BAD', name: 'Bad', decimals: 18, verified: true, enabled: true }],
+        }),
+      ErrorCode.TOKEN_NOT_ALLOWED,
+    );
   });
 });
 
@@ -120,16 +132,18 @@ describe('DeploymentRegistry (verified address per role)', () => {
 
   it('fails closed for undeclared role', () => {
     expect(registry.hasAddress('pancakeswap', 'quoter')).toBe(false);
-    expect(() => registry.requireAddress('pancakeswap', 'quoter')).toThrowError(ErrorCode.CONTRACT_NOT_ALLOWED);
+    throwsCode(() => registry.requireAddress('pancakeswap', 'quoter'), ErrorCode.CONTRACT_NOT_ALLOWED);
   });
 
   it('rejects invalid addresses at registration', () => {
-    expect(() =>
-      new DeploymentRegistry({
-        chainId: MAINNET,
-        deployments: [{ protocolId: 'bad', chainId: MAINNET, contracts: { router: '0xZZZ' }, verified: true }],
-      }),
-    ).toThrowError(ErrorCode.SCHEMA_INVALID);
+    throwsCode(
+      () =>
+        new DeploymentRegistry({
+          chainId: MAINNET,
+          deployments: [{ protocolId: 'bad', chainId: MAINNET, contracts: { router: '0xZZZ' }, verified: true }],
+        }),
+      ErrorCode.SCHEMA_INVALID,
+    );
   });
 });
 
@@ -180,7 +194,7 @@ describe('ContractRegistry (READ_ONLY vs EXECUTE capability model)', () => {
 
   it('denies an unregistered contract (fail-closed)', () => {
     expect(registry.isRegistered(ADDR_C)).toBe(false);
-    expect(() => registry.requireRead(ADDR_C, 'quote')).toThrowError(/not registered/);
+    throwsCode(() => registry.requireRead(ADDR_C, 'quote'), ErrorCode.CONTRACT_NOT_ALLOWED);
   });
 
   it('denies a contract that is verified but not enabled (verified ≠ enabled)', () => {
@@ -211,10 +225,80 @@ describe('AbiRegistry (verified ABI fragments)', () => {
 
   it('fails closed on undeclared function', () => {
     expect(registry.hasFunction(ADDR_A, 'nope')).toBe(false);
-    expect(() => registry.requireFunction(ADDR_A, 'nope')).toThrowError(ErrorCode.FUNCTION_NOT_ALLOWED);
+    throwsCode(() => registry.requireFunction(ADDR_A, 'nope'), ErrorCode.FUNCTION_NOT_ALLOWED);
   });
 
   it('fails closed on unknown contract', () => {
-    expect(() => registry.requireFunction(ADDR_C, 'getAmountsOut')).toThrowError(ErrorCode.CONTRACT_NOT_ALLOWED);
+    throwsCode(() => registry.requireFunction(ADDR_C, 'getAmountsOut'), ErrorCode.CONTRACT_NOT_ALLOWED);
+  });
+});
+
+describe('BAN P0 activation — execution authority (mustflow §12/§14)', () => {
+  const { tokens, protocols, deployments } = createBnbRegistries();
+  const contracts = new ContractRegistry({ chainId: MAINNET, contracts: BNB_MAINNET_CONTRACTS });
+
+  it('activates the P0 core tokens for autonomous use (BNB/WBNB/USDT/USDC)', () => {
+    for (const sym of ['BNB', 'WBNB', 'USDT', 'USDC']) {
+      expect(tokens.isEnabled(sym)).toBe(true);
+      expect(() => tokens.requireEnabled(sym)).not.toThrow();
+    }
+    // BNB_MAINNET_TOKENS seeds are reflected by createBnbRegistries.
+    expect(BNB_MAINNET_TOKENS.filter((t) => t.enabled).map((t) => t.symbol)).toEqual(['BNB', 'WBNB', 'USDT', 'USDC']);
+  });
+
+  it('P0 protocols are ACTIVE and deployments verified', () => {
+    expect(protocols.isActive('pancakeswap')).toBe(true);
+    expect(protocols.isActive('venus')).toBe(true);
+    expect(deployments.hasAddress('pancakeswap', 'router')).toBe(true);
+    expect(deployments.hasAddress('venus', 'comptroller')).toBe(true);
+  });
+
+  it('PancakeSwap V3 router: EXECUTE authorized for exactInputSingle/exactInput; quote is READ_ONLY', () => {
+    expect(contracts.canExecute(PANCAKE_SWAP_ROUTER, 'exactInputSingle')).toBe(true);
+    expect(contracts.canExecute(PANCAKE_SWAP_ROUTER, 'exactInput')).toBe(true);
+    expect(contracts.canRead(PANCAKE_SWAP_ROUTER, 'quoteExactInputSingle')).toBe(true);
+    expect(contracts.canExecute(PANCAKE_SWAP_ROUTER, 'quoteExactInputSingle')).toBe(false);
+    expect(() => contracts.requireExecute(PANCAKE_SWAP_ROUTER, 'quoteExactInputSingle')).toThrowError(/READ_ONLY/);
+    expect(() => contracts.requireExecute(PANCAKE_SWAP_ROUTER, 'exactInputSingle')).not.toThrow();
+  });
+
+  it('Venus Comptroller: EXECUTE for enterMarkets/exitMarket; read for getAccountLiquidity', () => {
+    expect(contracts.canRead(VENUS_COMPTROLLER, 'getAccountLiquidity')).toBe(true);
+    expect(contracts.canExecute(VENUS_COMPTROLLER, 'enterMarkets')).toBe(true);
+    expect(contracts.canExecute(VENUS_COMPTROLLER, 'exitMarket')).toBe(true);
+    expect(() => contracts.requireExecute(VENUS_COMPTROLLER, 'enterMarkets')).not.toThrow();
+  });
+
+  it('Venus Oracle: read-only getUnderlyingPrice — EXECUTE must be denied', () => {
+    expect(contracts.canRead(VENUS_ORACLE, 'getUnderlyingPrice')).toBe(true);
+    expect(contracts.canExecute(VENUS_ORACLE, 'getUnderlyingPrice')).toBe(false);
+    throwsCode(() => contracts.requireExecute(VENUS_ORACLE, 'getUnderlyingPrice'), ErrorCode.FUNCTION_NOT_ALLOWED);
+  });
+
+  it('Venus vTokens: reads + EXECUTE mint/redeem/borrow/repayBorrow all authorized', () => {
+    for (const addr of Object.values(VENUS_VTOKENS)) {
+      expect(contracts.canRead(addr, 'balanceOfUnderlying')).toBe(true);
+      expect(contracts.canRead(addr, 'borrowBalanceCurrent')).toBe(true);
+      for (const fn of ['mint', 'redeem', 'borrow', 'repayBorrow']) {
+        expect(contracts.canExecute(addr, fn)).toBe(true);
+        expect(() => contracts.requireExecute(addr, fn)).not.toThrow();
+      }
+    }
+  });
+
+  it('integration ladder reflects activation: P0 contracts → EXECUTION_ENABLED (oracle SIMULATION)', () => {
+    expect(contracts.getIntegrationStatusById('pancakeswap-v3-swap-router').status).toBe('EXECUTION_ENABLED');
+    expect(contracts.getIntegrationStatusById('venus-comptroller').status).toBe('EXECUTION_ENABLED');
+    // Oracle declares READ_ONLY only → enabled but no EXECUTE capability → SIMULATION.
+    expect(contracts.getIntegrationStatusById('venus-oracle').status).toBe('SIMULATION');
+    expect(contracts.getIntegrationStatusById('venus-vtoken-vbnb').status).toBe('EXECUTION_ENABLED');
+  });
+
+  it('keeps unregistered (non-P0) contracts fail-closed — nothing unrecognized is executable', () => {
+    const aavePool = '0x6807dc923806fE8Fd134338EABCA509979a7e0cB';
+    expect(contracts.isRegistered(aavePool)).toBe(false);
+    expect(contracts.canExecute(aavePool, 'supply')).toBe(false);
+    throwsCode(() => contracts.requireExecute(aavePool, 'supply'), ErrorCode.CONTRACT_NOT_ALLOWED);
+    expect(contracts.getIntegrationStatus(aavePool).status).toBe('DISCOVERY_ONLY');
   });
 });

@@ -190,12 +190,26 @@ const TOKEN_OPTIONS = [
   { symbol: 'USDC', label: 'USDC' },
 ];
 
+// mustflow §10-§13: a protocol may be RECOGNIZED (registered) but NOT yet
+// VERIFIED for autonomous execution. This mirrors the app-side seed truth
+// (@ban/registry bnb-mainnet.ts: deployments are verified:false until the
+// on-chain verification pipeline confirms them). When the catalog pipeline
+// flips a deployment to verified:true, flip it here too so the chip becomes
+// selectable. Unverified protocols are shown greyed-out — never executable.
 const PROTOCOL_OPTIONS = [
-  { id: 'pancakeswap', label: 'PancakeSwap' },
-  { id: 'venus', label: 'Venus' },
+  { id: 'pancakeswap', label: 'PancakeSwap', verified: false },
+  { id: 'venus', label: 'Venus', verified: false },
 ];
 
 const RISK_OPTIONS = ['LOW', 'MEDIUM', 'HIGH'];
+
+// Registry-error codes that should surface inline in the session modal
+// (tailored message) instead of a generic failure toast.
+const REGISTRY_ERROR_CODES = new Set([
+  'ERR_CONTRACT_NOT_ALLOWED',
+  'ERR_TOKEN_NOT_ALLOWED',
+  'ERR_SPEND_LIMIT_EXCEEDED',
+]);
 
 export default function MyAgentDetailPage() {
   const { user, loading } = useAuth();
@@ -210,6 +224,7 @@ export default function MyAgentDetailPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState<'overview' | 'analytics'>('overview');
   const [showSessionModal, setShowSessionModal] = useState(false);
@@ -343,6 +358,7 @@ export default function MyAgentDetailPage() {
   };
 
   const handleCreateSession = async () => {
+    setSessionError(null);
     if (!bnbUsdPrice) {
       // mustflow §6 — never fabricate a rate; ask the user to retry conversion.
       toast.error({ title: 'Price not available', description: 'Unable to convert USD limits to BNB. Try again.' });
@@ -390,8 +406,14 @@ export default function MyAgentDetailPage() {
         await fetchActivity();
         setShowSessionModal(false);
       } else {
-        const error = await response.json();
-        toast.error({ title: 'Session failed', description: error.error || 'An unexpected error occurred.' });
+        const data = await response.json().catch(() => null);
+        const code = typeof data?.code === 'string' ? data.code : undefined;
+        const message = typeof data?.error === 'string' ? data.error : 'An unexpected error occurred.';
+        if (code && REGISTRY_ERROR_CODES.has(code)) {
+          setSessionError(message);
+        } else {
+          toast.error({ title: 'Session failed', description: message });
+        }
       }
     } catch (error) {
       console.error('Session creation error:', error);
@@ -411,6 +433,15 @@ export default function MyAgentDetailPage() {
   };
 
   const toggleProtocol = (id: string) => {
+    const option = PROTOCOL_OPTIONS.find((p) => p.id === id);
+    if (option && !option.verified) {
+      // mustflow §10-§13: recognized ≠ verified. Keep the chip available for
+      // information but block selection of unverified deployments.
+      setSessionError(
+        `${option.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`
+      );
+      return;
+    }
     setSessionForm((f) => ({
       ...f,
       allowedProtocols: f.allowedProtocols.includes(id)
@@ -434,8 +465,6 @@ export default function MyAgentDetailPage() {
     if (hrs < 24) return `${hrs}h ago`;
     return `${Math.floor(hrs / 24)}d ago`;
   };
-
-  const fetchSuccess = () => fetchActivity();
 
   if (loading || !user) {
     return (
@@ -606,7 +635,7 @@ export default function MyAgentDetailPage() {
             <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-white tracking-widest uppercase">PERMISSIONS & LIMITS</span>
-                <button type="button" onClick={() => { setShowSessionModal(true); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">EDIT SESSION</button>
+                <button type="button" onClick={() => { setShowSessionModal(true); setSessionError(null); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">EDIT SESSION</button>
               </div>
 
               {activeSession ? (
@@ -955,18 +984,27 @@ export default function MyAgentDetailPage() {
               <div className="flex flex-wrap gap-1.5">
                 {PROTOCOL_OPTIONS.map((p) => {
                   const active = sessionForm.allowedProtocols.includes(p.id);
+                  const disabled = !p.verified;
                   return (
                     <button
                       key={p.id}
                       type="button"
+                      disabled={disabled}
                       onClick={() => toggleProtocol(p.id)}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled).` : undefined}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-[#111] text-gray-600 border-[#222] cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
                     >
                       {p.label}
+                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying…)</span>}
                     </button>
                   );
                 })}
               </div>
+              {!PROTOCOL_OPTIONS.some((p) => p.verified) && (
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Protocols are recognized but not yet verified for autonomous execution (verified ≠ enabled). You can create the session with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
+                </p>
+              )}
               <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
             </div>
 
@@ -1013,6 +1051,13 @@ export default function MyAgentDetailPage() {
                 className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
               />
             </div>
+
+            {/* Inline registry-error (422) — user-facing, no stack trace */}
+            {sessionError && (
+              <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3 py-2 text-[11px] text-red-300 leading-relaxed">
+                {sessionError}
+              </div>
+            )}
 
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={() => setShowSessionModal(false)} disabled={sessionLoading} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>

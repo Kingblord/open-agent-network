@@ -31,6 +31,11 @@ const logger = createStructuredLogger('api.agents.sessions');
  *   - After `create` the session is REGISTERED with the Altana adapter seam so
  *     it moves PENDING → ACTIVE and the bounded authority is actually live.
  *   - Unknown protocols/tokens are denied (POLICY_DENIED / TOKEN_NOT_ALLOWED).
+ *
+ * Registry failures (unverified/unknown contract or token) are surfaced as
+ * 422 client errors with a user-facing message — never a 500. The UI greys
+ * out unverified protocols, but a stale/unknown selection must still get a
+ * readable error rather than a stack-trace crash.
  */
 
 const PROTOCOL_ROLES: Record<string, string> = {
@@ -51,6 +56,16 @@ function resolveAllowedContracts(
       throw new BANError(
         ErrorCode.POLICY_DENIED,
         `Protocol '${pid}' is not registered for session contracts`,
+        { correlationId: getCorrelationId() }
+      );
+    }
+    const deployment = banDeployments.get(id);
+    // Fail to a user-facing 422 BEFORE requireAddress: recognized-but-unverified
+    // deployments are not executable (mustflow §10-§13 verified ≠ enabled).
+    if (!deployment || !deployment.verified || !deployment.contracts[role]) {
+      throw new BANError(
+        ErrorCode.CONTRACT_NOT_ALLOWED,
+        `Protocol '${pid}' is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`,
         { correlationId: getCorrelationId() }
       );
     }
@@ -120,8 +135,29 @@ export async function POST(
     }
 
     // mustflow §6: resolve user choices through the fail-closed registries.
-    const allowedContracts = resolveAllowedContracts(body.allowedProtocols, body.allowedContracts);
-    const allowedTokens = resolveAllowedTokens(body.allowedTokens, body.allowedTokensLegacy ?? []);
+    let allowedContracts: string[];
+    try {
+      allowedContracts = resolveAllowedContracts(body.allowedProtocols, body.allowedContracts);
+    } catch (contractErr) {
+      // User-facing 422 with the exact protocol/token message, no stack trace.
+      const message =
+        contractErr instanceof BANError ? contractErr.message : 'One or more selected protocols is not verified for autonomous execution';
+      return errorResponse(422, message, {
+        code: ErrorCode.CONTRACT_NOT_ALLOWED,
+        correlationId: getCorrelationId(),
+      });
+    }
+    let allowedTokens: string[];
+    try {
+      allowedTokens = resolveAllowedTokens(body.allowedTokens, body.allowedTokensLegacy ?? []);
+    } catch (tokenErr) {
+      const message =
+        tokenErr instanceof BANError ? tokenErr.message : 'One or more selected tokens is not registered in the BAN token registry';
+      return errorResponse(422, message, {
+        code: ErrorCode.TOKEN_NOT_ALLOWED,
+        correlationId: getCorrelationId(),
+      });
+    }
 
     const manager = sessionManagerFactory();
     const session = await manager.create({

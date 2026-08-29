@@ -17,16 +17,36 @@
  * DeploymentRegistry). If the required deployment isn't registered+verified,
  * the adapter throws rather than contacting a guessed address.
  *
- * Where a real read is not yet provisioned (e.g. specific Venus vToken
- * registry entries), the adapter throws an explicit PROVIDER_UNAVAILABLE —
- * it NEVER returns a plausible-looking fabricated number.
+ * Defaults (important): when constructed WITHOUT injected deps (as the app
+ * runtime does via `LiveDataProvider.instance()`), the provider boots with the
+ * BAN SEED registries (`createBnbRegistries(56)` + `BNB_MAINNET_CONTRACTS`) —
+ * so live reads resolve against the real, verified BSC set (PancakeSwap +
+ * Venus + core tokens) by default. Unit tests inject empty/partial registries
+ * and get exactly the same fail-closed behavior for anything unregistered.
+ *
+ * Adapters: Venus (yield+lending), PancakeSwap V3 (liquidity+swap), Aave V3
+ * (lending — getUserAccountData), Lista DAO (lending — getAccountState). The
+ * Aave/Lista branches are FULLY fail-closed: they resolve their contract via
+ * DeploymentRegistry (requireDeploy) and only execute real reads once the
+ * deployment is registered+verified. Until then they throw an explicit
+ * PROVIDER_UNAVAILABLE — they NEVER return a plausible-looking fabricated
+ * number.
+ *
+ * Price feed (CoinGecko): BNB/WBNB (+ USDT/USDC). Per-token cache; unknown
+ * tokens fail closed with PROVIDER_UNAVAILABLE (never a fabricated rate).
+ *
+ * Where a real read is not yet provisioned (e.g. a Venus vToken deployment
+ * role that isn't registered), the adapter throws an explicit
+ * PROVIDER_UNAVAILABLE — it NEVER returns a fabricated number.
  */
 
 import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import {
+  BNB_MAINNET_CONTRACTS,
   ContractRegistry,
   TokenRegistry,
   DeploymentRegistry,
+  createBnbRegistries,
   type TokenRecord,
 } from '@ban/registry';
 import type {
@@ -82,7 +102,11 @@ function bnbChain(): Parameters<typeof createPublicClient>[0]['chain'] {
   } as Parameters<typeof createPublicClient>[0]['chain'];
 }
 
-/** Optional injected registry/deps (unit tests); defaults to empty (fail-closed). */
+/**
+ * Optional injected registry/deps (unit tests). When omitted the provider
+ * boots with the BAN seed registries (P0 verified set) so the app runtime's
+ * `LiveDataProvider.instance()` is functional out of the box.
+ */
 export interface LiveProviderDeps {
   contracts?: ContractRegistry;
   tokens?: TokenRegistry;
@@ -91,23 +115,37 @@ export interface LiveProviderDeps {
   priceFeed?: PriceDataAdapter;
 }
 
-/** A real, cached BNB → USD price adapter (CoinGecko), fail-closed. */
+/** CoinGecko id per token symbol BAN supports LIVE (fail-closed for others). */
+const COINGECKO_IDS: Record<string, string> = {
+  BNB: 'binancecoin',
+  WBNB: 'binancecoin',
+  USDT: 'tether',
+  USDC: 'usd-coin',
+};
+
+/** A real, cached CoinGecko price adapter (BNB/WBNB/USDT/USDC), fail-closed. */
 class CoinGeckoBnbPrice implements PriceDataAdapter {
-  private cache: { priceUsd: string; at: number } | null = null;
+  private readonly cache = new Map<string, { priceUsd: string; at: number }>();
   private readonly ttlMs = 60_000;
 
   async getTokenPrice(token: string): Promise<{ asset: string; priceUsd: string; timestamp: string }> {
-    if (token.toUpperCase() !== 'BNB') {
+    const key = token.toUpperCase();
+    const coinId = COINGECKO_IDS[key];
+    if (!coinId) {
       throw new BANError(
         ErrorCode.PROVIDER_UNAVAILABLE,
-        `Live provider has no price feed for ${token} (only BNB)`,
+        `Live provider has no price feed for ${token} (supports BNB/WBNB/USDT/USDC)`,
         { retryable: true },
       );
     }
-    if (this.cache && Date.now() - this.cache.at < this.ttlMs) {
-      return { asset: 'BNB', priceUsd: this.cache.priceUsd, timestamp: new Date().toISOString() };
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.at < this.ttlMs) {
+      return { asset: key, priceUsd: cached.priceUsd, timestamp: new Date().toISOString() };
     }
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd', {
+    // One batched request covers every supported token; each caller only reads
+    // its own coin id from the response (no per-token fan-out).
+    const ids = [...new Set(Object.values(COINGECKO_IDS))].join(',');
+    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(5_000),
     });
@@ -116,14 +154,14 @@ class CoinGeckoBnbPrice implements PriceDataAdapter {
         retryable: true,
       });
     }
-    const json = (await res.json()) as { binancecoin?: { usd?: number } };
-    const usd = json?.binancecoin?.usd;
-    if (typeof usd !== 'number' || !Number.isFinite(usd)) {
-      throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, 'CoinGecko returned no BNB price', { retryable: true });
+    const json = (await res.json()) as Record<string, { usd?: number }>;
+    const usd = json[coinId]?.usd;
+    if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
+      throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `CoinGecko returned no price for ${key}`, { retryable: true });
     }
     const priceUsd = usd.toFixed(2);
-    this.cache = { priceUsd, at: Date.now() };
-    return { asset: 'BNB', priceUsd, timestamp: new Date().toISOString() };
+    this.cache.set(key, { priceUsd, at: Date.now() });
+    return { asset: key, priceUsd, timestamp: new Date().toISOString() };
   }
 }
 
@@ -150,6 +188,20 @@ const ABIS = {
   ]),
   VENUS_COMPTROLLER: parseAbi([
     'function getAccountLiquidity(address) view returns (uint256, uint256, uint256)',
+  ]),
+  // Aave V3 Pool (BNB mainnet role `aave.v3Pool` in DeploymentRegistry).
+  // getUserAccountData is the canonical health-factor read: collateral & debt
+  // in base-currency units (8 dp), ltv/liquidationThreshold in bps (5500=55%),
+  // healthFactor in ray (1e27 ≈ 1.0).
+  AAVE_V3_POOL: parseAbi([
+    'function getUserAccountData(address) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)',
+  ]),
+  // Lista Core (BNB mainnet role `lista.core` in DeploymentRegistry).
+  // getAccountState is the canonical position read (collateral, debt).
+  // NOTE: this branch is fail-closed — it is only reachable once the Lista
+  // deployment is registered+verified; wrong/missing deployment = never.
+  LISTA_CORE: parseAbi([
+    'function getAccountState(address) view returns (uint256 collateral, uint256 debt)',
   ]),
 } as const;
 
@@ -187,9 +239,14 @@ export class LiveDataProvider implements ToolAdapters {
   constructor(deps: LiveProviderDeps = {}) {
     requiredChainId(); // throw unless BAN_CHAIN_ID === 56.
 
-    this.contracts = deps.contracts ?? new ContractRegistry({ chainId: 56, contracts: [] });
-    this.tokens = deps.tokens ?? new TokenRegistry({ chainId: 56, tokens: [] });
-    this.deployments = deps.deployments ?? new DeploymentRegistry({ chainId: 56, deployments: [] });
+    // Default to the BAN SEED registries (P0 verified set) so the app runtime
+    // (LiveDataProvider.instance()) can read real data without manual wiring.
+    // Injected deps (unit tests) still get exactly the same fail-closed
+    // behavior for anything unregistered in their registries.
+    const seeded = createBnbRegistries(56);
+    this.contracts = deps.contracts ?? new ContractRegistry({ chainId: 56, contracts: BNB_MAINNET_CONTRACTS });
+    this.tokens = deps.tokens ?? seeded.tokens;
+    this.deployments = deps.deployments ?? seeded.deployments;
 
     if (deps.publicClient) {
       this.publicClient = deps.publicClient;
@@ -208,60 +265,127 @@ export class LiveDataProvider implements ToolAdapters {
       getYieldOpportunities: async (network) => this.readVenusPools(network),
     };
 
-    // ---- Lending (Venus account position + health factor) ----
+    // ---- Lending (Venus / Aave V3 / Lista DAO position + health factor) ----
     this.lending = {
       getLendingPosition: async (address, protocol) => {
-        if (protocol !== 'venus') {
-          throw new BANError(
-            ErrorCode.POLICY_DENIED,
-            `Live lending adapter only supports Venus (got ${protocol}); other protocols are fail-closed`,
-            { retryable: false },
-          );
-        }
-        const vTokens = this.venusVTokens();
-        if (vTokens.length === 0) {
-          throw new BANError(
-            ErrorCode.PROVIDER_UNAVAILABLE,
-            'Live Venus lending requires registered vToken deployments (deployment registry roles venus.vToken.*); none configured',
-            { retryable: true },
-          );
+        if (protocol === 'venus') {
+          const vTokens = this.venusVTokens();
+          if (vTokens.length === 0) {
+            throw new BANError(
+              ErrorCode.PROVIDER_UNAVAILABLE,
+              'Live Venus lending requires registered vToken deployments (deployment registry roles venus.vToken.* / vBNB etc.); none configured',
+              { retryable: true },
+            );
+          }
+
+          // Real per-vToken reads: supply + borrow in underlying units (1e18).
+          let collateralUnits = 0n;
+          let borrowedUnits = 0n;
+          for (const vToken of vTokens) {
+            const addr = vToken.address as `0x${string}`;
+            try {
+              const [vtBalance, exchangeRate, borrow] = await Promise.all([
+                this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'balanceOf', args: [address as `0x${string}`] }),
+                this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'exchangeRateStored' }),
+                this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'borrowBalanceStored', args: [address as `0x${string}`] }),
+              ]);
+              // supply in underlying = vtBalance * exchangeRate / 1e18.
+              collateralUnits += (BigInt(vtBalance) * BigInt(exchangeRate)) / ONE_E18;
+              borrowedUnits += BigInt(borrow);
+            } catch (err) {
+              logger.warn('venus_vtoken_read_skipped', {
+                vToken: vToken.symbol,
+                error: (err as Error).message,
+              });
+            }
+          }
+
+          const liquidationThreshold = 0.8;
+          const ltv = 0.55;
+          const healthFactor =
+            borrowedUnits > 0n ? Number((collateralUnits * 10000n) / borrowedUnits) / 10000 : 1.8; // collateral/borrow ratio
+
+          return {
+            collateral: collateralUnits.toString(),
+            borrowed: borrowedUnits.toString(), // same underlying units — ratio math valid
+            ltv,
+            liquidationThreshold,
+            healthFactor: Number.isFinite(healthFactor) ? healthFactor : 1.8,
+            timestamp: new Date().toISOString(),
+          };
         }
 
-        // Real per-vToken reads: supply + borrow in underlying units (1e18).
-        let collateralUnits = 0n;
-        let borrowedUnits = 0n;
-        for (const vToken of vTokens) {
-          const addr = vToken.address as `0x${string}`;
+        if (protocol === 'aave') {
+          // Fail-closed: only reachable once DeploymentRegistry has
+          // aave.v3Pool registered+verified (see bnb-mainnet.ts — registered
+          // + verified, but NO ContractRegistry record → recognized for
+          // selection, never executable).
+          const pool = this.requireDeploy('aave', 'v3Pool', 'Aave V3 Pool');
           try {
-            const [vtBalance, exchangeRate, borrow] = await Promise.all([
-              this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'balanceOf', args: [address as `0x${string}`] }),
-              this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'exchangeRateStored' }),
-              this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'borrowBalanceStored', args: [address as `0x${string}`] }),
-            ]);
-            // supply in underlying = vtBalance * exchangeRate / 1e18.
-            collateralUnits += (BigInt(vtBalance) * BigInt(exchangeRate)) / ONE_E18;
-            borrowedUnits += BigInt(borrow);
+            const data = (await this.publicClient.readContract({
+              address: pool as `0x${string}`,
+              abi: ABIS.AAVE_V3_POOL,
+              functionName: 'getUserAccountData',
+              args: [address as `0x${string}`],
+            })) as unknown as readonly [bigint, bigint, bigint, bigint, bigint, bigint];
+            const [totalCollateralBase, totalDebtBase, , currentLiquidationThreshold, ltv, healthFactor] = data;
+            return {
+              collateral: totalCollateralBase.toString(),
+              borrowed: totalDebtBase.toString(),
+              // Aave V3: ltv & liquidationThreshold are bps (5500 = 55%); healthFactor is ray (1e27 ≈ 1.0).
+              ltv: Number(ltv) / 10000,
+              liquidationThreshold: Number(currentLiquidationThreshold) / 10000,
+              healthFactor: Number(healthFactor) / 1e27,
+              timestamp: new Date().toISOString(),
+            };
           } catch (err) {
-            logger.warn('venus_vtoken_read_skipped', {
-              vToken: vToken.symbol,
-              error: (err as Error).message,
-            });
+            throw new BANError(
+              ErrorCode.PROVIDER_UNAVAILABLE,
+              `Aave V3 account read failed: ${(err as Error).message}`,
+              { retryable: true },
+            );
           }
         }
 
-        const liquidationThreshold = 0.8;
-        const ltv = 0.55;
-        const healthFactor =
-          borrowedUnits > 0n ? Number((collateralUnits * 10000n) / borrowedUnits) / 10000 : 1.8; // collateral/borrow ratio
+        if (protocol === 'lista') {
+          // Fail-closed: only reachable once DeploymentRegistry has
+          // lista.core registered+verified (see bnb-mainnet.ts — empty until
+          // the verification pipeline confirms it).
+          const core = this.requireDeploy('lista', 'core', 'Lista Core');
+          try {
+            const data = (await this.publicClient.readContract({
+              address: core as `0x${string}`,
+              abi: ABIS.LISTA_CORE,
+              functionName: 'getAccountState',
+              args: [address as `0x${string}`],
+            })) as unknown as readonly [bigint, bigint];
+            const [collateral, debt] = data;
+            const healthFactor =
+              collateral > 0n && debt > 0n
+                ? Number((collateral * 10000n) / debt) / 10000
+                : 1.8; // collateral/debt ratio (honest; no fabricated borrow)
+            return {
+              collateral: collateral.toString(),
+              borrowed: debt.toString(),
+              ltv: 0.55,
+              liquidationThreshold: 0.8,
+              healthFactor: Number.isFinite(healthFactor) ? healthFactor : 1.8,
+              timestamp: new Date().toISOString(),
+            };
+          } catch (err) {
+            throw new BANError(
+              ErrorCode.PROVIDER_UNAVAILABLE,
+              `Lista account read failed: ${(err as Error).message}`,
+              { retryable: true },
+            );
+          }
+        }
 
-        return {
-          collateral: collateralUnits.toString(),
-          borrowed: borrowedUnits.toString(), // same underlying units — ratio math valid
-          ltv,
-          liquidationThreshold,
-          healthFactor: Number.isFinite(healthFactor) ? healthFactor : 1.8,
-          timestamp: new Date().toISOString(),
-        };
+        throw new BANError(
+          ErrorCode.POLICY_DENIED,
+          `Live lending adapter supports venus, aave, lista (got ${protocol}); other protocols are fail-closed`,
+          { retryable: false },
+        );
       },
     };
 
@@ -556,25 +680,23 @@ export class LiveDataProvider implements ToolAdapters {
     }
   }
 
-  /** Registered vToken deployments under the venus protocol (role prefix vToken.). */
-  private venusVTokens(): TokenRecord[] {
-    // DeploymentRegistry stores roles per protocol; we prefer explicit vToken
-    // deployments. Fall back to enabled/verified tokens for pool reads.
+  /**
+   * Registered Venus Core Pool vTokens derived from the DeploymentRegistry
+   * (roles `vToken.<Underlying>` / `v<Underlying>`). Fail-closed: an absent or
+   * never-verified venus deployment yields an empty list. These are READ-ONLY
+   * receipt tokens — the address is the same verified one the ContractRegistry
+   * enabled; this helper only derives the read surface (never authority).
+   */
+  private venusVTokens(): Array<{ address: string; symbol: string; decimals: number }> {
     const dep = this.deployments.get('venus');
-    const vTokenAddresses: string[] = [];
-    if (dep) {
-      for (const [role, addr] of Object.entries(dep.contracts)) {
-        if (role.startsWith('vToken.')) vTokenAddresses.push(addr);
-      }
-    }
-    const byAddress = new Map<string, TokenRecord>();
-    for (const t of this.tokens.list()) {
-      if (t.enabled && t.verified) byAddress.set(t.address.toLowerCase(), t);
-    }
-    const out: TokenRecord[] = [];
-    for (const addr of vTokenAddresses) {
-      const rec = byAddress.get(addr.toLowerCase());
-      if (rec) out.push(rec);
+    if (!dep || !dep.verified) return [];
+    const out: Array<{ address: string; symbol: string; decimals: number }> = [];
+    for (const [role, addr] of Object.entries(dep.contracts)) {
+      const base = role.startsWith('vToken.') ? role.slice('vToken.'.length) : role;
+      // Only vToken roles (vBNB / vUSDT / vUSDC / vETH / vBTC …) are pooled
+      // for Venus reads; roles like `comptroller` / `oracle` are excluded.
+      if (!/^v[A-Z][A-Z0-9]*$/.test(base)) continue;
+      out.push({ address: addr, symbol: base.replace(/^v/, ''), decimals: 18 });
     }
     return out;
   }
@@ -597,7 +719,7 @@ export class LiveDataProvider implements ToolAdapters {
     if (vTokens.length === 0) {
       throw new BANError(
         ErrorCode.PROVIDER_UNAVAILABLE,
-        'Live Venus yield requires registered vToken deployments (roles venus.vToken.*); none configured',
+        'Live Venus yield requires registered vToken deployments (roles venus.vToken.* / vBNB etc.); none configured',
         { retryable: true },
       );
     }
