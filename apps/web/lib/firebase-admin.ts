@@ -20,9 +20,40 @@ const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-function normalizePrivateKey(key: string): string {
-  // server env vars are often escaped as literal \n
-  return key.replace(/\\\\n/g, '\\n');
+/**
+ * Normalizes FIREBASE_PRIVATE_KEY into a PEM string that firebase-admin's
+ * cert() accepts. Supports three formats so Vercel env vars never fight us:
+ *
+ *   1. Plain PEM (multi-line)                    -> passed through
+ *   2. PEM with escaped "\n" (single-line env)   -> \n unescaped
+ *   3. Base64-encoded PEM (single-line env)      -> decoded, then \n unescaped
+ *
+ * If the value is neither PEM nor decodable base64, it is returned as-is
+ * (fail-open on format, so the original error from cert() surfaces instead of
+ * a confusing decode error).
+ */
+export function normalizePrivateKey(key: string): string {
+  const trimmed = key.trim();
+
+  const unescape = (pem: string) => pem.replace(/\\n/g, '\n');
+
+  // 1) Already PEM (multi-line or escaped single-line) — just unescape.
+  if (/-----BEGIN (RSA )?PRIVATE KEY-----/.test(trimmed)) {
+    return unescape(trimmed);
+  }
+
+  // 2) Base64-encoded PEM (single-line) — decode and re-normalize.
+  try {
+    const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+    if (/-----BEGIN (RSA )?PRIVATE KEY-----/.test(decoded)) {
+      return unescape(decoded);
+    }
+  } catch {
+    // Not valid base64 — fall through to pass-through below.
+  }
+
+  // 3) Unknown format — pass through (existing behavior).
+  return unescape(trimmed);
 }
 
 // Cache the singleton app reference across hot reloads / repeated calls.

@@ -52,6 +52,28 @@ function makeProposal(overrides: Partial<ActionProposal> = {}): ActionProposal {
   };
 }
 
+/** Assert a thrown BANError carries the exact ErrorCode (not the message). */
+function throwsCode(fn: () => unknown, code: ErrorCode): void {
+  try {
+    fn();
+  } catch (err) {
+    expect((err as BANError).code).toBe(code);
+    return;
+  }
+  throw new Error(`expected function to throw BANError ${code}, but it did not throw`);
+}
+
+/** Assert a rejected promise rejects with a BANError carrying the exact ErrorCode. */
+async function rejectsCode(promise: Promise<unknown>, code: ErrorCode): Promise<void> {
+  try {
+    await promise;
+  } catch (err) {
+    expect((err as BANError).code).toBe(code);
+    return;
+  }
+  throw new Error(`expected promise to reject with BANError ${code}, but it did not reject`);
+}
+
 describe('SessionAuthorityResolver', () => {
   it('resolves an ACTIVE, unexpired, matching session', () => {
     const r = new SessionAuthorityResolver();
@@ -61,18 +83,18 @@ describe('SessionAuthorityResolver', () => {
   it('rejects a sessionId mismatch', () => {
     const r = new SessionAuthorityResolver();
     const p = makeProposal({ sessionId: 'sess_other' });
-    expect(() => r.resolve(p, makeSession())).toThrowError(ErrorCode.SESSION_REVOKED);
+    throwsCode(() => r.resolve(p, makeSession()), ErrorCode.SESSION_REVOKED);
   });
 
   it('rejects a non-ACTIVE session', () => {
     const r = new SessionAuthorityResolver();
-    expect(() => r.resolve(makeProposal(), makeSession({ status: 'REVOKED' }))).toThrowError(ErrorCode.SESSION_REVOKED);
+    throwsCode(() => r.resolve(makeProposal(), makeSession({ status: 'REVOKED' })), ErrorCode.SESSION_REVOKED);
   });
 
   it('rejects an expired session', () => {
     const r = new SessionAuthorityResolver();
     const s = makeSession({ expiresAt: new Date(Date.now() - 10_000).toISOString() });
-    expect(() => r.resolve(makeProposal(), s)).toThrowError(ErrorCode.SESSION_EXPIRED);
+    throwsCode(() => r.resolve(makeProposal(), s), ErrorCode.SESSION_EXPIRED);
   });
 });
 
@@ -93,25 +115,25 @@ describe('SessionSigner', () => {
   it('rejects a contract outside the session allowlist', async () => {
     const signer = new SessionSigner(devBackend);
     const p = makeProposal({ contract: '0x9999999999999999999999999999999999999999' });
-    await expect(signer.sign(p, { session: makeSession() })).rejects.toThrowError(ErrorCode.CONTRACT_NOT_ALLOWED);
+    await rejectsCode(signer.sign(p, { session: makeSession() }), ErrorCode.CONTRACT_NOT_ALLOWED);
   });
 
   it('rejects a function outside the session allowlist', async () => {
     const signer = new SessionSigner(devBackend);
     const p = makeProposal({ function: 'selfdestruct' });
-    await expect(signer.sign(p, { session: makeSession() })).rejects.toThrowError(ErrorCode.FUNCTION_NOT_ALLOWED);
+    await rejectsCode(signer.sign(p, { session: makeSession() }), ErrorCode.FUNCTION_NOT_ALLOWED);
   });
 
   it('rejects a token outside the session allowlist', async () => {
     const signer = new SessionSigner(devBackend);
     const p = makeProposal({ token: 'SHIB' });
-    await expect(signer.sign(p, { session: makeSession() })).rejects.toThrowError(ErrorCode.TOKEN_NOT_ALLOWED);
+    await rejectsCode(signer.sign(p, { session: makeSession() }), ErrorCode.TOKEN_NOT_ALLOWED);
   });
 
   it('rejects an amount above the per-transaction cap', async () => {
     const signer = new SessionSigner(devBackend);
     const p = makeProposal({ amount: '999999999999999999999' }); // > 100 cap
-    await expect(signer.sign(p, { session: makeSession() })).rejects.toThrowError(ErrorCode.SPEND_LIMIT_EXCEEDED);
+    await rejectsCode(signer.sign(p, { session: makeSession() }), ErrorCode.SPEND_LIMIT_EXCEEDED);
   });
 
   it('rejects when the registry says the contract/function is not EXECUTE-capable', async () => {
@@ -134,7 +156,7 @@ describe('SessionSigner', () => {
     });
     const signer = new SessionSigner(devBackend);
     // swapExactTokensForTokens is in the session allowlist but NOT EXECUTE-capable in the registry
-    await expect(signer.sign(makeProposal(), { session: makeSession(), contracts })).rejects.toThrowError(ErrorCode.CONTRACT_NOT_ALLOWED);
+    await rejectsCode(signer.sign(makeProposal(), { session: makeSession(), contracts }), ErrorCode.CONTRACT_NOT_ALLOWED);
   });
 
   it('rejects when the registry says the token is not verified/enabled', async () => {
@@ -145,7 +167,7 @@ describe('SessionSigner', () => {
       ],
     });
     const signer = new SessionSigner(devBackend);
-    await expect(signer.sign(makeProposal(), { session: makeSession(), tokens })).rejects.toThrowError(ErrorCode.TOKEN_NOT_ALLOWED);
+    await rejectsCode(signer.sign(makeProposal(), { session: makeSession(), tokens }), ErrorCode.TOKEN_NOT_ALLOWED);
   });
 
   it('refuses to fabricate a signature when no backend is configured', async () => {
@@ -155,6 +177,6 @@ describe('SessionSigner', () => {
 
   it('refuses an empty/blank signature from the backend', async () => {
     const signer = new SessionSigner(async () => ({ signature: '', backend: 'bad', signedAt: new Date().toISOString() }));
-    await expect(signer.sign(makeProposal(), { session: makeSession() })).rejects.toThrowError(ErrorCode.EXECUTION_FAILED);
+    await rejectsCode(signer.sign(makeProposal(), { session: makeSession() }), ErrorCode.EXECUTION_FAILED);
   });
 });
