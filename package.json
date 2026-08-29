@@ -17,5 +17,10 @@
   },
   "dependencies": {
     "firebase-admin": "^14.3.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "jose": "^5.9.6"
+    }
   }
 }

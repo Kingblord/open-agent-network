@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuth as getFirebaseAuth } from 'firebase-admin/auth';
 import { getAdminApp, getAdminDb, collections, isFirebaseAdminConfigured } from '@/lib/firebase-admin';
 import { generateToken, setAuthCookie } from '@/lib/auth';
 import { handleError } from '@/lib/core/errors';
@@ -29,6 +28,13 @@ const logger = createStructuredLogger('api.auth.firebase');
  * keeps the Firebase login path consistent with the legacy JWT login path —
  * otherwise a user who logs in via Firebase can render the UI but every write
  * fails with 401.
+ *
+ * NOTE: firebase-admin/auth is imported lazily (inside the handler) on purpose.
+ * If the module itself fails to LOAD — e.g. the jwks-rsa -> jose ESM/CJS
+ * interop error on older Node runtimes — the failure is caught here and
+ * returned as a machine-readable JSON 503 with the underlying reason, instead
+ * of escaping the route handler and making Next/Vercel render the generic
+ * HTML 500 page (which reads like the endpoint isn't an API at all).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +45,27 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Lazy-load the Admin auth SDK so ANY module-load failure is catchable
+    // and reported as JSON, never an uncaught import-time crash.
+    let loadDetail = '';
+    const authModule = await import('firebase-admin/auth').catch((loadErr: unknown) => {
+      loadDetail = loadErr instanceof Error ? loadErr.message : String(loadErr);
+      logger.error('firebase_admin_auth_load_failed', { detail: loadDetail }, loadErr);
+      return null;
+    });
+
+    if (!authModule) {
+      return NextResponse.json(
+        {
+          error: 'Firebase Admin auth SDK failed to load on the server',
+          code: 'AUTH_SDK_LOAD_FAILED',
+          detail: loadDetail,
+        },
+        { status: 503 }
+      );
+    }
+    const getFirebaseAuth = authModule.getAuth;
 
     const body = await request.json().catch(() => null);
     const parsed = FirebaseAuthSchema.safeParse(body);
