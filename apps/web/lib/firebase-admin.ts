@@ -140,6 +140,8 @@ export const collections = {
   agentEvents: 'agent_events',
   protocolConfigs: 'protocol_configs',
   agentTasks: 'agent_tasks',
+  /** Encrypted per-agent Altana keystores (Admin SDK only; clients denied). */
+  agentKeystores: 'agent_keystores',
 } as const;
 
 // BAN control-plane user document fields.

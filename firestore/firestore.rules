@@ -97,6 +97,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- Agent keystores: Admin SDK only (encrypted per-agent keys) ----
+    // The Admin SDK bypasses rules, so this denies ALL browser/client access
+    // to the encrypted per-agent Altana keys. Trusted workers (deploy route,
+    // run-cycle, signer) read/write this collection server-side only.
+    match /agent_keystores/{agentId} {
+      allow read, write: if false;
+    }
+
     // ---- Developer credits (legacy dummy backwards-compat) ----
     match /developers/{developerId} {
       allow read, write: if request.auth != null && request.auth.uid == developerId;
