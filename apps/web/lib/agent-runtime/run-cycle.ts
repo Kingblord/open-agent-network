@@ -73,6 +73,8 @@ export interface RunCycleOptions {
   strategy?: import('@ban/agent-core').StrategyEngine;
   /** Optional execution backend. When absent, the loop stops at AWAIT_EXECUTION (honest). */
   execute?: (input: { proposal: ActionProposal; session: Session }) => Promise<{ transactionHash: string }>;
+  /** Optional AI-decision listener — persists the brain's real reasoning before a proposal is produced (THINKING stage). */
+  onDecision?: (decision: { status: string; reasoning: string; decisionId?: string }) => void;
 }
 
 async function getSessionForAgent(agentId: string): Promise<Session | null> {
@@ -218,7 +220,29 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // 3) Decide (inside strategy, via injected brain). Re-validated downstream.
     let proposal: ActionProposal | null = null;
     for (const obs of observations) {
-      const resolved = await strategy.decide(obs, agent);
+      const resolved = await strategy.decide(obs, agent, {
+        onDecision: (decision) => {
+          // Persist the AI's REAL reasoning before policy/proposal — this is what
+          // the REVIEW TERMINAL THINKING stage displays. Never fabricated.
+          void persistAuditEvent({
+            type: 'AI_DECISION_CREATED',
+            correlationId,
+            agentId,
+            userId,
+            detail: {
+              status: decision.status,
+              decisionId: decision.decisionId,
+              reasoning: decision.reasoning,
+            },
+          }).catch((err) => {
+            logger.warn('ai_decision_persist_failed', {
+              agentId,
+              correlationId,
+              message: err instanceof Error ? err.message : String(err),
+            });
+          });
+        },
+      });
       if (resolved) {
         proposal = resolved;
         break;

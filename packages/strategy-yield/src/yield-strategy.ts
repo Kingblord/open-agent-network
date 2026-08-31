@@ -1,4 +1,4 @@
-import type { Agent, ActionProposal, Observation } from '@ban/schemas';
+import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
@@ -63,7 +63,7 @@ export class YieldStrategy implements StrategyEngine {
     return [this.observationBuilder.build(agent, candidates, { topN: this.topN })];
   }
 
-  async decide(observation: Observation, agent: Agent): Promise<ActionProposal | null> {
+  async decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null> {
     const capabilities = agent.capabilities.map((c) => c.id);
     const decision = await this.brain.decide({
       agentId: agent.id,
@@ -78,6 +78,7 @@ export class YieldStrategy implements StrategyEngine {
         retryable: false,
       });
     }
+    hooks?.onDecision?.(parsed.data);
     if (parsed.data.status !== 'ACT' || !parsed.data.proposal) return null;
 
     const proposal = ActionProposalSchema.safeParse(parsed.data.proposal);

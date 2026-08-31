@@ -10,6 +10,7 @@ import type {
   Performance,
   AuditEvent,
   PolicyDecision,
+  StrategyDecision,
 } from '@ban/schemas';
 
 /**
@@ -58,7 +59,7 @@ export interface ToolGateway {
 
 export interface StrategyEngine {
   observe(agent: Agent, correlationId: string): Promise<Observation[]>;
-  decide(observation: Observation, agent: Agent): Promise<ActionProposal | null>;
+  decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null>;
 }
 
 export interface PolicyEngine {

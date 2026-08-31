@@ -921,7 +921,7 @@ export default function MyAgentDetailPage() {
         <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-white tracking-widest uppercase">Scheduler Heartbeat</span>
-            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">*/2 min</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">~50s</span>
           </div>
           {latestTick ? (
             <div className="flex items-center justify-between text-xs">
@@ -933,7 +933,7 @@ export default function MyAgentDetailPage() {
             </div>
           ) : (
             <p className="text-xs text-gray-500">
-              No scheduled ticks yet. Create a task — Inngest runs the closed loop every 2 minutes via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
+              No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~50 seconds via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
             </p>
           )}
         </div>

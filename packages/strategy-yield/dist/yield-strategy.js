@@ -43,7 +43,7 @@ export class YieldStrategy {
         const candidates = this.selector.select(riskAdjusted);
         return [this.observationBuilder.build(agent, candidates, { topN: this.topN })];
     }
-    async decide(observation, agent) {
+    async decide(observation, agent, hooks) {
         const capabilities = agent.capabilities.map((c) => c.id);
         const decision = await this.brain.decide({
             agentId: agent.id,
@@ -57,6 +57,7 @@ export class YieldStrategy {
                 retryable: false,
             });
         }
+        hooks?.onDecision?.(parsed.data);
         if (parsed.data.status !== 'ACT' || !parsed.data.proposal)
             return null;
         const proposal = ActionProposalSchema.safeParse(parsed.data.proposal);

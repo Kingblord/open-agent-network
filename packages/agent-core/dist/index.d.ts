@@ -1,4 +1,4 @@
-import type { Agent, Session, Permission, Tool, Observation, ActionProposal, Execution, Position, Performance, AuditEvent, PolicyDecision } from '@ban/schemas';
+import type { Agent, Session, Permission, Tool, Observation, ActionProposal, Execution, Position, Performance, AuditEvent, PolicyDecision, StrategyDecision } from '@ban/schemas';
 /**
  * BAN Core stable interfaces.
  *
@@ -43,7 +43,9 @@ export interface ToolGateway {
 }
 export interface StrategyEngine {
     observe(agent: Agent, correlationId: string): Promise<Observation[]>;
-    decide(observation: Observation, agent: Agent): Promise<ActionProposal | null>;
+    decide(observation: Observation, agent: Agent, hooks?: {
+        onDecision?: (decision: StrategyDecision) => void;
+    }): Promise<ActionProposal | null>;
 }
 export interface PolicyEngine {
     validateAction(proposal: ActionProposal, context: {

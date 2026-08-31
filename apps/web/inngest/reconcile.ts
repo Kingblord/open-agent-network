@@ -13,14 +13,14 @@ const logger = createStructuredLogger('inngest.reconcile');
  * Reconciliation systems for the BAN control plane.
  *
  * 1. banTaskReconcile — "active tasks keep running":
- *    Every 2 minutes, for each ACTIVE agent that still has an ACTIVE task
+ *    Every minute, for each ACTIVE agent that still has an ACTIVE task
  *    (status !== 'FAILED' and expiresAtMs in the future), send a
  *    ban/agent.tick-loop event so the self-sustaining closed loop keeps
  *    ticking for THAT task's agent — even if the original kick was lost
  *    during a redeploy or the cloud cron backstop is not registered.
  *
  * 2. banWalletProvisionSweep — "no deployed agent left without a wallet":
- *    Every 2 minutes, find deployed (non-REVOKED) agents that were not
+ *    Every minute, find deployed (non-REVOKED) agents that were not
  *    provisioned a wallet (missing walletAddress / walletStatus !=
  *    'provisioned') and provision one idempotently via the Firestore-backed,
  *    encrypted per-agent keystore. The derived address (never the key) is
@@ -62,7 +62,7 @@ export const banTaskReconcile = inngest.createFunction(
   {
     id: 'ban-task-reconcile',
     retries: 1,
-    triggers: [{ cron: '*/2 * * * *' }],
+    triggers: [{ cron: '*/1 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {
@@ -105,7 +105,7 @@ export const banWalletProvisionSweep = inngest.createFunction(
   {
     id: 'ban-wallet-provision-sweep',
     retries: 1,
-    triggers: [{ cron: '*/2 * * * *' }],
+    triggers: [{ cron: '*/1 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {

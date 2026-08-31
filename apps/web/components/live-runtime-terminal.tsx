@@ -61,6 +61,8 @@ function detailFor(e: TerminalEvent): string {
   switch (e.eventType) {
     case 'AGENT_OBSERVED':
       return `count=${String(p.count ?? '?')} strategy=${String(p.strategyId ?? '?')}`;
+    case 'AI_DECISION_CREATED':
+      return `status=${String(p.status ?? '?')} reasoning="${String(p.reasoning ?? '').slice(0, 160)}"`;
     case 'AGENT_PASSED':
       return `strategy=${String(p.strategyId ?? '?')} → no action needed`;
     case 'AGENT_PROPOSED':

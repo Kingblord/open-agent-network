@@ -11,7 +11,7 @@
  * The AI receives only precomputed deterministic candidates — it never
  * generates ticks, liquidity amounts, or contract parameters.
  */
-import type { Agent, ActionProposal, Observation } from '@ban/schemas';
+import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import type { StrategyEngine } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { LpRangeCalculator } from './lp-calculator.js';
@@ -38,6 +38,8 @@ export declare class LpStrategy implements StrategyEngine {
     private readonly observationBuilder;
     constructor(deps: LpStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;
-    decide(observation: Observation, agent: Agent): Promise<ActionProposal | null>;
+    decide(observation: Observation, agent: Agent, hooks?: {
+        onDecision?: (decision: StrategyDecision) => void;
+    }): Promise<ActionProposal | null>;
 }
 //# sourceMappingURL=lp-strategy.d.ts.map

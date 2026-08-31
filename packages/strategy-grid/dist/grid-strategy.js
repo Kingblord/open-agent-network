@@ -61,7 +61,7 @@ export class GridStrategy {
         const observation = this.observationBuilder.build(agent, this.state.config, this.state.levels, crossing, candidates, this.state.fills, priceCents, humanReadable);
         return [observation];
     }
-    async decide(observation, agent) {
+    async decide(observation, agent, hooks) {
         const capabilities = agent.capabilities.map((c) => c.id);
         const decision = await this.brain.decide({
             agentId: agent.id,
@@ -73,6 +73,7 @@ export class GridStrategy {
         if (!parsed.success) {
             throw new BANError(ErrorCode.INTERNAL, `Grid strategy brain returned a malformed decision: ${parsed.error.message}`, { retryable: false });
         }
+        hooks?.onDecision?.(parsed.data);
         if (parsed.data.status !== 'ACT' || !parsed.data.proposal)
             return null;
         const proposal = ActionProposalSchema.safeParse(parsed.data.proposal);

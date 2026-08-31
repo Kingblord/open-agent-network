@@ -12,7 +12,7 @@
  * The AI receives only precomputed deterministic grid candidates — it
  * never generates price levels, order sizes, or stop conditions.
  */
-import type { Agent, ActionProposal, Observation } from '@ban/schemas';
+import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
@@ -118,7 +118,7 @@ export class GridStrategy implements StrategyEngine {
     return [observation];
   }
 
-  async decide(observation: Observation, agent: Agent): Promise<ActionProposal | null> {
+  async decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null> {
     const capabilities = agent.capabilities.map((c) => c.id);
     const decision = await this.brain.decide({
       agentId: agent.id,
@@ -135,6 +135,7 @@ export class GridStrategy implements StrategyEngine {
         { retryable: false },
       );
     }
+    hooks?.onDecision?.(parsed.data);
     if (parsed.data.status !== 'ACT' || !parsed.data.proposal) return null;
 
     const proposal = ActionProposalSchema.safeParse(parsed.data.proposal);

@@ -1,4 +1,4 @@
-import type { Agent, ActionProposal, Observation } from '@ban/schemas';
+import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import type { StrategyEngine } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { HealthDataProvider } from './health-data-provider.js';
@@ -36,6 +36,8 @@ export declare class HealthStrategy implements StrategyEngine {
     private readonly observationBuilder;
     constructor(deps: HealthStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;
-    decide(observation: Observation, agent: Agent): Promise<ActionProposal | null>;
+    decide(observation: Observation, agent: Agent, hooks?: {
+        onDecision?: (decision: StrategyDecision) => void;
+    }): Promise<ActionProposal | null>;
 }
 //# sourceMappingURL=health-strategy.d.ts.map

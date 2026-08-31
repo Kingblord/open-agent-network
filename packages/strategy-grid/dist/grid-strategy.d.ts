@@ -12,7 +12,7 @@
  * The AI receives only precomputed deterministic grid candidates — it
  * never generates price levels, order sizes, or stop conditions.
  */
-import type { Agent, ActionProposal, Observation } from '@ban/schemas';
+import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import type { StrategyEngine } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { GridCalculator } from './grid-calculator.js';
@@ -42,7 +42,9 @@ export declare class GridStrategy implements StrategyEngine {
     private state;
     constructor(deps: GridStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;
-    decide(observation: Observation, agent: Agent): Promise<ActionProposal | null>;
+    decide(observation: Observation, agent: Agent, hooks?: {
+        onDecision?: (decision: StrategyDecision) => void;
+    }): Promise<ActionProposal | null>;
     /** Expose grid state for testing. */
     getState(): GridState | null;
     /** Allow tests to inject a custom state. */

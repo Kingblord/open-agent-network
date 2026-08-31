@@ -165,7 +165,7 @@ export const queueWorkers = QUEUES.map((cfg) =>
 // ---------------------------------------------------------------------------
 // M1/M9-M12 — Autonomous agent tick (scheduled closed-loop runner)
 //
-// Runs every 2 minutes (Inngest `cron` trigger — NOT GitHub Actions cron, NOT
+// Runs every minute (Inngest `cron` trigger — NOT GitHub Actions cron, NOT
 // a local timer, NOT Firestore-as-queue: all forbidden by the automation stack
 // table). For each ACTIVE agent (with a provisioned wallet), it enqueues a
 // single closed-loop cycle via runAgentCycle as a durable step.
@@ -180,8 +180,8 @@ export const banAgentTick = inngest.createFunction(
   {
     id: 'ban-agent-tick',
     retries: 1,
-    // Every 2 minutes, aligned for health-factor reaction windows (M1).
-    triggers: [{ cron: '*/2 * * * *' }],
+    // Every minute, aligned for health-factor reaction windows (M1).
+    triggers: [{ cron: '*/1 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {
@@ -213,7 +213,7 @@ export const banAgentTick = inngest.createFunction(
           agentId: agent.id,
           payload: {
             source: 'inngest-cron',
-            schedule: '*/2 * * * *',
+            schedule: '*/1 * * * *',
             cycleResult: result,
           },
         });
@@ -240,7 +240,7 @@ export const banAgentTick = inngest.createFunction(
 // (INNGEST_EVENT_KEY / INNGEST_SIGNING_KEY + /api/inngest). To guarantee the
 // loop "keeps going" even when the cloud cron is not registered, each ACTIVE
 // agent is driven by a self-chaining event: run one honest cycle, write the
-// AGENT_TICK heartbeat, sleep 2 minutes, then send the NEXT ban/agent.tick-loop.
+// AGENT_TICK heartbeat, sleep ~50 seconds, then send the NEXT ban/agent.tick-loop.
 //
 // This is NOT Firestore-as-a-queue: Inngest owns the scheduling/delivery; the
 // Firestore lease (agent_loop_state) only prevents overlapping chains when the
@@ -288,15 +288,15 @@ export const banAgentLoop = inngest.createFunction(
       agentId,
       payload: {
         source: 'inngest-loop',
-        schedule: 'self-chaining every 2m',
+        schedule: 'self-chaining every 50s',
         cycleResult: result,
       },
     });
 
-    // Self-schedule the next tick in 2 minutes (while ACTIVE). This is what
+    // Self-schedule the next tick in ~50 seconds (while ACTIVE). This is what
     // makes the loop "keep going" even when the cloud cron is not registered.
     // The Firestore lease (agent_loop_state) prevents overlapping chains.
-    await step.sleep('before-next-tick', '2m');
+    await step.sleep('before-next-tick', '50s');
     await inngest.send({
       name: 'ban/agent.tick-loop',
       data: {
