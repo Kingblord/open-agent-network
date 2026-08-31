@@ -278,6 +278,30 @@ export async function POST(
       expiresAtMs,
     }, registeredSession.sessionId, runResult);
 
+    // Kick the self-sustaining loop (Inngest ban/agent.tick-loop) so the
+    // agent keeps running every ~2 minutes (heartbeat + next cycles) while
+    // ACTIVE. This is an explicit kick, not Firestore-as-queue: Inngest owns
+    // the schedule/delivery; the Firestore lease prevents overlapping chains.
+    try {
+      const { inngest } = await import('@/inngest/client');
+      await inngest.send({
+        name: 'ban/agent.tick-loop',
+        data: {
+          agentId: id,
+          userId: user.developerId,
+          correlationId,
+        },
+      });
+      logger.info('task_loop_kicked', { agentId: id, taskId: task.taskId, correlationId });
+    } catch (loopErr) {
+      logger.warn('task_loop_kick_failed', {
+        agentId: id,
+        taskId: task.taskId,
+        correlationId,
+        err: loopErr instanceof Error ? loopErr.message : String(loopErr),
+      });
+    }
+
     logger.info('task_created_and_run', {
       agentId: id,
       taskId: task.taskId,

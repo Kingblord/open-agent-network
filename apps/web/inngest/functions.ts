@@ -8,6 +8,7 @@ import { classifyRetry, resolveTestFailure } from '@/lib/jobs/job-common';
 import { BANError, ErrorCode } from '@ban/shared';
 import { agentRegistry } from '@/lib/agent-registry';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
+import { reconcileFunctions } from './reconcile';
 
 const logger = createStructuredLogger('inngest.jobs');
 
@@ -232,4 +233,82 @@ export const banAgentTick = inngest.createFunction(
   }
 );
 
-export const functions = [banPing, banAgentTick, ...queueWorkers];
+// ---------------------------------------------------------------------------
+// M1/M9-M12 — Self-sustaining per-agent loop (ban/agent.tick-loop)
+//
+// The cron above only fires if Inngest Cloud registration is configured
+// (INNGEST_EVENT_KEY / INNGEST_SIGNING_KEY + /api/inngest). To guarantee the
+// loop "keeps going" even when the cloud cron is not registered, each ACTIVE
+// agent is driven by a self-chaining event: run one honest cycle, write the
+// AGENT_TICK heartbeat, sleep 2 minutes, then send the NEXT ban/agent.tick-loop.
+//
+// This is NOT Firestore-as-a-queue: Inngest owns the scheduling/delivery; the
+// Firestore lease (agent_loop_state) only prevents overlapping chains when the
+// cron backstop + task-kick + retry deliveries race. The loop dies when the
+// agent leaves ACTIVE.
+// ---------------------------------------------------------------------------
+
+export const banAgentLoop = inngest.createFunction(
+  {
+    id: 'ban-agent-loop',
+    retries: 1,
+    triggers: [{ event: 'ban/agent.tick-loop' }],
+    concurrency: 3,
+  },
+  async ({ event, step }) => {
+    const agentId = String(event.data?.agentId ?? '');
+    const userId = String(event.data?.userId ?? '');
+    const correlationId = String(event.data?.correlationId ?? `loop_${Date.now()}`);
+    if (!agentId) return { ok: false, reason: 'missing_agent_id' };
+
+    const agent = await agentRegistry.getById(agentId);
+    if (!agent) return { ok: false, reason: 'agent_not_found' };
+
+    // If the agent is not ACTIVE, stop the chain (do not keep scheduling).
+    const status = String(agent.status ?? '');
+    if (status !== 'ACTIVE') {
+      // No heartbeat; the loop dies quietly until a task (re)activates it.
+      return { ok: true, stopped: status, reason: 'agent_not_active' };
+    }
+
+    // Run one honest closed-loop cycle.
+    const result = await runAgentCycle({
+      agentId,
+      userId: String(agent.ownerId ?? userId),
+      correlationId,
+    });
+
+    // Heartbeat: proves the Inngest loop reached THIS agent and records the
+    // real cycle outcome. Written in the exact shape /activity reads so it
+    // shows up in the agent's live feed + Scheduler Heartbeat card.
+    await writeAuditEvent({
+      eventType: 'AGENT_TICK',
+      correlationId,
+      jobId: `tick_${agentId}`,
+      agentId,
+      payload: {
+        source: 'inngest-loop',
+        schedule: 'self-chaining every 2m',
+        cycleResult: result,
+      },
+    });
+
+    // Self-schedule the next tick in 2 minutes (while ACTIVE). This is what
+    // makes the loop "keep going" even when the cloud cron is not registered.
+    // The Firestore lease (agent_loop_state) prevents overlapping chains.
+    await step.sleep('before-next-tick', '2m');
+    await inngest.send({
+      name: 'ban/agent.tick-loop',
+      data: {
+        agentId,
+        userId: String(agent.ownerId ?? userId),
+        correlationId: `loop_${Date.now()}`,
+      },
+    });
+
+    logger.info('agent_loop_ticked', { agentId, correlationId, result });
+    return { ok: true, result };
+  }
+);
+
+export const functions = [banPing, banAgentTick, banAgentLoop, ...queueWorkers, ...reconcileFunctions];

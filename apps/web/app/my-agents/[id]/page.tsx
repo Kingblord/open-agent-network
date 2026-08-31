@@ -12,6 +12,7 @@ import { useSendTransaction } from 'thirdweb/react';
 import { parseEther } from 'viem';
 import { getThirdwebClient } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
+import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
 
 interface Session {
   sessionId: string;
@@ -857,6 +858,38 @@ export default function MyAgentDetailPage() {
           )}
         </div>
 
+        {/* ANALYTICS — live runtime review terminal (real events only) */}
+        {activeViewTab === 'analytics' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
+              <span className="text-[10px] font-mono text-gray-500">live closed-loop stream</span>
+            </div>
+            <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+                <div className="bg-[#161616] rounded-lg p-3">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Confirmed</p>
+                  <p className="text-base font-black text-emerald-400">{confirmedCount}</p>
+                </div>
+                <div className="bg-[#161616] rounded-lg p-3">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Failed</p>
+                  <p className="text-base font-black text-red-400">{failedEvents}</p>
+                </div>
+                <div className="bg-[#161616] rounded-lg p-3">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Realized P&L</p>
+                  <p className="text-base font-black text-white">{realizedPnlUsd != null ? `${renderUsdc(realizedPnlUsd, 2)}` : '—'}</p>
+                </div>
+                <div className="bg-[#161616] rounded-lg p-3">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
+                  <p className="text-base font-black text-white">{confirmedCount}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* WALLET + TOP UP (with transaction confirmation gate) */}
         <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
           <div className="flex items-center justify-between">
@@ -928,7 +961,7 @@ export default function MyAgentDetailPage() {
                 <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
                 <span className="text-white font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
               </div>
-              <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)}</span>
+              <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)} · {(latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage ? 'loop active' : 'heartbeat'}</span>
             </div>
           ) : (
             <p className="text-xs text-gray-500">
