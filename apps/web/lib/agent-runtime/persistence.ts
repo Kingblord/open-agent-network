@@ -17,7 +17,31 @@ import type { AuditEvent, Execution, Position, Performance } from '@ban/schemas'
  *
  * Every write is additive and only records what actually happened. Nothing here
  * fabricates a transaction, a position, or a performance figure.
+ *
+ * Firestore safety: optional fields are often `undefined` on audit events /
+ * records (e.g. `proposalId` on `AGENT_OBSERVED`). Firestore REJECTS documents
+ * that contain `undefined` values with "Cannot use 'undefined' as a Firestore
+ * value". Every write in this module passes through `toFirestoreSafe()`, which
+ * recursively drops `undefined` keys so a missing optional field can never
+ * crash a cycle (this was the cause of `cycle_error:ERR_INTERNAL` on a
+ * successful observe — the audit write failed, not the observation).
  */
+
+/** Recursively remove `undefined` values so Firestore accepts the document. */
+export function toFirestoreSafe<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => toFirestoreSafe(v)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === undefined) continue;
+      out[k] = toFirestoreSafe(v);
+    }
+    return out as T;
+  }
+  return value;
+}
 
 export function auditEventType(value: string): AuditEvent['type'] {
   return value as AuditEvent['type'];
@@ -49,14 +73,17 @@ export async function persistAuditEvent(input: {
     detail: input.detail ?? {},
     createdAt: new Date().toISOString(),
   };
-  await db.collection(collections.auditEvents).add(event);
+  await db.collection(collections.auditEvents).add(toFirestoreSafe(event));
   return event;
 }
 
 /** Persist an execution record (M8). Only a real execution state. */
 export async function persistExecution(execution: Execution): Promise<void> {
   const db = getAdminDb();
-  await db.collection(collections.executions).doc(execution.executionId).set(execution);
+  await db
+    .collection(collections.executions)
+    .doc(execution.executionId)
+    .set(toFirestoreSafe(execution));
 }
 
 /** Fetch an execution by id (for idempotency / reconcile). */
@@ -69,7 +96,10 @@ export async function getExecutionById(executionId: string): Promise<Execution |
 /** Persist a position only when a confirmed execution produced it (never a fabricated one). */
 export async function upsertPosition(position: Position): Promise<void> {
   const db = getAdminDb();
-  await db.collection(collections.positions).doc(position.positionId).set(position);
+  await db
+    .collection(collections.positions)
+    .doc(position.positionId)
+    .set(toFirestoreSafe(position));
 }
 
 export async function listPositions(agentId: string): Promise<Position[]> {
@@ -83,7 +113,10 @@ export async function listPositions(agentId: string): Promise<Position[]> {
 /** Persist a performance rollup. */
 export async function upsertPerformance(performance: Performance): Promise<void> {
   const db = getAdminDb();
-  await db.collection(collections.performance).doc(performance.performanceId).set(performance);
+  await db
+    .collection(collections.performance)
+    .doc(performance.performanceId)
+    .set(toFirestoreSafe(performance));
 }
 
 export async function getPerformanceByAgent(agentId: string): Promise<Performance | null> {
