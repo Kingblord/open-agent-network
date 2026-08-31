@@ -64,6 +64,38 @@ interface ActivityEvent {
   createdAt: string;
 }
 
+// Shape of GET /api/protocols → { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
+interface RegistryContractEntry {
+  id: string;
+  address: string;
+  protocolId: string;
+  name: string;
+  verified: boolean;
+  enabled: boolean;
+  capabilities: string[];
+  integrationStatus: string;
+  reason: string;
+  functions: Array<{ name: string; capability: string }>;
+}
+
+interface RegistryProtocolEntry {
+  id: string;
+  name: string;
+  status: string;
+  official: boolean;
+  priority?: string;
+  integrationStatus: string;
+  reason: string;
+  contracts: RegistryContractEntry[];
+}
+
+interface RegistrySnapshot {
+  chainId: number;
+  generatedAt: string;
+  protocols: RegistryProtocolEntry[];
+}
+
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
   OBSERVATION_CREATED: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
@@ -141,6 +173,8 @@ export default function AgentDetailPage() {
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [performance, setPerformance] = useState<PerformanceData | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [protocolSnapshot, setProtocolSnapshot] = useState<RegistrySnapshot | null>(null);
+  const [protocolSnapshotError, setProtocolSnapshotError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
@@ -149,6 +183,7 @@ export default function AgentDetailPage() {
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (mounted && !loading && !user) router.push('/login'); }, [mounted, user, loading, router]);
   useEffect(() => { if (params.id) { fetchAgent(); fetchPerformance(); fetchActivity(); } }, [params.id]);
+  useEffect(() => { fetchProtocolSnapshot(); }, []);
 
   const fetchAgent = async () => {
     try {
@@ -190,6 +225,24 @@ export default function AgentDetailPage() {
     }
   };
 
+  // Real protocol registry snapshot (GET /api/protocols → buildBnbRegistrySnapshot).
+  const fetchProtocolSnapshot = async () => {
+    try {
+      const response = await fetch('/api/protocols');
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.snapshot) {
+          setProtocolSnapshot(data.snapshot as RegistrySnapshot);
+          return;
+        }
+      }
+      setProtocolSnapshotError('Protocol state snapshot is unavailable right now.');
+    } catch (error) {
+      console.error('Failed to fetch protocol snapshot:', error);
+      setProtocolSnapshotError('Protocol state snapshot is unavailable right now.');
+    }
+  };
+
   const handleDeployAgent = async () => {
     if (!user || !agent) return;
     setDeploying(true);
@@ -203,17 +256,17 @@ export default function AgentDetailPage() {
         const created = data.agent;
         setDeployedAgentId(created.id);
         toast.success({
-          title: 'Agent deployed',
-          description: 'Your copy is being set up. Head to My Agents to configure its session.',
+          title: 'Agent hired',
+          description: 'Your copy is being set up. Head to My Agents to create a task and configure its limits.',
         });
         setTimeout(() => router.push(`/my-agents/${created.id}`), 800);
       } else {
         const error = await response.json();
-        toast.error({ title: 'Deploy failed', description: error.error || 'An unexpected error occurred.' });
+        toast.error({ title: 'Hire failed', description: error.error || 'An unexpected error occurred.' });
       }
     } catch (error) {
       console.error('Deploy error:', error);
-      toast.error({ title: 'Deploy failed', description: 'An unexpected error occurred.' });
+      toast.error({ title: 'Hire failed', description: 'An unexpected error occurred.' });
     } finally {
       setDeploying(false);
     }
@@ -265,6 +318,33 @@ export default function AgentDetailPage() {
     { id: 'strategy', label: 'Strategy' },
     { id: 'activity', label: 'Activity' },
   ];
+
+  // The agent's declared protocols, matched against the live registry snapshot
+  // (never fabricated: protocols without a snapshot entry show as unrecognized).
+  //
+  // Match by registry **id OR display name**, case-insensitive. The snapshot
+  // uses ids (`pancakeswap`, `venus`) while agent templates may store display
+  // names (`PancakeSwap`, `Venus`) — a strict id-only match made verified
+  // protocols render as greyed-out "UNRECOGNIZED" despite being verified.
+  const norm = (s: string) => s.toLowerCase().trim();
+  const snapshotProtocols = protocolSnapshot?.protocols ?? [];
+  const matchesProtocol = (p: { id: string; name: string }, pid: string) =>
+    norm(pid) === norm(p.id) || norm(pid) === norm(p.name);
+  const agentProtocolState: RegistryProtocolEntry[] = snapshotProtocols.filter((p) =>
+    agent.protocols.some((pid) => matchesProtocol(p, pid)),
+  );
+  const unknownProtocols = agent.protocols.filter(
+    (pid) => !snapshotProtocols.some((p) => matchesProtocol(p, pid)),
+  );
+
+  const integrationColor = (status: string) => {
+    switch (status) {
+      case 'EXECUTION_ENABLED': return 'text-green-400 border-green-500/40 bg-green-500/10';
+      case 'SIMULATION': return 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10';
+      case 'READ_ONLY': return 'text-blue-400 border-blue-500/40 bg-blue-500/10';
+      default: return 'text-gray-400 border-gray-600 bg-gray-800/40';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
@@ -359,7 +439,7 @@ export default function AgentDetailPage() {
 
             <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">DEPLOY & HIRE</span>
+                <span className="text-[10px] font-black text-white tracking-widest uppercase">HIRE AGENT</span>
                 <span className="text-xs font-mono font-black text-[#F0B90B]">
                   {agent.costPerExecution != null ? `${agent.costPerExecution} Credits / Run` : 'Cost not set'}
                 </span>
@@ -369,14 +449,14 @@ export default function AgentDetailPage() {
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg space-y-2">
                   <p className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    Agent Deployed to Your Account!
+                    Agent Hired!
                   </p>
-                  <p className="text-[10px] font-mono text-gray-400">Deployed Agent ID: {deployedAgentId}</p>
+                  <p className="text-[10px] font-mono text-gray-400">Hired Agent ID: {deployedAgentId}</p>
                   <button onClick={() => router.push(`/my-agents/${deployedAgentId}`)} className="w-full mt-2 bg-[#F0B90B] text-black font-black text-xs py-2 uppercase tracking-wider">Go to My Agents</button>
                 </div>
               ) : (
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Deploy this BAN agent to your account to configure its scoped session, spend limits, and activate it to start executing on BNB Chain.
+                  Hire this BAN agent to your account to create a task, set its scoped session and spend limits, and let it start executing on BNB Chain.
                 </p>
               )}
 
@@ -384,11 +464,114 @@ export default function AgentDetailPage() {
                 <LoadingButton
                   onClick={handleDeployAgent}
                   loading={deploying}
-                  loadingLabel="Deploying..."
+                  loadingLabel="Hiring..."
                   variant="primary"
                 >
-                  DEPLOY & HIRE AGENT
+                  HIRE AGENT
                 </LoadingButton>
+              )}
+            </div>
+
+            {/* PROTOCOL STATE — real registry snapshot per agent skill (never fabricated). */}
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-white tracking-widest uppercase">PROTOCOL STATE</span>
+                {protocolSnapshot && (
+                  <span className="text-[9px] font-mono text-gray-500">
+                    BNB {protocolSnapshot.chainId} · registry-derived
+                  </span>
+                )}
+              </div>
+
+              {protocolSnapshotError && (
+                <p className="text-xs text-gray-500">{protocolSnapshotError} <button type="button" onClick={fetchProtocolSnapshot} className="text-[#F0B90B] font-black uppercase text-[10px]">Retry</button></p>
+              )}
+
+              {!protocolSnapshotError && protocolSnapshot == null && (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="inline-block animate-spin h-3.5 w-3.5 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
+                  Loading protocol state...
+                </div>
+              )}
+
+              {protocolSnapshot && (
+                <>
+                  {agentProtocolState.length === 0 && unknownProtocols.length === 0 && (
+                    <p className="text-xs text-gray-500">This agent does not declare any protocols for on-chain work.</p>
+                  )}
+
+                  {agentProtocolState.length > 0 && (
+                    <div className="space-y-4">
+                      {agentProtocolState.map((p) => (
+                        <div key={p.id} className="bg-[#161616] rounded-lg border border-[#262626] p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <CryptoIcon symbol={p.name} size={18} />
+                              <span className="text-sm font-black text-white">{p.name}</span>
+                              {p.priority && (
+                                <span className="text-[9px] font-black tracking-wider uppercase bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5 text-gray-400">{p.priority}</span>
+                              )}
+                            </div>
+                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${integrationColor(p.integrationStatus)}`}>
+                              {p.integrationStatus.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-gray-400 leading-relaxed">{p.reason}</p>
+
+                          <div className="space-y-2">
+                            {p.contracts.length === 0 ? (
+                              <p className="text-[11px] text-gray-600">No verified contracts registered for this protocol on the BAN chain.</p>
+                            ) : (
+                              p.contracts.map((c) => (
+                                <div key={c.id} className="bg-black/40 rounded-md border border-[#222] p-2.5 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <span className="text-[11px] font-black text-gray-200">{c.name}</span>
+                                    <span className="flex items-center gap-1.5">
+                                      <span className={`text-[9px] font-black uppercase ${c.verified ? 'text-green-400' : 'text-gray-500'}`}>{c.verified ? 'Verified' : 'Unverified'}</span>
+                                      <span className={`text-[9px] font-black uppercase ${c.enabled ? 'text-[#F0B90B]' : 'text-gray-500'}`}>{c.enabled ? 'Enabled' : 'Not enabled'}</span>
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] font-mono text-gray-500 truncate">{c.address}</p>
+                                  {c.capabilities.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {c.capabilities.map((cap) => (
+                                        <span key={cap} className="text-[9px] font-black text-gray-400 bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5">{cap}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {c.functions.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 pt-0.5">
+                                      {c.functions.map((f) => (
+                                        <span
+                                          key={f.name}
+                                          className={`text-[9px] font-mono px-1.5 py-0.5 border ${f.capability === 'EXECUTE' ? 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/5'}`}
+                                        >
+                                          {f.name} · {f.capability}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {unknownProtocols.length > 0 && (
+                    <div className="space-y-1.5">
+                      {unknownProtocols.map((pid) => (
+                        <div key={pid} className="flex items-center justify-between text-[11px] bg-[#161616] border border-[#262626] rounded-md px-3 py-2">
+                          <span className="text-gray-300">{pid}</span>
+                          <span className="text-[9px] font-black uppercase text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded">Unrecognized</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>

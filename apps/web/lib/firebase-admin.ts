@@ -56,7 +56,7 @@ export function normalizePrivateKey(key: string): string {
   return unescape(trimmed);
 }
 
-// Cache the singleton app reference across hot reloads / repeated calls.
+// Cache the singleton app reference across hot reloads / repeated runs.
 let cachedApp: ReturnType<typeof initializeApp> | null = null;
 
 /**
@@ -88,6 +88,31 @@ export function isFirebaseAdminConfigured(): boolean {
   return Boolean(projectId && clientEmail && privateKey);
 }
 
+/**
+ * Cheap reachability probe for Firestore. Used by tests/tooling to distinguish
+ * "not configured" and "configured but actually unreachable" (no live creds /
+ * no network / perms) from a healthy control-plane, so live-integration tests
+ * can SKIP fast instead of hanging on 30s timeouts.
+ *
+ * Returns false when unconfigured, when the probe throws, or when it does not
+ * complete within `timeoutMs` (default 1500ms).
+ */
+export async function isFirebaseReachable(timeoutMs = 1500): Promise<boolean> {
+  if (!isFirebaseAdminConfigured()) return false;
+  try {
+    const db = getAdminDb();
+    await Promise.race([
+      db.doc('__ban_health__/probe').get(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore probe timed out')), timeoutMs)
+      ),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getAdminDb() {
   if (!isFirebaseAdminConfigured()) {
     throw new Error(
@@ -114,6 +139,7 @@ export const collections = {
   auditEvents: 'audit_events',
   agentEvents: 'agent_events',
   protocolConfigs: 'protocol_configs',
+  agentTasks: 'agent_tasks',
 } as const;
 
 // BAN control-plane user document fields.

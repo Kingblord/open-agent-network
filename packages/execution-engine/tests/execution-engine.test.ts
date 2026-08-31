@@ -127,7 +127,12 @@ describe('GenericExecutionEngine', () => {
     expect(result.status).toBe('CONFIRMED');
     expect(result.executionId).toBe(executionIdFor(proposal.proposalId));
     expect(result.transactionHash).toBe('0xtx_' + proposal.proposalId.slice(-8));
-    expect(result.chainId).toBe(97);
+    // BAN execution chain is BNB Smart Chain MAINNET — the engine's default
+    // chainId is 56 (BAN_CHAIN_ID_DEFAULT). The test previously hardcoded the
+    // retired testnet value 97, which no longer matches the engine or the
+    // fail-closed registries (registry suite: "denies an address actually on
+    // testnet (97) since BAN execution chain is 56").
+    expect(result.chainId).toBe(56);
     // Persisted sequence includes PROPOSED -> EXECUTING -> CONFIRMING -> CONFIRMED
     expect(seen).toContain('PROPOSED');
     expect(seen).toContain('EXECUTING');
@@ -215,7 +220,7 @@ describe('GenericExecutionEngine', () => {
       function: proposal.function,
       parametersHash: 'x',
       transactionHash: null,
-      chainId: 97,
+      chainId: 56,
       gasUsed: null,
       status: 'EXECUTING',
       errorCode: null,

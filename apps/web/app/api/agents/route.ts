@@ -80,6 +80,29 @@ function toPublicAgent(agent: Record<string, unknown>) {
   return out;
 }
 
+/**
+ * Marketplace de-dupe: legacy duplicate registrations (same logical agent
+ * seeded under different ids, e.g. `agent-lp-rebalancer` vs
+ * `agent_lp_rebalancer`) must never render as two cards or double-count the
+ * marketplace total. Group by (name, strategyId, type) and keep the newest
+ * registration per group. Owner-scoped /api/agents?ownerId=me is NOT deduped —
+ * a user may legitimately own multiple copies.
+ */
+function dedupeMarketplaceAgents(agents: Record<string, unknown>[]) {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const agent of agents) {
+    const key = [agent.name, agent.strategyId, agent.type]
+      .map((v) => String(v ?? '').toLowerCase())
+      .join('::');
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing || String(agent.createdAt ?? '') > String(existing.createdAt ?? '')) {
+      byKey.set(key, agent);
+    }
+  }
+  return [...byKey.values()];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request);
@@ -110,8 +133,11 @@ export async function GET(request: NextRequest) {
 
     // Owner-scoped listing (authenticated) may see own agents in any status.
     // Public browsing (unauthenticated) shows only ACTIVE agents with public
-    // fields, so no sensitive/internal data leaks on the marketplace.
-    const payload = requestedOwnerId ? agents : agents.filter((a) => a.status === 'ACTIVE').map(toPublicAgent);
+    // fields — deduped by logical identity so legacy seed duplicates never
+    // appear twice on the marketplace — and no sensitive/internal data leaks.
+    const payload = requestedOwnerId
+      ? agents
+      : dedupeMarketplaceAgents(agents.filter((a) => a.status === 'ACTIVE')).map(toPublicAgent);
 
     logger.info('agents_listed', { correlationId: getCorrelationId(), count: payload.length });
     return NextResponse.json({ ok: true, agents: payload });

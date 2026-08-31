@@ -26,6 +26,9 @@ async function GET(
       tier: developer.tier,
       createdAt: developer.createdAt,
       updatedAt: developer.updatedAt,
+      // Reflect the persisted wallet connection (set via POST /api/developers/wallet)
+      // so every profile consumer (dashboard header, settings card) can show it.
+      walletAddress: developer.walletAddress ?? null,
     });
   } catch (error) {
     console.error('[v0] Get profile error:', error);
@@ -64,6 +67,7 @@ async function PUT(
         email: developer?.email,
         credits: developer?.credits,
         tier: developer?.tier,
+        walletAddress: developer?.walletAddress ?? null,
       },
     });
   } catch (error) {

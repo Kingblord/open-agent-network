@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ConnectButton } from 'thirdweb/react'
 import { useWallet } from '@/lib/wallet-context'
+import { useAuth } from '@/lib/auth-context'
 import { getThirdwebClient } from '@/lib/thirdweb'
 
 /**
@@ -11,10 +12,12 @@ import { getThirdwebClient } from '@/lib/thirdweb'
  * Shows the connected + persisted wallet address. The connection is stored in
  * localStorage (ban.linkedWallet) AND synced to the account record via
  * POST /api/developers/wallet, so a user does not need to reconnect on every
- * visit/session.
+ * visit/session — and the connected address reflects on the user's profile
+ * (user.walletAddress), not just the card.
  */
 export function WalletConnectCard() {
   const { chain, activeAddress, linkedAddress, hydrating, disconnect, setLinkedAddress } = useWallet()
+  const { user } = useAuth()
   const [serverAddress, setServerAddress] = useState<string | null>(null)
 
   // Load the persisted server-side wallet for the logged-in account.
@@ -33,7 +36,15 @@ export function WalletConnectCard() {
     }
   }, [linkedAddress])
 
-  const displayAddress = activeAddress ?? linkedAddress ?? serverAddress ?? null
+  // Prefer live connection, then the auth profile (server-backed), then the
+  // local link, then the fetched server value — so a persisted connection
+  // reflects on profile immediately after login even offline of the GET.
+  const displayAddress =
+    activeAddress ??
+    user?.walletAddress ??
+    linkedAddress ??
+    serverAddress ??
+    null
 
   const shortAddress = (address: string) =>
     `${address.slice(0, 6)}…${address.slice(-4)}`

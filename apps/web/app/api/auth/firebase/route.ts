@@ -29,6 +29,10 @@ const logger = createStructuredLogger('api.auth.firebase');
  * otherwise a user who logs in via Firebase can render the UI but every write
  * fails with 401.
  *
+ * The returned `user` object includes `walletAddress` (the address persisted
+ * on the developer record via POST /api/developers/wallet) so the client can
+ * reflect the connected wallet on the profile immediately after login/exchange.
+ *
  * NOTE: firebase-admin/auth is imported lazily (inside the handler) on purpose.
  * If the module itself fails to LOAD — e.g. the jwks-rsa -> jose ESM/CJS
  * interop error on older Node runtimes — the failure is caught here and
@@ -129,6 +133,8 @@ export async function POST(request: NextRequest) {
           credits: userData.credits ?? 0,
           tier: userData.tier ?? 'free',
           createdAt: userData.createdAt,
+          // Reflect the persisted wallet connection (if any) on the profile.
+          walletAddress: userData.walletAddress ?? null,
         },
       });
     }
@@ -161,6 +167,7 @@ export async function POST(request: NextRequest) {
         credits: 0,
         tier: 'free',
         createdAt: now,
+        walletAddress: null,
       },
     }, { status: 201 });
   } catch (err) {

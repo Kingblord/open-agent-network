@@ -7,6 +7,11 @@ import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import { useToast } from '@/components/toast-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { LoadingButton } from '@/components/ui/loading-button';
+import { TransactionConfirmModal } from '@/components/ui/transaction-confirm-modal';
+import { useSendTransaction } from 'thirdweb/react';
+import { parseEther } from 'viem';
+import { getThirdwebClient } from '@/lib/thirdweb';
+import { useWallet } from '@/lib/wallet-context';
 
 interface Session {
   sessionId: string;
@@ -19,6 +24,30 @@ interface Session {
   perTransactionCap: string;
   expiresAt: string;
   createdAt: string;
+}
+
+interface TaskRecord {
+  taskId: string;
+  agentId: string;
+  ownerId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  config: {
+    network: string;
+    chainId: number;
+    maxTxUsd: string;
+    dailyLimitUsd: string;
+    maxTxWei: string;
+    dailyWei: string;
+    allowedTokens: string[];
+    allowedProtocols: string[];
+    allowedFunctions: string[];
+    riskLevel: string;
+    expiresAtMs: number;
+  };
+  sessionId: string | null;
+  lastRun: { at: string; result: Record<string, unknown> } | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface AgentDetail {
@@ -149,7 +178,6 @@ function getTimelineTitle(eventType: string) {
 }
 
 function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>) {
-  // Only surface real payload fields — never substitute fabricated values.
   switch (eventType) {
     case 'TRANSACTION_SUBMITTED':
     case 'TRANSACTION_CONFIRMED':
@@ -193,9 +221,8 @@ const TOKEN_OPTIONS = [
 // mustflow §10-§13: a protocol may be RECOGNIZED (registered) but NOT yet
 // VERIFIED for autonomous execution. This mirrors the app-side seed truth
 // (@ban/registry bnb-mainnet.ts: deployments are verified:false until the
-// on-chain verification pipeline confirms them). When the catalog pipeline
-// flips a deployment to verified:true, flip it here too so the chip becomes
-// selectable. Unverified protocols are shown greyed-out — never executable.
+// on-chain verification pipeline confirms them). Unverified protocols are
+// shown greyed-out — never executable.
 const PROTOCOL_OPTIONS = [
   { id: 'pancakeswap', label: 'PancakeSwap', verified: false },
   { id: 'venus', label: 'Venus', verified: false },
@@ -203,8 +230,6 @@ const PROTOCOL_OPTIONS = [
 
 const RISK_OPTIONS = ['LOW', 'MEDIUM', 'HIGH'];
 
-// Registry-error codes that should surface inline in the session modal
-// (tailored message) instead of a generic failure toast.
 const REGISTRY_ERROR_CODES = new Set([
   'ERR_CONTRACT_NOT_ALLOWED',
   'ERR_TOKEN_NOT_ALLOWED',
@@ -216,9 +241,13 @@ export default function MyAgentDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const toast = useToast();
+  const wallet = useWallet();
+  const thirdwebClient = useMemo(() => getThirdwebClient(), []);
+  const { mutateAsync: sendTransactionTx } = useSendTransaction();
   const [mounted, setMounted] = useState(false);
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [performance, setPerformance] = useState<PerformanceData | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
@@ -227,7 +256,24 @@ export default function MyAgentDetailPage() {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState<'overview' | 'analytics'>('overview');
-  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [topupOpen, setTopupOpen] = useState(false);
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [topupAmount, setTopupAmount] = useState('0.01');
+  const [topupResult, setTopupResult] = useState<{
+    topupRequestId: string;
+    walletAddress: string;
+    amountBnb: string;
+    network: string;
+    chainId: number;
+    note: string;
+    status?: string;
+    txHash?: string | null;
+  } | null>(null);
+  const [balance, setBalance] = useState<{ ok: boolean; balance: string; address: string; network: string; chainId: number; provisioned: boolean } | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const [sessionForm, setSessionForm] = useState({
     network: 'BNB Smart Chain (56)',
     maxTxUsd: '100',
@@ -247,8 +293,10 @@ export default function MyAgentDetailPage() {
     if (user && params.id) {
       fetchAgent();
       fetchSessions();
+      fetchTasks();
       fetchActivity();
       fetchPerformance();
+      fetchBalance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);
@@ -281,6 +329,18 @@ export default function MyAgentDetailPage() {
     }
   };
 
+  const fetchTasks = async () => {
+    try {
+      const response = await fetch(`/api/agents/${params.id}/tasks`);
+      if (response.ok) {
+        const data = await response.json();
+        setTasks(data.tasks ?? []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error);
+    }
+  };
+
   const fetchActivity = async () => {
     try {
       const response = await fetch(`/api/agents/${params.id}/activity?limit=50`);
@@ -302,6 +362,23 @@ export default function MyAgentDetailPage() {
       }
     } catch (error) {
       console.error('Failed to fetch performance:', error);
+    }
+  };
+
+  const fetchBalance = async (force = false) => {
+    if (balanceLoading) return;
+    if (!force && balance) return;
+    setBalanceLoading(true);
+    try {
+      const response = await fetch(`/api/agents/${params.id}/balance`);
+      if (response.ok) {
+        const data = await response.json();
+        setBalance(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+    } finally {
+      setBalanceLoading(false);
     }
   };
 
@@ -357,69 +434,141 @@ export default function MyAgentDetailPage() {
     }
   };
 
-  const handleCreateSession = async () => {
-    setSessionError(null);
+  const handleCreateTask = async () => {
+    setTaskError(null);
     if (!bnbUsdPrice) {
-      // mustflow §6 — never fabricate a rate; ask the user to retry conversion.
       toast.error({ title: 'Price not available', description: 'Unable to convert USD limits to BNB. Try again.' });
       return;
     }
-    setSessionLoading(true);
+    if (sessionForm.allowedTokens.length === 0 && sessionForm.allowedProtocols.length === 0) {
+      setTaskError('Select at least one allowed token or protocol so the agent has bounded authority to act.');
+      return;
+    }
+    setTaskLoading(true);
     try {
       // mustflow §6 USD-denominated limits → wei (native BNB, 18 decimals).
       const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
       const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
 
       const body = {
-        walletAddress: agent?.walletAddress || '',
-        spendCap: dailyWei, // cumulative daily ceiling (USD-denominated daily limit)
-        perTransactionCap: maxTxWei, // mustflow §6 max transaction
-        allowedContracts: [],
+        maxTxUsd: sessionForm.maxTxUsd,
+        dailyLimitUsd: sessionForm.dailyLimitUsd,
+        maxTxWei,
+        dailyWei,
+        allowedTokens: sessionForm.allowedTokens,
+        allowedProtocols: sessionForm.allowedProtocols,
         allowedFunctions: sessionForm.allowedFunctions
           ? sessionForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
           : [],
-        allowedTokens: sessionForm.allowedTokens,
-        allowedProtocols: sessionForm.allowedProtocols, // resolved server-side via @ban/registry
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
       };
 
-      const response = await fetch(`/api/agents/${params.id}/sessions`, {
+      const response = await fetch(`/api/agents/${params.id}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (response.ok) {
         const data = await response.json();
-        if (data.registration === 'failed') {
-          toast.success({
-            title: 'Session created (pending registration)',
-            description: 'The scoped session was saved. Registration with the session registry is pending — it will activate once confirmed.',
-          });
-        } else {
-          toast.success({
-            title: 'Session created',
-            description: 'Your scoped session and limits have been saved and registered.',
-          });
-        }
+        toast.success({
+          title: 'Task created',
+          description: data.task?.sessionId
+            ? `Task ${data.task.taskId.slice(0, 12)} is running with session ${data.task.sessionId.slice(0, 12)}.`
+            : `Task ${data.task?.taskId ?? ''} created and is running.`,
+        });
+        setShowTaskModal(false);
+        await fetchTasks();
         await fetchSessions();
         await fetchActivity();
-        setShowSessionModal(false);
       } else {
         const data = await response.json().catch(() => null);
         const code = typeof data?.code === 'string' ? data.code : undefined;
         const message = typeof data?.error === 'string' ? data.error : 'An unexpected error occurred.';
         if (code && REGISTRY_ERROR_CODES.has(code)) {
-          setSessionError(message);
+          setTaskError(message);
         } else {
-          toast.error({ title: 'Session failed', description: message });
+          toast.error({ title: 'Task failed', description: message });
         }
       }
     } catch (error) {
-      console.error('Session creation error:', error);
-      toast.error({ title: 'Session failed', description: 'An unexpected error occurred.' });
+      console.error('Task creation error:', error);
+      toast.error({ title: 'Task failed', description: 'An unexpected error occurred.' });
     } finally {
-      setSessionLoading(false);
+      setTaskLoading(false);
+    }
+  };
+
+  const handleTopupConfirm = async () => {
+    if (!agent || !topupAmount) return;
+    setTopupLoading(true);
+    try {
+      const amount = Number(topupAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error({ title: 'Invalid amount', description: 'Enter a positive BNB amount.' });
+        setTopupLoading(false);
+        return;
+      }
+      if (amount > 1000) {
+        toast.error({ title: 'Invalid amount', description: 'Amount exceeds the 1000 BNB sanity limit.' });
+        setTopupLoading(false);
+        return;
+      }
+      if (!wallet.isConnected || !wallet.activeAddress) {
+        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet before topping up.' });
+        setTopupLoading(false);
+        return;
+      }
+
+      // 1) Server-side validation + honest deposit instruction (intent record).
+      const response = await fetch('/api/developers/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agent.id, amountBnb: amount }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!(response.ok && data?.ok)) {
+        const message = data?.error || 'Unable to create top-up instruction.';
+        toast.error({ title: 'Top-up failed', description: message });
+        setTopupLoading(false);
+        return;
+      }
+
+      // 2) One-click send from the CONNECTED wallet (popup -> sign -> broadcast -> wait for hash).
+      let value: bigint;
+      try {
+        value = parseEther(topupAmount);
+      } catch {
+        toast.error({ title: 'Invalid amount', description: 'Enter a valid BNB amount.' });
+        setTopupLoading(false);
+        return;
+      }
+      const txResult = await sendTransactionTx({
+        to: data.walletAddress,
+        value,
+        chain: wallet.chain,
+        client: thirdwebClient,
+      });
+      const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+
+      setTopupResult({
+        ...data,
+        status: txHash ? 'SENT' : data.status,
+        txHash: txHash || null,
+      });
+      toast.success({
+        title: txHash ? 'Transaction sent' : 'Deposit instruction ready',
+        description: txHash
+          ? 'Sent ' + amount + ' BNB to the agent wallet. It counts once confirmed on-chain.'
+          : 'Send the BNB to the agent wallet shown. BAN counts it once confirmed on-chain.',
+      });
+      setTopupOpen(false);
+      fetchBalance(true);
+    } catch (error) {
+      console.error('Topup error:', error);
+      toast.error({ title: 'Top-up failed', description: 'Transaction was cancelled or failed in your wallet.' });
+    } finally {
+      setTopupLoading(false);
     }
   };
 
@@ -435,9 +584,7 @@ export default function MyAgentDetailPage() {
   const toggleProtocol = (id: string) => {
     const option = PROTOCOL_OPTIONS.find((p) => p.id === id);
     if (option && !option.verified) {
-      // mustflow §10-§13: recognized ≠ verified. Keep the chip available for
-      // information but block selection of unverified deployments.
-      setSessionError(
+      setTaskError(
         `${option.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`
       );
       return;
@@ -515,10 +662,8 @@ export default function MyAgentDetailPage() {
     ? Number(activeSession.perTransactionCap) / 1e18
     : null;
 
-  // Count actual failure/denial events from the live event feed.
   const failedEvents = events.filter((e) => e.eventType === 'TRANSACTION_FAILED' || e.eventType === 'ACTION_DENIED').length;
 
-  // Latest scheduler heartbeat (AGENT_TICK) — events are newest-first.
   const latestTick = events.find((e) => e.eventType === 'AGENT_TICK') ?? null;
   const tickStage =
     latestTick && typeof (latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage === 'string'
@@ -529,6 +674,8 @@ export default function MyAgentDetailPage() {
       : tickStage === 'awaited' ? 'Awaiting execution'
         : tickStage === 'decided' ? 'Agent passed'
           : tickStage ? 'Observed' : null;
+
+  const balanceBnb = balance ? Number(balance.balance) : null;
 
   return (
     <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
@@ -545,367 +692,374 @@ export default function MyAgentDetailPage() {
       </header>
 
       <div className="px-5 pt-4 space-y-4">
-        {activeViewTab === 'overview' ? (
-          <>
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <div className="flex items-start gap-4 mb-4">
-                <div className="w-14 h-14 rounded-full bg-[#F0B90B] flex items-center justify-center shrink-0 border-2 border-black">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="black" /><circle cx="15" cy="13" r="1.5" fill="black" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-xl font-black text-[#F0B90B] leading-tight truncate">{agent.name}</h2>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="flex items-center gap-1.5 text-xs font-black text-green-400">
-                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                      {agent.status}
+        {/* Hero card (same as before) */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="w-14 h-14 rounded-full bg-[#F0B90B] flex items-center justify-center shrink-0 border-2 border-black">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="black" /><circle cx="15" cy="13" r="1.5" fill="black" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-black text-[#F0B90B] leading-tight truncate">{agent.name}</h2>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="flex items-center gap-1.5 text-xs font-black text-green-400">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  {agent.status}
+                </span>
+                {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocol}</span>}
+                {agent.riskLevel && (
+                  <span className="text-[9px] font-black tracking-wider uppercase bg-[#F0B90B]/20 text-[#F0B90B] px-2 py-0.5 rounded">
+                    {agent.riskLevel} RISK
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-300 leading-relaxed mb-5">
+            {agent.description || 'Autonomous BNB Chain agent registered on BAN.'}
+          </p>
+
+          <div className="grid grid-cols-3 gap-2 pt-4 border-t border-[#222] text-center">
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
+              <p className="text-base font-black text-white">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
+              <p className="text-base font-black text-white">{tvlDisplay ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">SUCCESS RATE</p>
+              <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-gray-400'}>{successRateText ?? '—'}</p>
+            </div>
+          </div>
+
+          {performance && (
+            <div className="mt-4 pt-3 border-t border-[#222] grid grid-cols-2 gap-2 text-center">
+              <div className="bg-[#161616] rounded-lg p-3">
+                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
+                <p className="text-sm font-black text-white">{performance.totalTrades}</p>
+              </div>
+              <div className="bg-[#161616] rounded-lg p-3">
+                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Avg execution</p>
+                <p className="text-sm font-black text-white">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
+              </div>
+            </div>
+          )}
+
+          {performance && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
+              <span>Mode</span>
+              <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
+            </div>
+          )}
+        </div>
+
+        {/* WALLET + TOP UP (with transaction confirmation gate) */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">AGENT WALLET</span>
+            <span className="text-[9px] font-mono text-gray-500">BNB {balance?.chainId ?? 56}</span>
+          </div>
+
+          {agent.walletAddress ? (
+            <>
+              <div>
+                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Address</p>
+                <p className="text-xs font-mono text-[#F0B90B] break-all">{agent.walletAddress}</p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">Balance</span>
+                <span className="text-lg font-black text-white font-mono">
+                  {balanceLoading && balance == null ? (
+                    <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
+                  ) : balanceBnb != null ? (
+                    `${renderUsdc(balanceBnb, 6)} BNB`
+                  ) : (
+                    '—'
+                  )}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setTopupAmount('0.01'); setTopupResult(null); setTopupOpen(true); }}
+                  className="w-full bg-[#F0B90B] text-black font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:bg-yellow-400 transition"
+                >
+                  TOP UP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fetchBalance(true)}
+                  disabled={balanceLoading}
+                  className="w-full bg-[#1A1A1A] border border-[#333] text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-[#F0B90B]/50 transition disabled:opacity-60"
+                >
+                  REFRESH
+                </button>
+              </div>
+
+              <p className="text-[10px] text-gray-500 leading-relaxed">
+                The agent can only use funds in this dedicated wallet. Top up BNB here so it can pay gas and execute within its session limits.
+              </p>
+            </>
+          ) : (
+            <div className="py-2 space-y-3">
+              <p className="text-sm font-black text-gray-400">No wallet provisioned</p>
+              <p className="text-xs text-gray-500">
+                This agent does not have a dedicated BNB wallet yet. Create a task or contact support to provision it before topping up.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* SCHEDULER HEARTBEAT */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">Scheduler Heartbeat</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">*/2 min</span>
+          </div>
+          {latestTick ? (
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
+                <span className="text-white font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
+              </div>
+              <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              No scheduled ticks yet. Create a task — Inngest runs the closed loop every 2 minutes via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
+            </p>
+          )}
+        </div>
+
+        {/* TASKS — user-visible unit of work */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">TASKS</span>
+            <button
+              type="button"
+              onClick={() => { setShowTaskModal(true); setTaskError(null); fetchBnbPrice(); }}
+              className="bg-[#F0B90B] text-black text-[10px] font-black px-3 py-2 uppercase tracking-wider hover:bg-yellow-400 transition"
+            >
+              CREATE TASK
+            </button>
+          </div>
+
+          {tasks.length === 0 ? (
+            <p className="text-xs text-gray-500 py-2">
+              No tasks yet. Create a task to configure the agent&apos;s bounded authority and start the loop (observe → policy → execute).
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {tasks.slice(0, 5).map((task) => (
+                <div key={task.taskId} className="bg-[#161616] border border-[#262626] rounded-lg p-3.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-black text-[#F0B90B] font-mono">{task.taskId.slice(0, 14)}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${task.status === 'COMPLETED' ? 'text-green-400 border-green-500/40 bg-green-500/10' : task.status === 'FAILED' ? 'text-red-400 border-red-500/40 bg-red-500/10' : 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10'}`}>
+                      {task.status}
                     </span>
-                    {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocol}</span>}
-                    {agent.riskLevel && (
-                      <span className="text-[9px] font-black tracking-wider uppercase bg-[#F0B90B]/20 text-[#F0B90B] px-2 py-0.5 rounded">
-                        {agent.riskLevel} RISK
-                      </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-gray-400">
+                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
+                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
+                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.riskLevel}</span>
+                    {task.config.allowedTokens.length > 0 && (
+                      <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.allowedTokens.join(', ')}</span>
+                    )}
+                    {task.config.allowedProtocols.length > 0 && (
+                      <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
                     )}
                   </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-gray-300 leading-relaxed mb-5">
-                {agent.description || 'Autonomous BNB Chain agent registered on BAN.'}
-              </p>
-
-              <div className="grid grid-cols-3 gap-2 pt-4 border-t border-[#222] text-center">
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
-                  <p className="text-base font-black text-white">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
-                  <p className="text-base font-black text-white">{tvlDisplay ?? '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">SUCCESS RATE</p>
-                  <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-gray-400'}>{successRateText ?? '—'}</p>
-                </div>
-              </div>
-
-              {performance && (
-                <div className="mt-4 pt-3 border-t border-[#222] grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-[#161616] rounded-lg p-3">
-                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
-                    <p className="text-sm font-black text-white">{performance.totalTrades}</p>
-                  </div>
-                  <div className="bg-[#161616] rounded-lg p-3">
-                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Avg execution</p>
-                    <p className="text-sm font-black text-white">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
-                  </div>
-                </div>
-              )}
-
-              {performance && (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
-                  <span>Mode</span>
-                  <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
-                </div>
-              )}
-            </div>
-
-            {/* SCHEDULER HEARTBEAT — proves the Inngest cron reaches this agent (no GitHub Actions). */}
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">Scheduler Heartbeat</span>
-                <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">*/2 min</span>
-              </div>
-              {latestTick ? (
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
-                    <span className="text-white font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
-                  </div>
-                  <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)}</span>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500">
-                  No scheduled ticks yet. Activate the agent — Inngest runs the closed loop every 2 minutes via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
-                </p>
-              )}
-            </div>
-
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">PERMISSIONS & LIMITS</span>
-                <button type="button" onClick={() => { setShowSessionModal(true); setSessionError(null); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">EDIT SESSION</button>
-              </div>
-
-              {activeSession ? (
-                <>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1.5">
-                      <span className="text-gray-400">Spend Cap</span>
-                      <span className="text-white font-black font-mono">
-                        {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : '—'}
+                  {task.lastRun && (
+                    <div className="flex items-center justify-between text-[10px] text-gray-500">
+                      <span className="font-mono">
+                        {task.lastRun.result?.ok === true || (task.lastRun.result && 'stage' in task.lastRun.result)
+                          ? `Last run: ${String(task.lastRun.result.stage ?? 'ok')}`
+                          : task.lastRun.result?.ok === false
+                            ? `Last run failed: ${String(task.lastRun.result.reason ?? '')}`
+                            : 'Last run recorded'}
                       </span>
-                    </div>
-                    <div className="h-1.5 bg-[#222] rounded-full overflow-hidden" />
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Max Tx / Session</span>
-                    <span className="text-white font-black font-mono">
-                      {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-400 block mb-1">Session</span>
-                    <span className="text-white font-black font-mono">{activeSession.sessionId.slice(0, 10)}...</span>
-                    <span className="text-xs text-gray-500 ml-2">({activeSession.status})</span>
-                  </div>
-                  {activeSession.allowedFunctions && activeSession.allowedFunctions.length > 0 && (
-                    <div>
-                      <span className="text-xs text-gray-400 block mb-1.5">Allowed Functions</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {activeSession.allowedFunctions.map((fn) => (
-                          <span key={fn} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-[#333] px-2 py-0.5">{fn}</span>
-                        ))}
-                      </div>
+                      <span>{timeAgo(task.lastRun.at)}</span>
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="pt-2 pb-1">
-                  <p className="text-sm font-black text-gray-400 mb-1">No active session</p>
-                  <p className="text-xs text-gray-500">Create a scoped session to set spend caps and allowed functions.</p>
                 </div>
-              )}
-
-              {failedEvents > 0 && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Failed / denied events</span>
-                  <span className="text-red-400 font-black">{failedEvents}</span>
-                </div>
-              )}
-
-              <div className="pt-2 space-y-2">
-                {agent.status === 'ACTIVE' ? (
-                  <LoadingButton
-                    onClick={() => handleLifecycle('pause')}
-                    loading={actionLoading === 'pause'}
-                    loadingLabel="Pausing..."
-                    variant="primary"
-                  >
-                    PAUSE AGENT
-                  </LoadingButton>
-                ) : agent.status === 'REVOKED' ? (
-                  <button type="button" disabled className="w-full bg-[#1A1A1A] border border-[#333] text-gray-500 font-black text-xs py-3.5 tracking-[0.15em] uppercase cursor-not-allowed">
-                    REVOKED (TERMINAL)
-                  </button>
-                ) : (
-                  <LoadingButton
-                    onClick={() => handleLifecycle('activate')}
-                    loading={actionLoading === 'activate'}
-                    loadingLabel="Activating..."
-                    variant="primary"
-                  >
-                    ACTIVATE AGENT
-                  </LoadingButton>
-                )}
-                {agent.status !== 'REVOKED' && (
-                  <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-[#333] text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
-                    {actionLoading === 'revoke' ? 'REVOKING...' : 'REVOKE ACCESS'}
-                  </button>
-                )}
-              </div>
+              ))}
             </div>
+          )}
+        </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">LIVE ACTIVITY</span>
-                <button type="button" onClick={() => setActiveViewTab('analytics')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
-                  VIEW ALL ANALYTICS
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
-                </button>
+        {/* PERMISSIONS & LIMITS (session view) */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">PERMISSIONS & LIMITS</span>
+            <button type="button" onClick={() => { setShowTaskModal(true); setTaskError(null); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">
+              EDIT SESSION
+            </button>
+          </div>
+
+          {activeSession ? (
+            <>
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-400">Spend Cap</span>
+                  <span className="text-white font-black font-mono">
+                    {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : '—'}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-[#222] rounded-full overflow-hidden" />
               </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Max Tx / Session</span>
+                <span className="text-white font-black font-mono">
+                  {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-gray-400 block mb-1">Session</span>
+                <span className="text-white font-black font-mono">{activeSession.sessionId.slice(0, 10)}...</span>
+                <span className="text-xs text-gray-500 ml-2">({activeSession.status})</span>
+              </div>
+              {activeSession.allowedFunctions && activeSession.allowedFunctions.length > 0 && (
+                <div>
+                  <span className="text-xs text-gray-400 block mb-1.5">Allowed Functions</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeSession.allowedFunctions.map((fn) => (
+                      <span key={fn} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-[#333] px-2 py-0.5">{fn}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="pt-2 pb-1">
+              <p className="text-sm font-black text-gray-400 mb-1">No active session</p>
+              <p className="text-xs text-gray-500">Create a task to set spend caps and allowed functions (a scoped session is created for you).</p>
+            </div>
+          )}
 
-              <div className="space-y-4">
-                {events.length === 0 ? (
-                  <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
-                ) : (
-                  events.slice(0, 6).map((ev) => (
-                    <div key={ev.id} className="flex items-start gap-3 text-xs">
-                      <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">
-                        {getTimelineIcon(ev.eventType)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-0.5">
-                          <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
-                          <span className="text-[10px] font-mono text-gray-500">{formatEventTimestamp(ev.createdAt)}</span>
-                        </div>
-                        <p className="text-gray-400 text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
-                      </div>
+          {failedEvents > 0 && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">Failed / denied events</span>
+              <span className="text-red-400 font-black">{failedEvents}</span>
+            </div>
+          )}
+
+          <div className="pt-2 space-y-2">
+            {agent.status === 'ACTIVE' ? (
+              <LoadingButton
+                onClick={() => handleLifecycle('pause')}
+                loading={actionLoading === 'pause'}
+                loadingLabel="Pausing..."
+                variant="primary"
+              >
+                PAUSE AGENT
+              </LoadingButton>
+            ) : agent.status === 'REVOKED' ? (
+              <button type="button" disabled className="w-full bg-[#1A1A1A] border border-[#333] text-gray-500 font-black text-xs py-3.5 tracking-[0.15em] uppercase cursor-not-allowed">
+                REVOKED (TERMINAL)
+              </button>
+            ) : (
+              <LoadingButton
+                onClick={() => handleLifecycle('activate')}
+                loading={actionLoading === 'activate'}
+                loadingLabel="Activating..."
+                variant="primary"
+              >
+                ACTIVATE AGENT
+              </LoadingButton>
+            )}
+            {agent.status !== 'REVOKED' && (
+              <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-[#333] text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
+                {actionLoading === 'revoke' ? 'REVOKING...' : 'REVOKE ACCESS'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* LIVE ACTIVITY */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">LIVE ACTIVITY</span>
+            <button type="button" onClick={() => setActiveViewTab('analytics')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
+              VIEW ALL ANALYTICS
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {events.length === 0 ? (
+              <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+            ) : (
+              events.slice(0, 6).map((ev) => (
+                <div key={ev.id} className="flex items-start gap-3 text-xs">
+                  <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">
+                    {getTimelineIcon(ev.eventType)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-0.5">
+                      <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
+                      <span className="text-[10px] font-mono text-gray-500">{formatEventTimestamp(ev.createdAt)}</span>
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
+                    <p className="text-gray-400 text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
-              </div>
+        {/* PERFORMANCE */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
+          </div>
 
-              <div className="mb-2">
-                <p className="text-[9px] text-gray-500 font-black uppercase tracking-wider">REALIZED P&L</p>
-                <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-gray-400'}>
-                  {realizedPnlUsd != null ? `$${renderUsdc(realizedPnlUsd)}` : 'Not available'}
-                </p>
-                <p className="text-[10px] text-gray-500 mt-1">
-                  {realizedPnlUsd != null
-                    ? 'Derived from signed on-chain position records.'
-                    : 'P&L appears once BAN records a closed on-chain position for this agent.'}
-                </p>
-              </div>
+          <div className="mb-2">
+            <p className="text-[9px] text-gray-500 font-black uppercase tracking-wider">REALIZED P&L</p>
+            <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-gray-400'}>
+              {realizedPnlUsd != null ? `$${renderUsdc(realizedPnlUsd)}` : 'Not available'}
+            </p>
+            <p className="text-[10px] text-gray-500 mt-1">
+              {realizedPnlUsd != null
+                ? 'Derived from signed on-chain position records.'
+                : 'P&L appears once BAN records a closed on-chain position for this agent.'}
+            </p>
+          </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[#222]">
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p>
-                  <p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p>
-                  <p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Gas (BNB)</p>
-                  <p className="text-sm font-black text-white font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Last executed</p>
-                  <p className="text-sm font-black text-white">{timeAgo(lastExecutedAt)}</p>
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[#222]">
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p>
+              <p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block mb-4">ALLOCATION</span>
-              {hasRealPositions && capitalUsd > 0 ? (
-                <p className="text-xs text-gray-400">
-                  Capital managed: ${renderUsdc(capitalUsd)}. Per-asset allocation is derived from on-chain position records.
-                </p>
-              ) : (
-                <div className="py-3">
-                  <p className="text-sm font-black text-gray-400">No allocation data</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    This agent has no recorded positions, so there is no allocation breakdown to show.
-                  </p>
-                </div>
-              )}
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p>
+              <p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p>
             </div>
-
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block mb-3">HOLDINGS</span>
-              {hasRealPositions && capitalUsd > 0 ? (
-                <p className="text-xs text-gray-400">
-                  ${renderUsdc(capitalUsd)} capital managed. Individual token holdings are listed from position records.
-                </p>
-              ) : (
-                <div className="text-center py-6">
-                  <p className="text-sm font-black text-gray-400">No holdings</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Holdings are shown only when on-chain position records exist for this agent.
-                  </p>
-                </div>
-              )}
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Gas (BNB)</p>
+              <p className="text-sm font-black text-white font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : '—'}</p>
             </div>
-
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block">AI REASONING (LATEST)</span>
-              {(() => {
-                const decision = events.find((e) => e.eventType === 'AI_DECISION_CREATED');
-                if (!decision) {
-                  return (
-                    <div className="text-center py-4">
-                      <p className="text-sm font-black text-gray-400">Not available</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        An AI reasoning record will appear the next time BAN records an AI decision event for this agent.
-                      </p>
-                    </div>
-                  );
-                }
-                const payloadEntries = Object.entries(decision.payload);
-                const summary = payloadEntries.length
-                  ? payloadEntries.map(([k, v]) => `${k}: ${String(v)}`).join(' · ')
-                  : 'AI decision recorded.';
-                return (
-                  <blockquote className="text-xs text-gray-300 italic bg-[#161616] p-3.5 border-l-2 border-[#F0B90B] leading-relaxed">
-                    {summary}
-                  </blockquote>
-                );
-              })()}
+            <div>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Last executed</p>
+              <p className="text-sm font-black text-white">{timeAgo(lastExecutedAt)}</p>
             </div>
-
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-2.5 text-xs">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block mb-1">AGENT INFO</span>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Agent ID</span>
-                <span className="font-mono text-gray-200">{agent.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Created</span>
-                <span className="text-gray-200">{new Date(agent.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Last executed</span>
-                <span className="text-gray-200">{timeAgo(lastExecutedAt)}</span>
-              </div>
-              {agent.aiModel && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Model</span>
-                  <span className="text-gray-200 font-mono">{agent.aiModel}</span>
-                </div>
-              )}
-              {agent.version && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Version</span>
-                  <span className="text-gray-200 font-mono">{agent.version}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-gray-500">Status</span>
-                <span className="text-emerald-400 font-black">{agent.status}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Chain</span>
-                <span className="text-gray-200 font-mono">{agent.chainId ? `BNB ${agent.chainId}` : 'BNB Chain'}</span>
-              </div>
-            </div>
-
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block">RELATED</span>
-              <div className="space-y-2 text-xs">
-                <button type="button" onClick={() => window.open(`https://bscscan.com/address/${agent.walletAddress || ''}`, '_blank')} className="w-full flex items-center justify-between text-gray-300 hover:text-[#F0B90B] transition">
-                  <span>{agent.walletAddress ? 'View on BscScan' : 'No wallet linked'}</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
-                </button>
-                <button type="button" onClick={() => router.push('/history')} className="w-full flex items-center justify-between text-gray-300 hover:text-[#F0B90B] transition">
-                  <span>View Transactions</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
-                </button>
-                <button type="button" onClick={() => router.push('/agents')} className="w-full flex items-center justify-between text-gray-300 hover:text-[#F0B90B] transition">
-                  <span>Agent Marketplace</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
 
-      {showSessionModal && (
+      {/* TASK CONFIG MODAL — captures every config the backend consumes */}
+      {showTaskModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-black text-[#F0B90B] uppercase">Configure Session Limits</h3>
+            <h3 className="text-base font-black text-[#F0B90B] uppercase">Create Task</h3>
+            <p className="text-[11px] text-gray-500 -mt-2">
+              Configure the agent&apos;s bounded authority. A scoped session is created with these exact limits, the agent is activated, and the closed loop runs immediately.
+            </p>
 
             {/* Network */}
             <div>
@@ -1002,7 +1156,7 @@ export default function MyAgentDetailPage() {
               </div>
               {!PROTOCOL_OPTIONS.some((p) => p.verified) && (
                 <p className="text-[10px] text-gray-500 mt-1">
-                  Protocols are recognized but not yet verified for autonomous execution (verified ≠ enabled). You can create the session with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
+                  Protocols are recognized but not yet verified for autonomous execution (verified ≠ enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
                 </p>
               )}
               <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
@@ -1053,15 +1207,84 @@ export default function MyAgentDetailPage() {
             </div>
 
             {/* Inline registry-error (422) — user-facing, no stack trace */}
-            {sessionError && (
+            {taskError && (
               <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3 py-2 text-[11px] text-red-300 leading-relaxed">
-                {sessionError}
+                {taskError}
               </div>
             )}
 
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setShowSessionModal(false)} disabled={sessionLoading} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
-              <LoadingButton onClick={handleCreateSession} loading={sessionLoading} loadingLabel="Saving..." variant="primary" disabled={!bnbUsdPrice}>Save Session</LoadingButton>
+              <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
+              <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice}>Create Task</LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
+      <TransactionConfirmModal
+        open={topupOpen}
+        title="Confirm Top Up"
+        subtitle={`Top up the agent wallet on BNB Smart Chain (chain 56)`}
+        lines={[
+          { label: 'Agent', value: agent.name, tone: 'gold' },
+          { label: 'Recipient', value: agent.walletAddress ?? '—', mono: true },
+          { label: 'Amount', value: `${topupAmount || '0'} BNB`, tone: 'gold', mono: true },
+          { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
+          { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
+        ]}
+        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that."
+        confirmLabel="Confirm Top Up"
+        confirmLoadingLabel="Sending..."
+        confirmLoading={topupLoading}
+        onConfirm={handleTopupConfirm}
+        onClose={() => setTopupOpen(false)}
+      />
+
+      {/* Top-up instruction result */}
+      {topupResult && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            </div>
+            <h3 className="text-base font-black text-emerald-400 uppercase tracking-wider">Deposit instruction</h3>
+            <div className="bg-black/40 border border-[#222] rounded-lg p-4 space-y-3 text-xs">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Request</span>
+                <span className="font-mono font-black text-gray-200">{topupResult.topupRequestId}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Send to</span>
+                <span className="font-mono font-black text-[#F0B90B] text-right break-all">{topupResult.walletAddress}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Amount</span>
+                <span className="font-mono font-black text-gray-200">{topupResult.amountBnb} BNB</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Network</span>
+                <span className="font-mono font-black text-gray-200">BNB Smart Chain ({topupResult.chainId})</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Status</span>
+                <span className="font-black text-[#F0B90B]">{topupResult.status === 'SENT' ? 'SENT (awaiting on-chain confirmation)' : 'INSTRUCTION'}</span>
+              </div>
+              {topupResult.txHash && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Transaction</span>
+                  <span className="font-mono font-black text-[#F0B90B] text-right break-all">{topupResult.txHash.slice(0, 14)}...</span>
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-500 leading-relaxed">{topupResult.note}</p>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setTopupResult(null)} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase">Close</button>
+              {topupResult.txHash ? (
+                <button type="button" onClick={() => { window.open(`https://bscscan.com/tx/${topupResult.txHash}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-[#333] text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View Transaction</button>
+              ) : (
+                <button type="button" onClick={() => { window.open(`https://bscscan.com/address/${topupResult.walletAddress}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-[#333] text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View BscScan</button>
+              )}
             </div>
           </div>
         </div>

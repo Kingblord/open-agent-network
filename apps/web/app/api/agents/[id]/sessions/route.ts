@@ -8,8 +8,8 @@ import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { sessionManagerFactory } from '@/lib/session-manager-factory';
-import { banDeployments, banTokens } from '@/lib/ban-registry';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
+import { resolveAllowedContracts, resolveAllowedTokens } from '@/lib/session-resolution';
 import { BANError, ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.agents.sessions');
@@ -37,66 +37,6 @@ const logger = createStructuredLogger('api.agents.sessions');
  * out unverified protocols, but a stale/unknown selection must still get a
  * readable error rather than a stack-trace crash.
  */
-
-const PROTOCOL_ROLES: Record<string, string> = {
-  pancakeswap: 'v3SwapRouter',
-  venus: 'comptroller',
-};
-
-function resolveAllowedContracts(
-  protocols: string[] | undefined,
-  legacy: string[] | undefined
-): string[] {
-  const contracts = new Set((legacy ?? []).map((c) => c.trim()).filter(Boolean));
-  for (const pid of protocols ?? []) {
-    const id = pid.trim().toLowerCase();
-    if (!id) continue;
-    const role = PROTOCOL_ROLES[id];
-    if (!role) {
-      throw new BANError(
-        ErrorCode.POLICY_DENIED,
-        `Protocol '${pid}' is not registered for session contracts`,
-        { correlationId: getCorrelationId() }
-      );
-    }
-    const deployment = banDeployments.get(id);
-    // Fail to a user-facing 422 BEFORE requireAddress: recognized-but-unverified
-    // deployments are not executable (mustflow §10-§13 verified ≠ enabled).
-    if (!deployment || !deployment.verified || !deployment.contracts[role]) {
-      throw new BANError(
-        ErrorCode.CONTRACT_NOT_ALLOWED,
-        `Protocol '${pid}' is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`,
-        { correlationId: getCorrelationId() }
-      );
-    }
-    contracts.add(banDeployments.requireAddress(id, role));
-  }
-  return [...contracts];
-}
-
-function resolveAllowedTokens(
-  tokens: string[] | undefined,
-  legacy: string[] | undefined
-): string[] {
-  const out = new Set((legacy ?? []).map((t) => t.trim()).filter(Boolean));
-  for (const t of tokens ?? []) {
-    const trimmed = t.trim();
-    if (!trimmed) continue;
-    const rec =
-      banTokens.getBySymbol(trimmed) ??
-      banTokens.getById(trimmed) ??
-      banTokens.getByAddress(trimmed);
-    if (!rec) {
-      throw new BANError(
-        ErrorCode.TOKEN_NOT_ALLOWED,
-        `Token '${t}' is not registered in the BAN token registry`,
-        { correlationId: getCorrelationId() }
-      );
-    }
-    out.add(rec.address);
-  }
-  return [...out];
-}
 
 export async function POST(
   request: NextRequest,

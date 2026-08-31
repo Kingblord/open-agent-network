@@ -61,7 +61,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const activeAccount = useActiveAccount()
   const activeWallet = useActiveWallet()
   const { disconnect: thirdwebDisconnect } = useDisconnect()
-  const { user } = useAuth()
+  const { user, updateUserWallet } = useAuth()
 
   // Persistent link rehydrated from localStorage (survives refresh so the user
   // doesn't need to reconnect all the time).
@@ -89,18 +89,66 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setHydrating(false)
   }, [])
 
-  // Keep localStorage + state consistent with the actively connected account.
+  // Keep localStorage + state consistent with the actively connected account,
+  // and reflect the connection on the auth user immediately.
   useEffect(() => {
     if (activeAddress) {
       setLinkedAddressState(activeAddress)
       writeStoredWallet(activeAddress)
+      updateUserWallet(activeAddress)
     }
-  }, [activeAddress])
+  }, [activeAddress, updateUserWallet])
 
-  const setLinkedAddress = useCallback((address: string | null) => {
-    setLinkedAddressState(address)
-    writeStoredWallet(address)
-  }, [])
+  const setLinkedAddress = useCallback(
+    (address: string | null) => {
+      setLinkedAddressState(address)
+      writeStoredWallet(address)
+      updateUserWallet(address)
+    },
+    [updateUserWallet],
+  )
+
+  // Rehydrate the persisted wallet from the SERVER when the auth user loads.
+  // This is the missing persistence fix: connecting on one browser (which POSTs
+  // to /api/developers/wallet) must appear on any other browser/device even when
+  // localStorage is empty there. We also mirror the server value into AuthUser
+  // so profile headers reflect the connection without a full refresh.
+  useEffect(() => {
+    if (!user) {
+      // When signed out, don't claim a wallet on a fresh profile.
+      return
+    }
+    let cancelled = false
+
+    // If the auth user already knows a wallet (post-login/profile), make sure
+    // the linked state agrees with it.
+    if (user.walletAddress) {
+      setLinkedAddressState((prev) => prev ?? user.walletAddress!)
+      writeStoredWallet(user.walletAddress)
+    }
+
+    // If we have no local link yet, ask the server for the persisted one.
+    if (!user.walletAddress) {
+      void fetch('/api/developers/wallet', { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (cancelled) return
+          const serverWallet = data?.walletAddress ?? null
+          if (serverWallet) {
+            setLinkedAddressState(serverWallet)
+            writeStoredWallet(serverWallet)
+            updateUserWallet(serverWallet)
+          }
+        })
+        .catch(() => {
+          // Non-fatal — localStorage link (if any) remains authoritative.
+        })
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [user, updateUserWallet])
 
   // Best-effort sync of the linked wallet to the authenticated account so it
   // survives across sessions (not just the browser tab).
@@ -110,10 +158,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ walletAddress: linkedAddress }),
-    }).catch(() => {
-      // Non-fatal — wallet link stays in localStorage; server sync is best-effort.
     })
-  }, [linkedAddress, user])
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        // Mirror the server-confirmed value (if any) into AuthUser so the
+        // profile reflects the connection as soon as the POST settles.
+        if (data?.walletAddress) {
+          updateUserWallet(data.walletAddress)
+        }
+      })
+      .catch(() => {
+        // Non-fatal — wallet link stays in localStorage; server sync is best-effort.
+      })
+  }, [linkedAddress, user, updateUserWallet])
 
   const disconnect = useCallback(async () => {
     // Disconnect the active Thirdweb wallet session (if any).
@@ -126,7 +183,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     // Forget any persisted link for this session/user.
     setLinkedAddress(null)
-  }, [activeWallet, thirdwebDisconnect, setLinkedAddress])
+    // Also clear the server-side link so the profile stops showing it.
+    if (user) {
+      void fetch('/api/developers/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: null }),
+      }).catch(() => {
+        // Non-fatal.
+      })
+      updateUserWallet(null)
+    }
+  }, [activeWallet, thirdwebDisconnect, setLinkedAddress, user, updateUserWallet])
 
   const value: WalletContextValue = {
     chain,

@@ -17,6 +17,8 @@ export interface AuthUser {
   credits: number
   tier: string
   createdAt: string
+  /** Connected wallet address persisted on the account (null when not linked). */
+  walletAddress: string | null
 }
 
 interface AuthContextType {
@@ -27,9 +29,28 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
+  /** Update the wallet address on the in-memory auth user (e.g. after connect). */
+  updateUserWallet: (walletAddress: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+/**
+ * Coerces the server's user payload into AuthUser, normalising walletAddress
+ * so consumers can rely on `user.walletAddress` being `string | null`.
+ */
+function toAuthUser(u: any): AuthUser | null {
+  if (!u || typeof u.id !== 'string') return null
+  return {
+    id: u.id,
+    name: u.name ?? '',
+    email: u.email ?? '',
+    credits: typeof u.credits === 'number' ? u.credits : 0,
+    tier: u.tier ?? 'free',
+    createdAt: u.createdAt ?? new Date().toISOString(),
+    walletAddress: typeof u.walletAddress === 'string' ? u.walletAddress : null,
+  }
+}
 
 /**
  * Exchanges a Firebase ID token for a Firestore user record via the server API.
@@ -46,7 +67,7 @@ async function exchangeFirebaseToken(idToken: string): Promise<AuthUser | null> 
     throw new Error(data.error || 'Failed to authenticate with server')
   }
   const data = await res.json()
-  return data.user
+  return toAuthUser(data.user)
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -101,6 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [firebaseUser])
 
+  const updateUserWallet = useCallback((walletAddress: string | null) => {
+    setUser((prev) => {
+      if (!prev) return prev
+      if (prev.walletAddress === walletAddress) return prev
+      return { ...prev, walletAddress }
+    })
+  }, [])
+
   const signup = async (name: string, email: string, password: string) => {
     if (!auth) throw new Error('Firebase Auth is not configured')
 
@@ -121,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const data = await res.json()
-    setUser(data.user)
+    setUser(toAuthUser(data.user))
     setFirebaseUser(cred.user)
   }
 
@@ -145,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const data = await res.json()
-    setUser(data.user)
+    setUser(toAuthUser(data.user))
     setFirebaseUser(cred.user)
   }
 
@@ -158,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, firebaseUser, signup, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, firebaseUser, signup, login, logout, refreshUser, updateUserWallet }}>
       {children}
     </AuthContext.Provider>
   )
