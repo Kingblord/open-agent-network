@@ -98,6 +98,38 @@ interface ActivityEvent {
   createdAt: string;
 }
 
+// Shape of GET /api/protocols → { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
+interface RegistryContractEntry {
+  id: string;
+  address: string;
+  protocolId: string;
+  name: string;
+  verified: boolean;
+  enabled: boolean;
+  capabilities: string[];
+  integrationStatus: string;
+  reason: string;
+  functions: Array<{ name: string; capability: string }>;
+}
+
+interface RegistryProtocolEntry {
+  id: string;
+  name: string;
+  status: string;
+  official: boolean;
+  priority?: string;
+  integrationStatus: string;
+  reason: string;
+  contracts: RegistryContractEntry[];
+}
+
+interface RegistrySnapshot {
+  chainId: number;
+  generatedAt: string;
+  protocols: RegistryProtocolEntry[];
+}
+
 type LifecycleAction = 'activate' | 'pause' | 'revoke';
 
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -218,14 +250,15 @@ const TOKEN_OPTIONS = [
   { symbol: 'USDC', label: 'USDC' },
 ];
 
-// mustflow §10-§13: a protocol may be RECOGNIZED (registered) but NOT yet
-// VERIFIED for autonomous execution. This mirrors the app-side seed truth
-// (@ban/registry bnb-mainnet.ts: deployments are verified:false until the
-// on-chain verification pipeline confirms them). Unverified protocols are
-// shown greyed-out — never executable.
-const PROTOCOL_OPTIONS = [
-  { id: 'pancakeswap', label: 'PancakeSwap', verified: false },
-  { id: 'venus', label: 'Venus', verified: false },
+// mustflow §10-§13: protocol selectability is derived from the LIVE registry
+// snapshot (GET /api/protocols → buildBnbRegistrySnapshot). This used to be
+// hardcoded verified:false — which greyed out PancakeSwap/Venus even though the
+// registry marks them verified + EXECUTION_ENABLED. We now fall back to
+// enabled-by-default only when the snapshot cannot be loaded; the server's
+// fail-closed resolution is always the real gate (unverified → CONTRACT_NOT_ALLOWED).
+const FALLBACK_PROTOCOL_OPTIONS = [
+  { id: 'pancakeswap', label: 'PancakeSwap', verified: true },
+  { id: 'venus', label: 'Venus', verified: true },
 ];
 
 const RISK_OPTIONS = ['LOW', 'MEDIUM', 'HIGH'];
@@ -272,7 +305,14 @@ export default function MyAgentDetailPage() {
     status?: string;
     txHash?: string | null;
   } | null>(null);
-  const [balance, setBalance] = useState<{ ok: boolean; balance: string; address: string; network: string; chainId: number; provisioned: boolean } | null>(null);
+  const [balance, setBalance] = useState<{
+    ok: boolean;
+    address: string | null;
+    balanceBnb: string | null;
+    balanceUsd: string | null;
+    usdPrice: number | null;
+    updatedAt: string;
+  } | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [sessionForm, setSessionForm] = useState({
     network: 'BNB Smart Chain (56)',
@@ -286,6 +326,8 @@ export default function MyAgentDetailPage() {
   });
   const [bnbUsdPrice, setBnbUsdPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
+  const [protocolSnapshot, setProtocolSnapshot] = useState<RegistrySnapshot | null>(null);
+  const [protocolSnapshotError, setProtocolSnapshotError] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (mounted && !loading && !user) router.push('/login'); }, [mounted, user, loading, router]);
@@ -300,6 +342,8 @@ export default function MyAgentDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);
+
+  useEffect(() => { fetchProtocolSnapshot(); }, []);
 
   const fetchAgent = async () => {
     try {
@@ -431,6 +475,23 @@ export default function MyAgentDetailPage() {
       console.error('Failed to fetch BNB price:', error);
     } finally {
       setPriceLoading(false);
+    }
+  };
+
+  const fetchProtocolSnapshot = async () => {
+    try {
+      const response = await fetch('/api/protocols');
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.snapshot) {
+          setProtocolSnapshot(data.snapshot as RegistrySnapshot);
+          return;
+        }
+      }
+      setProtocolSnapshotError('Protocol state snapshot is unavailable right now.');
+    } catch (error) {
+      console.error('Failed to fetch protocol snapshot:', error);
+      setProtocolSnapshotError('Protocol state snapshot is unavailable right now.');
     }
   };
 
@@ -581,8 +642,22 @@ export default function MyAgentDetailPage() {
     }));
   };
 
+  // Protocol options derived from the REAL registry snapshot (fallback = enabled,
+  // server remains the fail-closed gate). verified === integrationStatus is not
+  // DISCOVERY_ONLY: PancakeSwap/Venus resolve to EXECUTION_ENABLED in the registry.
+  const protocolOptions = useMemo(() => {
+    const snap = protocolSnapshot?.protocols ?? [];
+    if (snap.length === 0) return FALLBACK_PROTOCOL_OPTIONS;
+    return snap.map((p) => ({
+      id: p.id,
+      label: p.name || p.id,
+      verified: p.integrationStatus !== 'DISCOVERY_ONLY',
+      integrationStatus: p.integrationStatus,
+    }));
+  }, [protocolSnapshot]);
+
   const toggleProtocol = (id: string) => {
-    const option = PROTOCOL_OPTIONS.find((p) => p.id === id);
+    const option = protocolOptions.find((p) => p.id === id);
     if (option && !option.verified) {
       setTaskError(
         `${option.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`
@@ -643,6 +718,31 @@ export default function MyAgentDetailPage() {
 
   const primaryProtocol = agent.protocols[0] || null;
 
+  // Agent's declared protocols matched against the live registry snapshot by id
+  // OR display name (case-insensitive) so verified protocols never render greyed.
+  const norm = (s: string) => s.toLowerCase().trim();
+  const snapshotProtocols = protocolSnapshot?.protocols ?? [];
+  const matchesProtocol = (p: { id: string; name: string }, pid: string) =>
+    norm(pid) === norm(p.id) || norm(pid) === norm(p.name);
+  const agentProtocolState: RegistryProtocolEntry[] = snapshotProtocols.filter((p) =>
+    agent.protocols.some((pid) => matchesProtocol(p, pid)),
+  );
+  const unknownProtocols = agent.protocols.filter(
+    (pid) => !snapshotProtocols.some((p) => matchesProtocol(p, pid)),
+  );
+  const primaryProtocolLabel =
+    primaryProtocol
+      ? snapshotProtocols.find((p) => matchesProtocol(p, primaryProtocol))?.name ?? primaryProtocol
+      : null;
+  const integrationColor = (status: string) => {
+    switch (status) {
+      case 'EXECUTION_ENABLED': return 'text-green-400 border-green-500/40 bg-green-500/10';
+      case 'SIMULATION': return 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10';
+      case 'READ_ONLY': return 'text-blue-400 border-blue-500/40 bg-blue-500/10';
+      default: return 'text-gray-400 border-gray-600 bg-gray-800/40';
+    }
+  };
+
   // ---- Real operational metrics only (no fabricated fallbacks) ----
   const confirmedCount = performance?.confirmedCount ?? 0;
   const successRateText = confirmedCount > 0 && performance
@@ -675,7 +775,7 @@ export default function MyAgentDetailPage() {
         : tickStage === 'decided' ? 'Agent passed'
           : tickStage ? 'Observed' : null;
 
-  const balanceBnb = balance ? Number(balance.balance) : null;
+  const balanceBnb = balance && balance.balanceBnb != null ? Number(balance.balanceBnb) : null;
 
   return (
     <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
@@ -707,7 +807,7 @@ export default function MyAgentDetailPage() {
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                   {agent.status}
                 </span>
-                {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocol}</span>}
+                {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocolLabel}</span>}
                 {agent.riskLevel && (
                   <span className="text-[9px] font-black tracking-wider uppercase bg-[#F0B90B]/20 text-[#F0B90B] px-2 py-0.5 rounded">
                     {agent.riskLevel} RISK
@@ -757,11 +857,112 @@ export default function MyAgentDetailPage() {
           )}
         </div>
 
+        {/* PROTOCOL STATE — real registry snapshot per agent (never fabricated). */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">PROTOCOL STATE</span>
+            {protocolSnapshot && (
+              <span className="text-[9px] font-mono text-gray-500">BNB {protocolSnapshot.chainId} · registry-derived</span>
+            )}
+          </div>
+
+          {protocolSnapshotError && (
+            <p className="text-xs text-gray-500">{protocolSnapshotError} <button type="button" onClick={fetchProtocolSnapshot} className="text-[#F0B90B] font-black uppercase text-[10px]">Retry</button></p>
+          )}
+
+          {!protocolSnapshotError && protocolSnapshot == null && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="inline-block animate-spin h-3.5 w-3.5 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
+              Loading protocol state...
+            </div>
+          )}
+
+          {protocolSnapshot && (
+            <>
+              {agentProtocolState.length === 0 && unknownProtocols.length === 0 && (
+                <p className="text-xs text-gray-500">This agent does not declare any protocols for on-chain work.</p>
+              )}
+
+              {agentProtocolState.length > 0 && (
+                <div className="space-y-4">
+                  {agentProtocolState.map((p) => (
+                    <div key={p.id} className="bg-[#161616] rounded-lg border border-[#262626] p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-[#F0B90B]/20 border border-[#F0B90B]/40 flex items-center justify-center text-[10px] font-black text-[#F0B90B] shrink-0">{p.name.slice(0, 1)}</span>
+                          <span className="text-sm font-black text-white">{p.name}</span>
+                          {p.priority && (
+                            <span className="text-[9px] font-black tracking-wider uppercase bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5 text-gray-400">{p.priority}</span>
+                          )}
+                        </div>
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${integrationColor(p.integrationStatus)}`}>
+                          {p.integrationStatus.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{p.reason}</p>
+
+                      <div className="space-y-2">
+                        {p.contracts.length === 0 ? (
+                          <p className="text-[11px] text-gray-600">No verified contracts registered for this protocol on the BAN chain.</p>
+                        ) : (
+                          p.contracts.map((c) => (
+                            <div key={c.id} className="bg-black/40 rounded-md border border-[#222] p-2.5 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="text-[11px] font-black text-gray-200">{c.name}</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`text-[9px] font-black uppercase ${c.verified ? 'text-green-400' : 'text-gray-500'}`}>{c.verified ? 'Verified' : 'Unverified'}</span>
+                                  <span className={`text-[9px] font-black uppercase ${c.enabled ? 'text-[#F0B90B]' : 'text-gray-500'}`}>{c.enabled ? 'Enabled' : 'Not enabled'}</span>
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-mono text-gray-500 truncate">{c.address}</p>
+                              {c.capabilities.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {c.capabilities.map((cap) => (
+                                    <span key={cap} className="text-[9px] font-black text-gray-400 bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5">{cap}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {c.functions.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {c.functions.map((f) => (
+                                    <span
+                                      key={f.name}
+                                      className={`text-[9px] font-mono px-1.5 py-0.5 border ${f.capability === 'EXECUTE' ? 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/5'}`}
+                                    >
+                                      {f.name} · {f.capability}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {unknownProtocols.length > 0 && (
+                <div className="space-y-1.5">
+                  {unknownProtocols.map((pid) => (
+                    <div key={pid} className="flex items-center justify-between text-[11px] bg-[#161616] border border-[#262626] rounded-md px-3 py-2">
+                      <span className="text-gray-300">{pid}</span>
+                      <span className="text-[9px] font-black uppercase text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded">Unrecognized</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
         {/* WALLET + TOP UP (with transaction confirmation gate) */}
         <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-white tracking-widest uppercase">AGENT WALLET</span>
-            <span className="text-[9px] font-mono text-gray-500">BNB {balance?.chainId ?? 56}</span>
+            <span className="text-[9px] font-mono text-gray-500">BNB 56</span>
           </div>
 
           {agent.walletAddress ? (
@@ -777,7 +978,7 @@ export default function MyAgentDetailPage() {
                   {balanceLoading && balance == null ? (
                     <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
                   ) : balanceBnb != null ? (
-                    `${renderUsdc(balanceBnb, 6)} BNB`
+                    `${renderUsdc(balanceBnb!, 6)} BNB`
                   ) : (
                     '—'
                   )}
@@ -1136,7 +1337,7 @@ export default function MyAgentDetailPage() {
             <div>
               <label className="block text-xs font-black text-gray-400 mb-1.5">Allowed protocols</label>
               <div className="flex flex-wrap gap-1.5">
-                {PROTOCOL_OPTIONS.map((p) => {
+                {protocolOptions.map((p) => {
                   const active = sessionForm.allowedProtocols.includes(p.id);
                   const disabled = !p.verified;
                   return (
@@ -1150,11 +1351,17 @@ export default function MyAgentDetailPage() {
                     >
                       {p.label}
                       {disabled && <span className="ml-1 text-[9px] normal-case">(verifying…)</span>}
+                      {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
                     </button>
                   );
                 })}
               </div>
-              {!PROTOCOL_OPTIONS.some((p) => p.verified) && (
+              {protocolSnapshotError && (
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Registry snapshot unavailable — showing last-known verified state; the server still validates fail-closed before any session is created.
+                </p>
+              )}
+              {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
                 <p className="text-[10px] text-gray-500 mt-1">
                   Protocols are recognized but not yet verified for autonomous execution (verified ≠ enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
                 </p>
