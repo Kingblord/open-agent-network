@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -252,5 +252,37 @@ export async function saveAgentKeystore(keystore: AgentKeystore): Promise<void> 
     // On serverless the bundle dir is read-only; mirror is best-effort only.
     const message = err instanceof Error ? err.message : String(err);
     logger.warn('keystore_fs_mirror_failed', { agentId: keystore.agentId, message });
+  }
+}
+
+/**
+ * Permanently destroy an agent's keystore (Firestore + local mirror).
+ *
+ * Used by the profile "MANAGE AGENTS" delete flow: after terminal-revoking the
+ * agent, its dedicated signing key is destroyed so nothing can sign for it
+ * anymore. Idempotent — deleting a missing keystore is a no-op success.
+ * The on-chain wallet address itself is immutable, but without the key no
+ * further transactions can originate from BAN for this agent.
+ */
+export async function deleteAgentKeystore(agentId: string): Promise<void> {
+  // 1) Firestore authoritative copy.
+  if (persistentKeystoreAvailable()) {
+    try {
+      const db = getAdminDb();
+      await db.collection(collections.agentKeystores).doc(agentId).delete();
+      logger.info('keystore_deleted_firestore', { agentId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('keystore_firestore_delete_failed', { agentId, message });
+      throw err;
+    }
+  }
+
+  // 2) Local mirror (best-effort).
+  try {
+    await rm(agentKeystorePath(agentId), { recursive: true, force: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn('keystore_fs_delete_failed', { agentId, message });
   }
 }

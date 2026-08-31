@@ -858,38 +858,6 @@ export default function MyAgentDetailPage() {
           )}
         </div>
 
-        {/* ANALYTICS — live runtime review terminal (real events only) */}
-        {activeViewTab === 'analytics' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
-              <span className="text-[10px] font-mono text-gray-500">live closed-loop stream</span>
-            </div>
-            <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-center">
-                <div className="bg-[#161616] rounded-lg p-3">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Confirmed</p>
-                  <p className="text-base font-black text-emerald-400">{confirmedCount}</p>
-                </div>
-                <div className="bg-[#161616] rounded-lg p-3">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Failed</p>
-                  <p className="text-base font-black text-red-400">{failedEvents}</p>
-                </div>
-                <div className="bg-[#161616] rounded-lg p-3">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Realized P&L</p>
-                  <p className="text-base font-black text-white">{realizedPnlUsd != null ? `${renderUsdc(realizedPnlUsd, 2)}` : '—'}</p>
-                </div>
-                <div className="bg-[#161616] rounded-lg p-3">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
-                  <p className="text-base font-black text-white">{confirmedCount}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* WALLET + TOP UP (with transaction confirmation gate) */}
         <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
           <div className="flex items-center justify-between">
@@ -1146,7 +1114,17 @@ export default function MyAgentDetailPage() {
           </div>
         </div>
 
+                {/* REVIEW TERMINAL (overview) — live loop stream */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
+            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+          </div>
+          <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
+        </div>
+
         {/* PERFORMANCE */}
+
         <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
@@ -1196,9 +1174,19 @@ export default function MyAgentDetailPage() {
             <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-[#333] px-2.5 py-1.5 bg-[#111]">BACK</button>
           </div>
           <div className="px-5 pt-4 space-y-4">
+                        {/* Review terminal — live closed-loop stream (real events only) */}
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
+                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+              </div>
+              <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
+            </div>
+
             {/* Performance summary */}
+
             <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE SMMARY</span>
+              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE SUMMARY</span>
               <div className="grid grid-cols-2 gap-3">
                 <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p><p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p></div>
                 <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p><p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p></div>

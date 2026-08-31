@@ -315,6 +315,34 @@ export class AgentRegistry {
     logger.info('agent_lifecycle', { agentId: id, action, from: agent.status, to, actorId });
     return { ...agent, status: to, updatedAt: new Date().toISOString() };
   }
+
+  /**
+   * Owner-gated HARD DELETE of a deployed agent's registry record.
+   *
+   * Safety: the caller must FIRST terminal-revoke (lifecycle 'revoke') so any
+   * running loop stops; this method only deletes the record. It is used by the
+   * profile "MANAGE AGENTS" delete flow (after revoke + keystore destruction).
+   * Throws POLICY_DENIED if the actor is not the owner; returns null if the
+   * agent does not exist.
+   */
+  async delete(id: string, actorId: string): Promise<void> {
+    const db = getAdminDb();
+    const ref = agentRef(db, id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new BANError(ErrorCode.VALIDATION_FAILED, 'Agent not found', {
+        correlationId: getCorrelationId(),
+      });
+    }
+    const existing = snap.data() as Agent;
+    if (existing.ownerId !== actorId) {
+      throw new BANError(ErrorCode.POLICY_DENIED, 'Not authorized to delete this agent', {
+        correlationId: getCorrelationId(),
+      });
+    }
+    await ref.delete();
+    logger.info('agent_deleted', { agentId: id, actorId });
+  }
 }
 
 // Shared singleton so every route uses the same authoritative registry.
