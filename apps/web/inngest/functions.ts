@@ -206,17 +206,33 @@ export const banAgentTick = inngest.createFunction(
         // createdAt) so it shows up in the agent's live feed + Scheduler
         // Heartbeat card. The stage is NEVER fabricated — it is the literal
         // CycleResult from runAgentCycle (observed|decided|awaited|confirmed).
-        await writeAuditEvent({
-          eventType: 'AGENT_TICK',
-          correlationId,
-          jobId: `tick_${agent.id}`,
-          agentId: agent.id,
-          payload: {
-            source: 'inngest-cron',
-            schedule: '*/1 * * * *',
-            cycleResult: result,
-          },
-        });
+        // Heartbeat write is best-effort observability (Rule 10): a failure
+        // here must NEVER abort the tick (it is not a transaction outcome) —
+        // the loop continues even if the audit write is down.
+        try {
+          await writeAuditEvent({
+            eventType: 'AGENT_TICK',
+            correlationId,
+            jobId: `tick_${agent.id}`,
+            agentId: agent.id,
+            payload: {
+              source: 'inngest-cron',
+              schedule: '*/1 * * * *',
+              cycleResult: result,
+            },
+          });
+          logger.info('agent_tick_heartbeat_written', {
+            agentId: agent.id,
+            correlationId,
+            cycleStage: result.ok ? result.stage : result.reason,
+          });
+        } catch (hbErr) {
+          logger.error('agent_tick_heartbeat_failed', {
+            agentId: agent.id,
+            correlationId,
+            error: hbErr instanceof Error ? hbErr.message : String(hbErr),
+          });
+        }
 
         logger.info('agent_tick_cycle', {
           agentId: agent.id,
@@ -281,17 +297,32 @@ export const banAgentLoop = inngest.createFunction(
     // Heartbeat: proves the Inngest loop reached THIS agent and records the
     // real cycle outcome. Written in the exact shape /activity reads so it
     // shows up in the agent's live feed + Scheduler Heartbeat card.
-    await writeAuditEvent({
-      eventType: 'AGENT_TICK',
-      correlationId,
-      jobId: `tick_${agentId}`,
-      agentId,
-      payload: {
-        source: 'inngest-loop',
-        schedule: 'self-chaining every 50s',
-        cycleResult: result,
-      },
-    });
+    // Heartbeat write is best-effort observability (Rule 10): a failure
+    // here must NEVER kill the self-chain (it is not a transaction outcome).
+    try {
+      await writeAuditEvent({
+        eventType: 'AGENT_TICK',
+        correlationId,
+        jobId: `tick_${agentId}`,
+        agentId,
+        payload: {
+          source: 'inngest-loop',
+          schedule: 'self-chaining every 50s',
+          cycleResult: result,
+        },
+      });
+      logger.info('agent_tick_heartbeat_written', {
+        agentId,
+        correlationId,
+        cycleStage: result.ok ? result.stage : result.reason,
+      });
+    } catch (hbErr) {
+      logger.error('agent_tick_heartbeat_failed', {
+        agentId,
+        correlationId,
+        error: hbErr instanceof Error ? hbErr.message : String(hbErr),
+      });
+    }
 
     // Self-schedule the next tick in ~50 seconds (while ACTIVE). This is what
     // makes the loop "keep going" even when the cloud cron is not registered.

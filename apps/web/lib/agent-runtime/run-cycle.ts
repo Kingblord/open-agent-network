@@ -4,7 +4,7 @@ import { getAdminDb, collections } from '@/lib/firebase-admin';
 import { agentRegistry } from '@/lib/agent-registry';
 import { policyEngine } from '@/lib/policy/policy-engine-provider';
 import { DevDataProvider, LiveDataProvider, type ToolAdapters } from '@ban/blockchain';
-import { DevBrainAdapter } from '@ban/ai';
+import { DevBrainAdapter, OpenRouterBrainAdapter, type BrainAdapter } from '@ban/ai';
 import type {
   Agent,
   ActionProposal,
@@ -444,8 +444,25 @@ async function resolveDataProvider(): Promise<ToolAdapters> {
 }
 
 /** Resolve the strategy engine by agent type + the dev brain (honest). */
+/**
+ * Resolve the brain provider:
+ *   - BAN_AI_PROVIDER=openrouter  -> OpenRouterBrainAdapter (REAL inference;
+ *     reads OPENROUTER_API_KEY / OPENROUTER_MODEL). If the key is missing it
+ *     throws PROVIDER_UNAVAILABLE -> isAwaitableConfigGap -> honest "awaited".
+ *   - otherwise (default)         -> DevBrainAdapter (hermetic, deterministic,
+ *     fail-closed, no network). Never fabricates.
+ */
+function resolveBrainProvider(): BrainAdapter {
+  if (process.env.BAN_AI_PROVIDER === 'openrouter') {
+    logger.info('brain_provider_openrouter_enabled', { provider: 'openrouter' });
+    return new OpenRouterBrainAdapter();
+  }
+  logger.info('brain_provider_dev_enabled', { provider: 'dev' });
+  return new DevBrainAdapter();
+}
+
 async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').StrategyEngine> {
-  const brain = new DevBrainAdapter(); // deterministic, no-fabrication reasoning layer
+  const brain = resolveBrainProvider(); // deterministic or real AI per env
   const type = agent.type ?? '';
   const dev = await resolveDataProvider();
 
