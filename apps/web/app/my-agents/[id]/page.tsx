@@ -857,107 +857,6 @@ export default function MyAgentDetailPage() {
           )}
         </div>
 
-        {/* PROTOCOL STATE — real registry snapshot per agent (never fabricated). */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">PROTOCOL STATE</span>
-            {protocolSnapshot && (
-              <span className="text-[9px] font-mono text-gray-500">BNB {protocolSnapshot.chainId} · registry-derived</span>
-            )}
-          </div>
-
-          {protocolSnapshotError && (
-            <p className="text-xs text-gray-500">{protocolSnapshotError} <button type="button" onClick={fetchProtocolSnapshot} className="text-[#F0B90B] font-black uppercase text-[10px]">Retry</button></p>
-          )}
-
-          {!protocolSnapshotError && protocolSnapshot == null && (
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <div className="inline-block animate-spin h-3.5 w-3.5 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
-              Loading protocol state...
-            </div>
-          )}
-
-          {protocolSnapshot && (
-            <>
-              {agentProtocolState.length === 0 && unknownProtocols.length === 0 && (
-                <p className="text-xs text-gray-500">This agent does not declare any protocols for on-chain work.</p>
-              )}
-
-              {agentProtocolState.length > 0 && (
-                <div className="space-y-4">
-                  {agentProtocolState.map((p) => (
-                    <div key={p.id} className="bg-[#161616] rounded-lg border border-[#262626] p-3.5 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-[#F0B90B]/20 border border-[#F0B90B]/40 flex items-center justify-center text-[10px] font-black text-[#F0B90B] shrink-0">{p.name.slice(0, 1)}</span>
-                          <span className="text-sm font-black text-white">{p.name}</span>
-                          {p.priority && (
-                            <span className="text-[9px] font-black tracking-wider uppercase bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5 text-gray-400">{p.priority}</span>
-                          )}
-                        </div>
-                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${integrationColor(p.integrationStatus)}`}>
-                          {p.integrationStatus.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] text-gray-400 leading-relaxed">{p.reason}</p>
-
-                      <div className="space-y-2">
-                        {p.contracts.length === 0 ? (
-                          <p className="text-[11px] text-gray-600">No verified contracts registered for this protocol on the BAN chain.</p>
-                        ) : (
-                          p.contracts.map((c) => (
-                            <div key={c.id} className="bg-black/40 rounded-md border border-[#222] p-2.5 space-y-1.5">
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <span className="text-[11px] font-black text-gray-200">{c.name}</span>
-                                <span className="flex items-center gap-1.5">
-                                  <span className={`text-[9px] font-black uppercase ${c.verified ? 'text-green-400' : 'text-gray-500'}`}>{c.verified ? 'Verified' : 'Unverified'}</span>
-                                  <span className={`text-[9px] font-black uppercase ${c.enabled ? 'text-[#F0B90B]' : 'text-gray-500'}`}>{c.enabled ? 'Enabled' : 'Not enabled'}</span>
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-mono text-gray-500 truncate">{c.address}</p>
-                              {c.capabilities.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {c.capabilities.map((cap) => (
-                                    <span key={cap} className="text-[9px] font-black text-gray-400 bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5">{cap}</span>
-                                  ))}
-                                </div>
-                              )}
-                              {c.functions.length > 0 && (
-                                <div className="flex flex-wrap gap-1 pt-0.5">
-                                  {c.functions.map((f) => (
-                                    <span
-                                      key={f.name}
-                                      className={`text-[9px] font-mono px-1.5 py-0.5 border ${f.capability === 'EXECUTE' ? 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/5'}`}
-                                    >
-                                      {f.name} · {f.capability}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {unknownProtocols.length > 0 && (
-                <div className="space-y-1.5">
-                  {unknownProtocols.map((pid) => (
-                    <div key={pid} className="flex items-center justify-between text-[11px] bg-[#161616] border border-[#262626] rounded-md px-3 py-2">
-                      <span className="text-gray-300">{pid}</span>
-                      <span className="text-[9px] font-black uppercase text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded">Unrecognized</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
         {/* WALLET + TOP UP (with transaction confirmation gate) */}
         <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
           <div className="flex items-center justify-between">
@@ -1252,6 +1151,63 @@ export default function MyAgentDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ANALYTICS VIEW — full-screen panel with performance + full activity */}
+      {activeViewTab === 'analytics' && (
+        <div className="fixed inset-0 z-[70] bg-black overflow-y-auto pb-28">
+          <div className="sticky top-0 bg-black/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
+            <button onClick={() => setActiveViewTab('overview')} className="text-white hover:text-[#F0B90B] transition" aria-label="Back">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+            <h1 className="text-sm font-black tracking-[0.2em] uppercase text-white">ANALYTICS</h1>
+            <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-[#333] px-2.5 py-1.5 bg-[#111]">BACK</button>
+          </div>
+          <div className="px-5 pt-4 space-y-4">
+            {/* Performance summary */}
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
+              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE SMMARY</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p><p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p><p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p><p className="text-sm font-black text-white">{performance?.totalTrades ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Success rate</p><p className="text-sm font-black text-emerald-400">{successRateText ?? '—'}</p></div>
+              </div>
+              {realizedPnlUsd != null && (
+                <div className="pt-3 border-t border-[#222]">
+                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">REALIZED P&L</p>
+                  <p className={realizedPnlUsd != null ? `text-xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-xl font-black text-gray-400'}>
+                    {realizedPnlUsd != null ? `$${renderUsdc(realizedPnlUsd)}` : 'Not available'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Full activity */}
+            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+              <span className="text-[10px] font-black text-white tracking-widest uppercase mb-4 block">FULL ACTIVITY</span>
+              {events.length === 0 ? (
+                <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {events.map((ev) => (
+                    <div key={ev.id} className="flex items-start gap-3 text-xs">
+                      <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">{getTimelineIcon(ev.eventType)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-0.5">
+                          <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
+                          <span className="text-[10px] font-mono text-gray-500">{formatEventTimestamp(ev.createdAt)}</span>
+                        </div>
+                        <p className="text-gray-400 text-[11px]">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* TASK CONFIG MODAL — captures every config the backend consumes */}
       {showTaskModal && (

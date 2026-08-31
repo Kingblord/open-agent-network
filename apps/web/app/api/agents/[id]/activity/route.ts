@@ -89,10 +89,10 @@ export async function GET(
       const data = doc.data();
       events.push({
         id: doc.id,
-        eventType: data.eventType ?? 'UNKNOWN',
+        eventType: data.eventType ?? data.type ?? 'UNKNOWN',
         agentId: data.agentId ?? id,
         correlationId: data.correlationId ?? '',
-        payload: data.payload ?? {},
+        payload: data.payload ?? data.detail ?? {},
         createdAt: data.createdAt ?? doc.createTime?.toDate()?.toISOString() ?? new Date().toISOString(),
       });
     });
@@ -101,10 +101,10 @@ export async function GET(
       const data = doc.data();
       events.push({
         id: doc.id,
-        eventType: data.eventType ?? 'AGENT_EVENT',
+        eventType: data.eventType ?? data.type ?? 'AGENT_EVENT',
         agentId: data.agentId ?? id,
         correlationId: data.correlationId ?? '',
-        payload: data.payload ?? {},
+        payload: data.payload ?? data.detail ?? {},
         createdAt: data.createdAt ?? doc.createTime?.toDate()?.toISOString() ?? new Date().toISOString(),
       });
     });
