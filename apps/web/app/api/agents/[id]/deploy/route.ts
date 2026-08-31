@@ -90,6 +90,7 @@ export async function POST(
     // still created but walletStatus is honest; provisioning can be retried via
     // the wallet route.
     let walletStatus: 'provisioned' | 'provision_failed' | 'unavailable' = 'unavailable';
+    let walletError: string | undefined;
     let walletAddress: string | undefined = agent.walletAddress ?? undefined;
     try {
       const provisioned = await provisionAgentWallet(agent.id);
@@ -99,10 +100,14 @@ export async function POST(
       agent = { ...agent, walletAddress: provisioned.walletAddress };
     } catch (err) {
       walletStatus = 'provision_failed';
-      logger.warn('agent_wallet_provision_failed', {
+      // Surface the sanitized reason (never the private key / keystore material)
+      // so deploy failures are diagnosable instead of a bare 'provision_failed'.
+      const message = err instanceof Error ? err.message : String(err);
+      if (message) walletError = message;
+      logger.error('agent_wallet_provision_failed', {
         agentId: agent.id,
         ownerId: actorId,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
         correlationId: getCorrelationId(),
       });
     }
@@ -114,6 +119,7 @@ export async function POST(
         deployed: true,
         alreadyOwned: template.ownerId === actorId,
         walletStatus,
+        walletError, // derived reason only — never the private key
         walletAddress, // derived address only — never the private key
       },
       { status: 201 }

@@ -266,4 +266,4 @@ export async function createAgentExecutionBackend(agentId: string): Promise<((in
   };
 }
 
-export { hasAgentKeystore };
+export { hasAgentKeystore, loadAgentKeystore };

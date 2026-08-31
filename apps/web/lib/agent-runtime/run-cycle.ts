@@ -21,7 +21,7 @@ import {
   listPositions,
 } from './persistence';
 import { PerformanceCalculator, classifyExecutionMode } from '@ban/performance-engine';
-import { createAgentExecutionBackend } from '@/lib/altana-signer';
+import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-signer';
 
 /**
  * BAN Agent Runtime — closed-loop orchestration (Batch C).
@@ -78,6 +78,51 @@ async function getSessionForAgent(agentId: string): Promise<Session | null> {
     if (!found || (s.createdAt ?? '') > (found.createdAt ?? '')) found = s;
   });
   return found;
+}
+
+/** List CONFIRMED executions for a given agent (performance rollup input). */
+async function listConfirmedExecutions(agentId: string): Promise<Execution[]> {
+  const db = getAdminDb();
+  // Single-field equality (no composite index / orderBy).
+  const snap = await db
+    .collection(collections.executions)
+    .where('agentId', '==', agentId)
+    .get();
+  const out: Execution[] = [];
+  snap.forEach((d) => {
+    const e = d.data() as Execution;
+    if (e.status === 'CONFIRMED') out.push(e);
+  });
+  return out;
+}
+
+/** Build the execution backend, tolerating an unconfigured/unusable signer. */
+async function resolveExecutionBackend(agentId: string): Promise<
+  | ((input: { proposal: ActionProposal; session: unknown }) => Promise<{ transactionHash: string }>)
+  | null
+> {
+  const agentKey = await loadAgentKeystore(agentId);
+  if (!agentKey) {
+    // No per-agent key yet — honest "awaiting provisioning", not a failure.
+    logger.info('agent_awaiting_provisioning', { agentId });
+    return null;
+  }
+  try {
+    return await createAgentExecutionBackend(agentId);
+  } catch (err) {
+    // A configured signer that can't run in THIS execution (SDK load / an
+    // unconfigured provider). This is NOT a transaction failure; keep the
+    // honesty contract by surfacing it as an "awaiting execution" state with
+    // the actionable reason instead of failing the cycle.
+    const message =
+      err instanceof BANError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    logger.warn('agent_awaiting_execution_signer_unavailable', { agentId, message });
+    return null;
+  }
 }
 
 /**
@@ -162,8 +207,9 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
 
     // 5) Execution — only when a real backend is available AND session ACTIVE.
     // Resolve a per-agent executor (its own wallet/keystore). When not
-    // provisioned or injected, stop at the honest `awaited` state.
-    const backend = opts.execute ?? (await createAgentExecutionBackend(agent.id));
+    // provisioned, signer-unavailable, or injected, stop at the honest
+    // `awaited` state.
+    const backend = opts.execute ?? (await resolveExecutionBackend(agent.id));
 
     const canExecute =
       Boolean(backend) &&
@@ -182,7 +228,7 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
         severity: 'INFO',
         detail: {
           note: !backend
-            ? 'Agent wallet not provisioned; awaiting provisioning. No transaction was broadcast.'
+            ? 'Execution backend unavailable (no provisioned signer or signer could not be loaded in this runtime). No transaction was broadcast.'
             : 'Session not ACTIVE or agent not ACTIVE; awaiting execution. No transaction was broadcast.',
         },
       });
@@ -324,17 +370,7 @@ async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').
       data: new GridDataProvider({ price: dev.price }),
     });
   }
-  throw new BANError(ErrorCode.AGENT_INACTIVE, `No strategy registered for agent type '${type}'`);
-}
-
-async function listConfirmedExecutions(agentId: string): Promise<Execution[]> {
-  const db = getAdminDb();
-  // Single-field equality (no composite index / orderBy).
-  const snap = await db.collection(collections.executions).where('agentId', '==', agentId).get();
-  const out: Execution[] = [];
-  snap.forEach((d) => {
-    const e = d.data() as Execution;
-    if (e.status === 'CONFIRMED') out.push(e);
+  throw new BANError(ErrorCode.VALIDATION_FAILED, `No strategy engine for agent type '${type}'`, {
+    retryable: false,
   });
-  return out;
 }
