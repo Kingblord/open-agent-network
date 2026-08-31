@@ -26,9 +26,9 @@ import 'server-only';
  *
  * Firestore safety: Firestore REJECTS `undefined` as a field value. The cycle
  * result is therefore sanitized with stripUndefined before it is embedded in
- * `lastRun.result` — an honest `{ ok: true, stage: 'awaited' }` (no reason /
- * no executionId) and an honest `{ ok: false, reason, code }` must both
- * persist without throwing "Cannot use undefined as a Firestore value".
+ * `lastRun.result` — an honest `{ ok: true, stage: 'awaited', note? }` (no
+ * reason / no executionId) and an honest `{ ok: false, reason, code }` must
+ * both persist without throwing "Cannot use undefined as a Firestore value".
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getTokenFromRequest } from '@/lib/api-middleware';
@@ -247,12 +247,13 @@ export async function POST(
         session: registeredSession,
       });
       // Build a Firestore-safe result: NEVER include undefined fields.
-      // ok:true  -> { ok, stage, executionId? }
+      // ok:true  -> { ok, stage, executionId?, note? }
       // ok:false -> { ok, reason, code }
       const compact: Record<string, unknown> = { ok: result.ok };
       if (result.ok) {
         compact.stage = result.stage;
         if ('executionId' in result && result.executionId) compact.executionId = result.executionId;
+        if ('note' in result && result.note) compact.note = result.note;
       } else {
         compact.reason = result.reason;
         compact.code = result.code;

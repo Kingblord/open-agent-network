@@ -48,12 +48,18 @@ import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-sig
  * mainnet 56, Gate-A chain verified, fail-closed). Otherwise it falls back to
  * the hermetic DevDataProvider for offline dev/tests ONLY. Nothing is
  * fabricated in either mode.
+ *
+ * Config-gap honesty: an unreachable/unconfigured live provider or an
+ * un-bundled strategy package (dynamic `import()` on a serverless runtime)
+ * is an ENVIRONMENT gap, not a transaction failure. It stops the loop at the
+ * honest `awaited` state with an actionable `note` (persisted on the task row)
+ * instead of a hard FAILED `ERR_INTERNAL`.
  */
 
 const logger = createLogger('agent-runtime');
 
 export type CycleResult =
-  | { ok: true; stage: 'observed' | 'decided' | 'awaited' | 'confirmed'; executionId?: string }
+  | { ok: true; stage: 'observed' | 'decided' | 'awaited' | 'confirmed'; executionId?: string; note?: string }
   | { ok: false; reason: string; code: ErrorCode };
 
 export interface RunCycleOptions {
@@ -123,6 +129,34 @@ async function resolveExecutionBackend(agentId: string): Promise<
     logger.warn('agent_awaiting_execution_signer_unavailable', { agentId, message });
     return null;
   }
+}
+
+/**
+ * Categorize whether an error is an ENVIRONMENT/CONFIG gap vs a real failure.
+ *
+ * The honesty contract says a missing/unreachable provider, an un-bundled
+ * strategy package (dynamic `import()` on a serverless runtime), or a missing
+ * signer runtime should stop at an honest "awaiting execution" state with an
+ * actionable note — NOT a hard task FAILED. These are config gaps, not
+ * transaction failures. Anything else is a real failure and must surface.
+ */
+function isAwaitableConfigGap(err: unknown): boolean {
+  if (!(err instanceof BANError)) {
+    const message = err instanceof Error ? err.message : String(err);
+    return /import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(message);
+  }
+  if (err.code === ErrorCode.PROVIDER_UNAVAILABLE) return true;
+  if (err.code === ErrorCode.INTERNAL) {
+    return /import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(err.message ?? '');
+  }
+  return false;
+}
+
+/** Surface an actionable message for a config-gap that stops a cycle. */
+function configGapNote(err: unknown): string {
+  const message =
+    err instanceof BANError ? err.message : err instanceof Error ? err.message : String(err);
+  return `Execution pending — ${message}. Check BAN_LIVE_DATA / BAN_RPC_URL / strategy package bundling. No transaction was broadcast.`;
 }
 
 /**
@@ -308,6 +342,23 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
 
     return { ok: true, stage: 'confirmed', executionId };
   } catch (err) {
+    if (isAwaitableConfigGap(err)) {
+      // Environment/config gap (unreachable provider, un-bundled strategy
+      // package, missing signer runtime). Honest "awaiting" stop — not a
+      // failure — matching the documented contract. The real reason is
+      // preserved so the task row shows what to fix.
+      const note = configGapNote(err);
+      await persistAuditEvent({
+        type: 'AGENT_EXECUTION_PENDING',
+        correlationId,
+        agentId,
+        userId,
+        severity: 'INFO',
+        detail: { note },
+      });
+      logger.warn('agent_cycle_awaiting_config', { agentId, correlationId, note });
+      return { ok: true, stage: 'awaited', note };
+    }
     const code = err instanceof BANError ? err.code : ErrorCode.INTERNAL;
     logger.error('agent_cycle_failed', { agentId, correlationId }, err);
     return { ok: false, reason: `cycle_error:${code}`, code };
