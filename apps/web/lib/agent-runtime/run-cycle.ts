@@ -49,11 +49,12 @@ import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-sig
  * the hermetic DevDataProvider for offline dev/tests ONLY. Nothing is
  * fabricated in either mode.
  *
- * Config-gap honesty: an unreachable/unconfigured live provider or an
- * un-bundled strategy package (dynamic `import()` on a serverless runtime)
- * is an ENVIRONMENT gap, not a transaction failure. It stops the loop at the
- * honest `awaited` state with an actionable `note` (persisted on the task row)
- * instead of a hard FAILED `ERR_INTERNAL`.
+ * Config-gap honesty: an unreachable/unconfigured live provider (missing RPC,
+ * Gate-A mismatch, transient RPC/network timeout, rate limit), an un-bundled
+ * strategy package (dynamic `import()` on a serverless runtime), or a missing
+ * signer runtime is an ENVIRONMENT gap, not a transaction failure. It stops
+ * the loop at the honest `awaited` state with an actionable `note` (persisted
+ * on the task row) instead of a hard FAILED `ERR_INTERNAL`.
  */
 
 const logger = createLogger('agent-runtime');
@@ -135,19 +136,33 @@ async function resolveExecutionBackend(agentId: string): Promise<
  * Categorize whether an error is an ENVIRONMENT/CONFIG gap vs a real failure.
  *
  * The honesty contract says a missing/unreachable provider, an un-bundled
- * strategy package (dynamic `import()` on a serverless runtime), or a missing
- * signer runtime should stop at an honest "awaiting execution" state with an
- * actionable note — NOT a hard task FAILED. These are config gaps, not
- * transaction failures. Anything else is a real failure and must surface.
+ * strategy package (dynamic `import()` on a serverless runtime), a missing
+ * signer runtime, or a transient RPC/network/timeout/rate-limit failure should
+ * stop at an honest "awaiting execution" state with an actionable note — NOT a
+ * hard task FAILED. These are config gaps, not transaction failures. Anything
+ * else is a real failure and must surface.
  */
 function isAwaitableConfigGap(err: unknown): boolean {
-  if (!(err instanceof BANError)) {
-    const message = err instanceof Error ? err.message : String(err);
-    return /import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(message);
+  const message =
+    err instanceof BANError ? err.message : err instanceof Error ? err.message : String(err);
+
+  // Import / module / provider / signer-runtime gaps (including on serverless).
+  if (/import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(message)) return true;
+
+  // Raw network / DNS / timeout / rate-limit failures from viem / fetch.
+  if (
+    /fetch failed|request failed|failed to fetch|network|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timed out|aborted|rate.?limit|429/i.test(
+      message,
+    )
+  ) {
+    return true;
   }
-  if (err.code === ErrorCode.PROVIDER_UNAVAILABLE) return true;
-  if (err.code === ErrorCode.INTERNAL) {
-    return /import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(err.message ?? '');
+
+  if (err instanceof BANError) {
+    if (err.code === ErrorCode.PROVIDER_UNAVAILABLE) return true;
+    if (err.code === ErrorCode.INTERNAL) {
+      // Already covered by the message regex above.
+    }
   }
   return false;
 }
@@ -156,7 +171,21 @@ function isAwaitableConfigGap(err: unknown): boolean {
 function configGapNote(err: unknown): string {
   const message =
     err instanceof BANError ? err.message : err instanceof Error ? err.message : String(err);
-  return `Execution pending — ${message}. Check BAN_LIVE_DATA / BAN_RPC_URL / strategy package bundling. No transaction was broadcast.`;
+  return `Execution pending — ${sanitizeErrorMessage(message)}. Check BAN_LIVE_DATA / BAN_RPC_URL / strategy package bundling. No transaction was broadcast.`;
+}
+
+/**
+ * Sanitize an error message before it is persisted or surfaced: redact anything
+ * that looks like a private key / long hex secret and cap the length. The real
+ * reason is preserved, secrets are never leaked.
+ */
+function sanitizeErrorMessage(message: string): string {
+  if (!message) return 'unknown error';
+  // Redact 40+ char hex strings (private keys / tx-safe hashes are never secrets
+  // here, but a leaked key must never be persisted to the task row).
+  const redacted = message.replace(/0x[0-9a-fA-F]{40,}/g, '0x[redacted]');
+  const max = 300;
+  return redacted.length <= max ? redacted : `${redacted.slice(0, max)}…`;
 }
 
 /**
@@ -344,9 +373,10 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
   } catch (err) {
     if (isAwaitableConfigGap(err)) {
       // Environment/config gap (unreachable provider, un-bundled strategy
-      // package, missing signer runtime). Honest "awaiting" stop — not a
-      // failure — matching the documented contract. The real reason is
-      // preserved so the task row shows what to fix.
+      // package, missing signer runtime, transient RPC/network failure).
+      // Honest "awaiting" stop — not a failure — matching the documented
+      // contract. The real reason is preserved so the task row shows what to
+      // fix.
       const note = configGapNote(err);
       await persistAuditEvent({
         type: 'AGENT_EXECUTION_PENDING',
@@ -359,9 +389,12 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       logger.warn('agent_cycle_awaiting_config', { agentId, correlationId, note });
       return { ok: true, stage: 'awaited', note };
     }
+    // A real failure — surface the code AND the sanitized real message so the
+    // task row / API shows exactly what happened (never a bare ERR_INTERNAL).
     const code = err instanceof BANError ? err.code : ErrorCode.INTERNAL;
+    const message = err instanceof BANError ? err.message : err instanceof Error ? err.message : String(err);
     logger.error('agent_cycle_failed', { agentId, correlationId }, err);
-    return { ok: false, reason: `cycle_error:${code}`, code };
+    return { ok: false, reason: `cycle_error:${code}: ${sanitizeErrorMessage(message)}`, code };
   }
 }
 
