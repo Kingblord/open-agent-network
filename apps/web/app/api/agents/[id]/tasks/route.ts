@@ -23,6 +23,12 @@ import 'server-only';
  * config so the UI can show exactly what the backend runs with. It never
  * fabricates execution results: the immediate run's honest CycleResult is
  * returned as `initialRun` and also recorded as an audit event.
+ *
+ * Firestore safety: Firestore REJECTS `undefined` as a field value. The cycle
+ * result is therefore sanitized with stripUndefined before it is embedded in
+ * `lastRun.result` — an honest `{ ok: true, stage: 'awaited' }` (no reason /
+ * no executionId) and an honest `{ ok: false, reason, code }` must both
+ * persist without throwing "Cannot use undefined as a Firestore value".
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getTokenFromRequest } from '@/lib/api-middleware';
@@ -68,6 +74,21 @@ export interface TaskRecord {
 
 const TASK_STATUS = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED'] as const;
 
+/** Recursively remove undefined values so the object is Firestore-safe. */
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripUndefined(v));
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 async function createTaskRecord(agentId: string, ownerId: string, config: TaskRecord['config'], sessionId: string | null, runResult: Record<string, unknown> | null): Promise<TaskRecord> {
   const db = getAdminDb();
   const { generateId } = await import('@ban/shared');
@@ -80,11 +101,11 @@ async function createTaskRecord(agentId: string, ownerId: string, config: TaskRe
     status: runResult?.ok === false ? 'FAILED' : 'COMPLETED',
     config,
     sessionId,
-    lastRun: runResult ? { at: now, result: runResult } : null,
+    lastRun: runResult ? { at: now, result: stripUndefined(runResult) as Record<string, unknown> } : null,
     createdAt: now,
     updatedAt: now,
   };
-  await db.collection(collections.agentTasks ?? 'agent_tasks').doc(taskId).set(record);
+  await db.collection(collections.agentTasks ?? 'agent_tasks').doc(taskId).set(stripUndefined(record) as TaskRecord);
   return record;
 }
 
@@ -225,7 +246,18 @@ export async function POST(
         correlationId,
         session: registeredSession,
       });
-      runResult = { ok: result.ok, stage: result.ok ? result.stage : undefined, reason: result.ok ? undefined : result.reason, code: result.ok ? undefined : result.code, executionId: result.ok && 'executionId' in result ? (result as { executionId?: string }).executionId : undefined };
+      // Build a Firestore-safe result: NEVER include undefined fields.
+      // ok:true  -> { ok, stage, executionId? }
+      // ok:false -> { ok, reason, code }
+      const compact: Record<string, unknown> = { ok: result.ok };
+      if (result.ok) {
+        compact.stage = result.stage;
+        if ('executionId' in result && result.executionId) compact.executionId = result.executionId;
+      } else {
+        compact.reason = result.reason;
+        compact.code = result.code;
+      }
+      runResult = stripUndefined(compact) as Record<string, unknown>;
     } catch (runErr) {
       logger.error('task_initial_run_failed', { agentId: id, correlationId }, runErr);
       runResult = { ok: false, reason: 'cycle_error', code: ErrorCode.INTERNAL };

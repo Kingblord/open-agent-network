@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useWallet } from '@/lib/wallet-context';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -12,6 +13,13 @@ export default function ProfilePage() {
   const [mounted, setMounted] = useState(false);
   const [agentCount, setAgentCount] = useState<number | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [serverWallet, setServerWallet] = useState<string | null>(null);
+
+  const {
+    activeAddress,
+    linkedAddress,
+    hydrating,
+  } = useWallet();
 
   useEffect(() => {
     setMounted(true);
@@ -46,9 +54,34 @@ export default function ProfilePage() {
     loadStats();
   }, [user]);
 
+  // Rehydrate the persisted wallet from the server so a connection made on
+  // another device/browser (which POSTed to /api/developers/wallet) reflects
+  // here even before the user actively reconnects.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void fetch('/api/developers/wallet', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.walletAddress) setServerWallet(data.walletAddress);
+      })
+      .catch(() => {
+        // Non-fatal — fall back to active/linked address below.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
     : '—';
+
+  // The profile wallet address: active connection wins, then the auth user's
+  // persisted server wallet, then localStorage link, then server fetch.
+  const walletAddress = activeAddress ?? user?.walletAddress ?? linkedAddress ?? serverWallet ?? null;
+  const walletConnected = Boolean(walletAddress);
 
   if (loading || !user) {
     return (
@@ -123,42 +156,71 @@ export default function ProfilePage() {
         </div>
 
         <div className="mx-5 mt-4 dark:bg-[#111] bg-gray-50 rounded-xl p-5 border dark:border-[#222] border-gray-200">
-          <h3 className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase mb-4">Wallet</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs dark:text-gray-400 text-gray-500">Address</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono dark:text-white text-black">
-                  {user.id ? `${user.id.slice(0, 10)}...${user.id.slice(-6)}` : ''}
-                </span>
-                <button
-                  onClick={() => navigator.clipboard.writeText(user.id || '')}
-                  className="text-[#F0B90B] hover:text-black transition"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs dark:text-gray-400 text-gray-500">Network</span>
-              <span className="dark:bg-[#1A1A1A] bg-white text-[10px] text-[#F0B90B] font-black px-2.5 py-1 border dark:border-[#333] border-gray-300 uppercase tracking-wider">
-                BNB Chain
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase">Wallet</h3>
+            {walletConnected ? (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-green-600 dark:text-green-400 uppercase tracking-wider">
+                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                Connected
               </span>
+            ) : (
+              !hydrating && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                  <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                  Not connected
+                </span>
+              )
+            )}
+          </div>
+          {walletConnected ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs dark:text-gray-400 text-gray-500">Address</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono dark:text-white text-black">
+                    {walletAddress ? `${walletAddress.slice(0, 10)}...${walletAddress.slice(-6)}` : ''}
+                  </span>
+                  <button
+                    onClick={() => walletAddress && navigator.clipboard.writeText(walletAddress)}
+                    className="text-[#F0B90B] hover:text-black transition"
+                    aria-label="Copy wallet address"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs dark:text-gray-400 text-gray-500">Network</span>
+                <span className="dark:bg-[#1A1A1A] bg-white text-[10px] text-[#F0B90B] font-black px-2.5 py-1 border dark:border-[#333] border-gray-300 uppercase tracking-wider">
+                  BNB Chain
+                </span>
+              </div>
+              <button
+                onClick={() => walletAddress && window.open(`https://bscscan.com/address/${walletAddress}`, '_blank')}
+                className="w-full mt-2 text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center justify-center gap-1 py-2 border dark:border-[#333] border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
+              >
+                View on BscScan
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 17L17 7" />
+                  <path d="M7 7h10v10" />
+                </svg>
+              </button>
             </div>
+          ) : (
             <button
-              onClick={() => window.open(`https://bscscan.com/address/${user.id || ''}`, '_blank')}
-              className="w-full mt-2 text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center justify-center gap-1 py-2 border dark:border-[#333] border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
+              onClick={() => router.push('/settings')}
+              className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black text-[#F0B90B] border dark:border-[#333] border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
             >
-              View on BscScan
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 17L17 7" />
-                <path d="M7 7h10v10" />
+              Connect wallet
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <path d="M12 5l7 7-7 7" />
               </svg>
             </button>
-          </div>
+          )}
         </div>
 
         <div className="mx-5 mt-4 dark:bg-[#111] bg-gray-50 rounded-xl p-5 border dark:border-[#222] border-gray-200">
