@@ -13,7 +13,7 @@ const logger = createStructuredLogger('inngest.reconcile');
  * Reconciliation systems for the BAN control plane.
  *
  * 1. banTaskReconcile — "active tasks keep running":
- *    Every minute, for each ACTIVE agent that still has an ACTIVE task
+ *    Every 2 minutes, for each ACTIVE agent that still has an ACTIVE task
  *    (status !== 'FAILED' and expiresAtMs in the future), send a
  *    ban/agent.tick-loop event so the self-sustaining closed loop keeps
  *    ticking for THAT task's agent — even if the original kick was lost
@@ -62,7 +62,7 @@ export const banTaskReconcile = inngest.createFunction(
   {
     id: 'ban-task-reconcile',
     retries: 1,
-    triggers: [{ cron: '*/1 * * * *' }],
+    triggers: [{ cron: '*/2 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {
@@ -105,7 +105,7 @@ export const banWalletProvisionSweep = inngest.createFunction(
   {
     id: 'ban-wallet-provision-sweep',
     retries: 1,
-    triggers: [{ cron: '*/1 * * * *' }],
+    triggers: [{ cron: '*/2 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {
