@@ -287,6 +287,7 @@ export default function MyAgentDetailPage() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -389,13 +390,23 @@ export default function MyAgentDetailPage() {
 
   const fetchActivity = async () => {
     try {
+      setActivityError(null);
       const response = await fetch(`/api/agents/${params.id}/activity?limit=50`);
       if (response.ok) {
         const data = await response.json();
         setEvents(data.events ?? []);
+        return;
       }
+      const data = await response.json().catch(() => null);
+      setEvents([]);
+      setActivityError(
+        data && typeof data.error === 'string'
+          ? data.error
+          : 'Activity is unavailable for this agent right now.'
+      );
     } catch (error) {
       console.error('Failed to fetch activity:', error);
+      setActivityError('Failed to load activity. Please try again.');
     }
   };
 
@@ -1100,7 +1111,18 @@ export default function MyAgentDetailPage() {
 
           <div className="space-y-4">
             {events.length === 0 ? (
-              <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+              activityError ? (
+                <div className="bg-[#161616] border border-[#333] rounded-lg p-3.5 space-y-2">
+                  <p className="text-xs font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
+                  <p className="text-xs text-gray-400 leading-relaxed">{activityError}</p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    This agent&apos;s live activity is only visible to the account that owns it.
+                    If you hired it, sign in with that account to see the audit trail.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+              )
             ) : (
               events.slice(0, 6).map((ev) => (
                 <div key={ev.id} className="flex items-start gap-3 text-xs">
@@ -1213,7 +1235,18 @@ export default function MyAgentDetailPage() {
             <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
               <span className="text-[10px] font-black text-white tracking-widest uppercase mb-4 block">FULL ACTIVITY</span>
               {events.length === 0 ? (
+                activityError ? (
+                <div className="bg-[#161616] border border-[#333] rounded-lg p-3.5 space-y-2">
+                  <p className="text-xs font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
+                  <p className="text-xs text-gray-400 leading-relaxed">{activityError}</p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    This agent&apos;s live activity is only visible to the account that owns it.
+                    If you hired it, sign in with that account to see the audit trail.
+                  </p>
+                </div>
+              ) : (
                 <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+              )
               ) : (
                 <div className="space-y-4">
                   {events.map((ev) => (

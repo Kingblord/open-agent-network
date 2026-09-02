@@ -49,7 +49,7 @@ export async function GET(
       });
     }
     if (agent.ownerId !== user.developerId) {
-      return errorResponse(403, 'Not authorized to view activity for this agent', {
+      return errorResponse(403, 'Activity for this agent is only visible to the account that hired it. Hire or deploy it first, or sign in with the account that owns it.', {
         code: ErrorCode.POLICY_DENIED,
         correlationId: getCorrelationId(),
       });

@@ -70,10 +70,10 @@ export class GridObservationBuilder {
     };
 
     return {
-      type: 'grid_trading',
+      id: `obs_grid_${agent.id}_${Date.now()}`,
       agentId: agent.id,
-      strategyId: this.strategyId,
-      timestamp: new Date().toISOString(),
+      type: 'grid_trading',
+      observedAt: new Date().toISOString(),
       data: gridData,
     } as unknown as Observation;
   }

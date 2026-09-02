@@ -176,6 +176,7 @@ export default function AgentDetailPage() {
   const [protocolSnapshot, setProtocolSnapshot] = useState<RegistrySnapshot | null>(null);
   const [protocolSnapshotError, setProtocolSnapshotError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -215,13 +216,23 @@ export default function AgentDetailPage() {
 
   const fetchActivity = async () => {
     try {
+      setActivityError(null);
       const response = await fetch(`/api/agents/${params.id}/activity?limit=30`);
       if (response.ok) {
         const data = await response.json();
         setEvents(data.events ?? []);
+        return;
       }
+      const data = await response.json().catch(() => null);
+      setEvents([]);
+      setActivityError(
+        data && typeof data.error === 'string'
+          ? data.error
+          : 'Activity is unavailable for this agent right now.'
+      );
     } catch (error) {
       console.error('Failed to fetch activity:', error);
+      setActivityError('Failed to load activity. Please try again.');
     }
   };
 
@@ -669,7 +680,17 @@ export default function AgentDetailPage() {
             <div className="space-y-4">
               {events.length === 0 ? (
                 <div className="text-center py-8">
+                  {activityError ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
+                    <p className="text-xs text-gray-400 leading-relaxed max-w-sm mx-auto">{activityError}</p>
+                    <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                      Live activity is only visible to the account that hired this agent. Hire it to see its audit trail, or sign in with the owning account.
+                    </p>
+                  </div>
+                ) : (
                   <p className="text-sm font-black text-gray-400 mb-1">No activity events yet</p>
+                )}
                   <p className="text-xs text-gray-500">Events will appear here once this agent records its first on-chain activity (e.g. AI decisions, submissions, confirmations).</p>
                 </div>
               ) : (

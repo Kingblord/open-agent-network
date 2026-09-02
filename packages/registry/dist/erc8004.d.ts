@@ -59,18 +59,32 @@ export interface Erc8004AgentListing {
 export interface ExternalErc8004Record {
     id?: unknown;
     agentId?: unknown;
+    /** 8004scan API is snake_case. */
+    agent_id?: unknown;
     name?: unknown;
     description?: unknown;
     type?: unknown;
     strategyId?: unknown;
     capabilities?: unknown;
     protocols?: unknown;
+    /** 8004scan API: supported_protocols. */
+    supported_protocols?: unknown;
     riskLevel?: unknown;
+    risk_level?: unknown;
     registryAddress?: unknown;
+    /** 8004scan API: contract_address. */
+    contract_address?: unknown;
     tokenId?: unknown;
+    token_id?: unknown;
     metadataUri?: unknown;
     reputationScore?: unknown;
+    total_score?: unknown;
     reputationSource?: unknown;
+    reputation_source?: unknown;
+    verified?: unknown;
+    /** 8004scan API: is_verified. */
+    is_verified?: unknown;
+    created_at?: unknown;
 }
 /** Normalize an external ERC-8004 record into our listing shape (fail-open, reputation-neutral). */
 export declare function normalizeExternalErc8004Record(record: ExternalErc8004Record, fallbackIndex?: number): Erc8004AgentListing;

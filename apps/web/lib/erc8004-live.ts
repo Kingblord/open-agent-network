@@ -72,7 +72,9 @@ export async function syncErc8004Live(): Promise<Erc8004SyncResult> {
       ? (data as unknown[])
       : Array.isArray((data as { agents?: unknown[] })?.agents)
         ? (data as { agents: unknown[] }).agents
-        : [];
+        : Array.isArray((data as { items?: unknown[] })?.items)
+          ? (data as { items: unknown[] }).items
+          : [];
 
     const listings = rawRecords.map((record, i) =>
       normalizeExternalErc8004Record(

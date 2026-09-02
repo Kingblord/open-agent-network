@@ -97,10 +97,11 @@ function asStrings(v) {
 }
 /** Normalize an external ERC-8004 record into our listing shape (fail-open, reputation-neutral). */
 export function normalizeExternalErc8004Record(record, fallbackIndex = 0) {
-    const id = asString(record.agentId, asString(record.id, `external-agent-${fallbackIndex}`));
-    const riskRaw = asString(record.riskLevel, 'UNKNOWN').toUpperCase();
+    const id = asString(record.agentId ?? record.agent_id, asString(record.id, `external-agent-${fallbackIndex}`));
+    const riskRaw = asString(record.riskLevel ?? record.risk_level, 'UNKNOWN').toUpperCase();
     const riskLevel = riskRaw === 'LOW' || riskRaw === 'MEDIUM' || riskRaw === 'HIGH' ? riskRaw : 'MEDIUM';
-    const hasReputation = record.reputationScore !== undefined && record.reputationScore !== null && asString(record.reputationScore, '') !== '';
+    const reputationScore = record.reputationScore ?? record.total_score;
+    const hasReputation = reputationScore !== undefined && reputationScore !== null && asString(reputationScore, '') !== '';
     return {
         id,
         name: asString(record.name, `External Agent ${fallbackIndex + 1}`),
@@ -108,22 +109,23 @@ export function normalizeExternalErc8004Record(record, fallbackIndex = 0) {
         type: asString(record.type, 'external'),
         strategyId: asString(record.strategyId) || undefined,
         capabilities: asStrings(record.capabilities),
-        protocols: asStrings(record.protocols),
+        protocols: asStrings(record.protocols ?? record.supported_protocols),
         riskLevel,
         status: 'REGISTERED',
         source: 'EXTERNAL',
         registry: {
-            registryAddress: asString(record.registryAddress) || undefined,
-            tokenId: asString(record.tokenId) || undefined,
+            registryAddress: asString(record.registryAddress ?? record.contract_address) || undefined,
+            tokenId: asString(record.tokenId ?? record.token_id) || undefined,
             metadataUri: asString(record.metadataUri) || undefined,
-            // Not fully verified until we actually validate on-chain (no silent claims).
-            verified: false,
+            // Verified flag sourced from the discovery feed (8004scan is_verified);
+            // BAN never asserts on-chain verification it hasn't performed itself.
+            verified: record.is_verified === true || record.verified === true,
         },
         // Never synthesize reputation: null unless a real score+source was provided.
         reputation: hasReputation
-            ? { score: asString(record.reputationScore), source: asString(record.reputationSource) || 'external', verified: false }
+            ? { score: asString(reputationScore), source: asString(record.reputationSource ?? record.reputation_source) || 'external', verified: false }
             : null,
-        createdAt: new Date().toISOString(),
+        createdAt: asString(record.created_at, new Date().toISOString()),
     };
 }
 export class Erc8004Registry {
