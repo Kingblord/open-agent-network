@@ -9,6 +9,7 @@ import { BANError, ErrorCode } from '@ban/shared';
 import { agentRegistry } from '@/lib/agent-registry';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
 import { persistAuditEvent } from '@/lib/agent-runtime/persistence';
+import { loadLatestTaskConfig } from '@/lib/agent-runtime/task-config';
 import { reconcileFunctions } from './reconcile';
 
 const logger = createStructuredLogger('inngest.jobs');
@@ -195,10 +196,12 @@ export const banAgentTick = inngest.createFunction(
     let ran = 0;
     for (const agent of agents) {
       await step.run(`cycle-${agent.id}`, async () => {
+        const strategyConfig = await loadLatestTaskConfig(agent.id);
         const result = await runAgentCycle({
           agentId: agent.id,
           userId: agent.ownerId,
           correlationId,
+          strategyConfig,
         });
 
         // Heartbeat: proves the Inngest cron reached THIS agent and records
@@ -289,10 +292,12 @@ export const banAgentLoop = inngest.createFunction(
     }
 
     // Run one honest closed-loop cycle.
+    const strategyConfig = await loadLatestTaskConfig(agentId);
     const result = await runAgentCycle({
       agentId,
       userId: String(agent.ownerId ?? userId),
       correlationId,
+      strategyConfig,
     });
 
     // Heartbeat: proves the Inngest loop reached THIS agent and records the

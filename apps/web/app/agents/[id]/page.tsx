@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -64,8 +64,8 @@ interface ActivityEvent {
   createdAt: string;
 }
 
-// Shape of GET /api/protocols → { ok, snapshot } (derived from the fail-closed
-// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
+// Shape of GET /api/protocols â†’ { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot â€” never fabricated).
 interface RegistryContractEntry {
   id: string;
   address: string;
@@ -236,7 +236,7 @@ export default function AgentDetailPage() {
     }
   };
 
-  // Real protocol registry snapshot (GET /api/protocols → buildBnbRegistrySnapshot).
+  // Real protocol registry snapshot (GET /api/protocols â†’ buildBnbRegistrySnapshot).
   const fetchProtocolSnapshot = async () => {
     try {
       const response = await fetch('/api/protocols');
@@ -285,7 +285,7 @@ export default function AgentDetailPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="inline-block animate-spin h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
       </div>
     );
@@ -293,7 +293,7 @@ export default function AgentDetailPage() {
 
   if (pageLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="text-center space-y-3">
           <div className="inline-block animate-spin h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
           <p className="text-xs text-[#F0B90B] font-mono tracking-widest uppercase">Loading Agent...</p>
@@ -304,8 +304,8 @@ export default function AgentDetailPage() {
 
   if (!agent) {
     return (
-      <div className="min-h-screen bg-black text-white p-6 flex flex-col items-center justify-center">
-        <p className="text-gray-400 mb-4">Agent not found</p>
+      <div className="min-h-screen bg-background text-foreground p-6 flex flex-col items-center justify-center">
+        <p className="text-muted-foreground mb-4">Agent not found</p>
         <button onClick={() => router.push('/agents')} className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase tracking-wider">Return to Marketplace</button>
       </div>
     );
@@ -317,10 +317,10 @@ export default function AgentDetailPage() {
   const capitalUsd = Number(performance?.capitalManagedUsd || '0');
   const tvlValue = hasRealPositions && capitalUsd > 0
     ? `$${capitalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : '—';
+    : 'â€”';
   const successRate = confirmedCount > 0 && performance
     ? `${(parseFloat(performance.successRate) * 100).toFixed(0)}%`
-    : '—';
+    : 'â€”';
   const confirmedDisplay = confirmedCount > 0 ? String(confirmedCount) : 'None yet';
   const capLabel = (c: Capability) => c.name || c.id;
 
@@ -335,7 +335,7 @@ export default function AgentDetailPage() {
   //
   // Match by registry **id OR display name**, case-insensitive. The snapshot
   // uses ids (`pancakeswap`, `venus`) while agent templates may store display
-  // names (`PancakeSwap`, `Venus`) — a strict id-only match made verified
+  // names (`PancakeSwap`, `Venus`) â€” a strict id-only match made verified
   // protocols render as greyed-out "UNRECOGNIZED" despite being verified.
   const norm = (s: string) => s.toLowerCase().trim();
   const snapshotProtocols = protocolSnapshot?.protocols ?? [];
@@ -353,19 +353,19 @@ export default function AgentDetailPage() {
       case 'EXECUTION_ENABLED': return 'text-green-400 border-green-500/40 bg-green-500/10';
       case 'SIMULATION': return 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10';
       case 'READ_ONLY': return 'text-blue-400 border-blue-500/40 bg-blue-500/10';
-      default: return 'text-gray-400 border-gray-600 bg-gray-800/40';
+      default: return 'text-muted-foreground border-gray-600 bg-gray-800/40';
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
-      <header className="sticky top-0 z-40 bg-black/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
-        <button onClick={() => router.push('/agents')} className="text-white hover:text-[#F0B90B] transition flex items-center gap-1" aria-label="Back">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-28">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
+        <button onClick={() => router.push('/agents')} className="text-foreground hover:text-[#F0B90B] transition flex items-center gap-1" aria-label="Back">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h1 className="text-sm font-black tracking-widest uppercase text-white">AGENT DETAILS</h1>
+        <h1 className="text-sm font-black tracking-widest uppercase text-foreground">AGENT DETAILS</h1>
         <div className="w-5" />
       </header>
 
@@ -374,7 +374,7 @@ export default function AgentDetailPage() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-3 py-2 text-[11px] font-black uppercase tracking-wider border-b-2 transition ${activeTab === t.id ? 'text-[#F0B90B] border-[#F0B90B]' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
+            className={`px-3 py-2 text-[11px] font-black uppercase tracking-wider border-b-2 transition ${activeTab === t.id ? 'text-[#F0B90B] border-[#F0B90B]' : 'text-muted-foreground border-transparent hover:text-gray-300'}`}
           >
             {t.label}
           </button>
@@ -384,7 +384,7 @@ export default function AgentDetailPage() {
       <div className="px-5 pt-4 space-y-4">
         {activeTab === 'overview' && (
           <>
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+            <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-start gap-4 mb-4">
                 <div className="w-14 h-14 rounded-full bg-[#F0B90B] flex items-center justify-center shrink-0 border-2 border-black">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -398,7 +398,7 @@ export default function AgentDetailPage() {
                       <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                       {agent.status}
                     </span>
-                    {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocol}</span>}
+                    {primaryProtocol && <span className="text-xs text-muted-foreground">On {primaryProtocol}</span>}
                     {agent.riskLevel && (
                       <span className="text-[9px] font-black tracking-wider uppercase bg-[#F0B90B]/20 text-[#F0B90B] px-2 py-0.5 rounded">
                         {agent.riskLevel} RISK
@@ -412,45 +412,45 @@ export default function AgentDetailPage() {
                 {agent.description || 'Autonomous BNB Chain agent registered on BAN.'}
               </p>
 
-              <div className="grid grid-cols-3 gap-2 pt-4 border-t border-[#222] text-center">
+              <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border text-center">
                 <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
-                  <p className="text-base font-black text-white">{confirmedDisplay}</p>
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
+                  <p className="text-base font-black text-foreground">{confirmedDisplay}</p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
-                  <p className="text-base font-black text-white">{tvlValue}</p>
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
+                  <p className="text-base font-black text-foreground">{tvlValue}</p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">SUCCESS RATE</p>
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">SUCCESS RATE</p>
                   <p className="text-base font-black text-green-400">{successRate}</p>
                 </div>
               </div>
 
               {performance && (
-                <div className="mt-4 pt-3 border-t border-[#222] grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-[#161616] rounded-lg p-3">
-                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
-                    <p className="text-sm font-black text-white">{performance.totalTrades}</p>
+                <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-card rounded-lg p-3">
+                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Total trades</p>
+                    <p className="text-sm font-black text-foreground">{performance.totalTrades}</p>
                   </div>
-                  <div className="bg-[#161616] rounded-lg p-3">
-                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Avg execution</p>
-                    <p className="text-sm font-black text-white">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
+                  <div className="bg-card rounded-lg p-3">
+                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Avg execution</p>
+                    <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : 'â€”'}</p>
                   </div>
                 </div>
               )}
 
               {performance && (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
                   <span>Mode</span>
-                  <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
+                  <span className="font-black text-[#F0B90B] uppercase">{performance.mode} â€” {performance.modeReason}</span>
                 </div>
               )}
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+            <div className="bg-card rounded-xl p-5 border border-border space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">HIRE AGENT</span>
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase">HIRE AGENT</span>
                 <span className="text-xs font-mono font-black text-[#F0B90B]">
                   {agent.costPerExecution != null ? `${agent.costPerExecution} Credits / Run` : 'Cost not set'}
                 </span>
@@ -462,11 +462,11 @@ export default function AgentDetailPage() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     Agent Hired!
                   </p>
-                  <p className="text-[10px] font-mono text-gray-400">Hired Agent ID: {deployedAgentId}</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">Hired Agent ID: {deployedAgentId}</p>
                   <button onClick={() => router.push(`/my-agents/${deployedAgentId}`)} className="w-full mt-2 bg-[#F0B90B] text-black font-black text-xs py-2 uppercase tracking-wider">Go to My Agents</button>
                 </div>
               ) : (
-                <p className="text-xs text-gray-400 leading-relaxed">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   Hire this BAN agent to your account to create a task, set its scoped session and spend limits, and let it start executing on BNB Chain.
                 </p>
               )}
@@ -483,23 +483,23 @@ export default function AgentDetailPage() {
               )}
             </div>
 
-            {/* PROTOCOL STATE — real registry snapshot per agent skill (never fabricated). */}
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+            {/* PROTOCOL STATE â€” real registry snapshot per agent skill (never fabricated). */}
+            <div className="bg-card rounded-xl p-5 border border-border space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">PROTOCOL STATE</span>
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PROTOCOL STATE</span>
                 {protocolSnapshot && (
-                  <span className="text-[9px] font-mono text-gray-500">
-                    BNB {protocolSnapshot.chainId} · registry-derived
+                  <span className="text-[9px] font-mono text-muted-foreground">
+                    BNB {protocolSnapshot.chainId} Â· registry-derived
                   </span>
                 )}
               </div>
 
               {protocolSnapshotError && (
-                <p className="text-xs text-gray-500">{protocolSnapshotError} <button type="button" onClick={fetchProtocolSnapshot} className="text-[#F0B90B] font-black uppercase text-[10px]">Retry</button></p>
+                <p className="text-xs text-muted-foreground">{protocolSnapshotError} <button type="button" onClick={fetchProtocolSnapshot} className="text-[#F0B90B] font-black uppercase text-[10px]">Retry</button></p>
               )}
 
               {!protocolSnapshotError && protocolSnapshot == null && (
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <div className="inline-block animate-spin h-3.5 w-3.5 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
                   Loading protocol state...
                 </div>
@@ -508,19 +508,19 @@ export default function AgentDetailPage() {
               {protocolSnapshot && (
                 <>
                   {agentProtocolState.length === 0 && unknownProtocols.length === 0 && (
-                    <p className="text-xs text-gray-500">This agent does not declare any protocols for on-chain work.</p>
+                    <p className="text-xs text-muted-foreground">This agent does not declare any protocols for on-chain work.</p>
                   )}
 
                   {agentProtocolState.length > 0 && (
                     <div className="space-y-4">
                       {agentProtocolState.map((p) => (
-                        <div key={p.id} className="bg-[#161616] rounded-lg border border-[#262626] p-3.5 space-y-2.5">
+                        <div key={p.id} className="bg-card rounded-lg border border-[#262626] p-3.5 space-y-2.5">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                               <CryptoIcon symbol={p.name} size={18} />
-                              <span className="text-sm font-black text-white">{p.name}</span>
+                              <span className="text-sm font-black text-foreground">{p.name}</span>
                               {p.priority && (
-                                <span className="text-[9px] font-black tracking-wider uppercase bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5 text-gray-400">{p.priority}</span>
+                                <span className="text-[9px] font-black tracking-wider uppercase bg-[#1A1A1A] border border-border px-1.5 py-0.5 text-muted-foreground">{p.priority}</span>
                               )}
                             </div>
                             <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${integrationColor(p.integrationStatus)}`}>
@@ -528,26 +528,26 @@ export default function AgentDetailPage() {
                             </span>
                           </div>
 
-                          <p className="text-[11px] text-gray-400 leading-relaxed">{p.reason}</p>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{p.reason}</p>
 
                           <div className="space-y-2">
                             {p.contracts.length === 0 ? (
                               <p className="text-[11px] text-gray-600">No verified contracts registered for this protocol on the BAN chain.</p>
                             ) : (
                               p.contracts.map((c) => (
-                                <div key={c.id} className="bg-black/40 rounded-md border border-[#222] p-2.5 space-y-1.5">
+                                <div key={c.id} className="bg-background/40 rounded-md border border-border p-2.5 space-y-1.5">
                                   <div className="flex items-center justify-between gap-2 flex-wrap">
                                     <span className="text-[11px] font-black text-gray-200">{c.name}</span>
                                     <span className="flex items-center gap-1.5">
-                                      <span className={`text-[9px] font-black uppercase ${c.verified ? 'text-green-400' : 'text-gray-500'}`}>{c.verified ? 'Verified' : 'Unverified'}</span>
-                                      <span className={`text-[9px] font-black uppercase ${c.enabled ? 'text-[#F0B90B]' : 'text-gray-500'}`}>{c.enabled ? 'Enabled' : 'Not enabled'}</span>
+                                      <span className={`text-[9px] font-black uppercase ${c.verified ? 'text-green-400' : 'text-muted-foreground'}`}>{c.verified ? 'Verified' : 'Unverified'}</span>
+                                      <span className={`text-[9px] font-black uppercase ${c.enabled ? 'text-[#F0B90B]' : 'text-muted-foreground'}`}>{c.enabled ? 'Enabled' : 'Not enabled'}</span>
                                     </span>
                                   </div>
-                                  <p className="text-[10px] font-mono text-gray-500 truncate">{c.address}</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground truncate">{c.address}</p>
                                   {c.capabilities.length > 0 && (
                                     <div className="flex flex-wrap gap-1">
                                       {c.capabilities.map((cap) => (
-                                        <span key={cap} className="text-[9px] font-black text-gray-400 bg-[#1A1A1A] border border-[#333] px-1.5 py-0.5">{cap}</span>
+                                        <span key={cap} className="text-[9px] font-black text-muted-foreground bg-[#1A1A1A] border border-border px-1.5 py-0.5">{cap}</span>
                                       ))}
                                     </div>
                                   )}
@@ -558,7 +558,7 @@ export default function AgentDetailPage() {
                                           key={f.name}
                                           className={`text-[9px] font-mono px-1.5 py-0.5 border ${f.capability === 'EXECUTE' ? 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/5'}`}
                                         >
-                                          {f.name} · {f.capability}
+                                          {f.name} Â· {f.capability}
                                         </span>
                                       ))}
                                     </div>
@@ -575,9 +575,9 @@ export default function AgentDetailPage() {
                   {unknownProtocols.length > 0 && (
                     <div className="space-y-1.5">
                       {unknownProtocols.map((pid) => (
-                        <div key={pid} className="flex items-center justify-between text-[11px] bg-[#161616] border border-[#262626] rounded-md px-3 py-2">
+                        <div key={pid} className="flex items-center justify-between text-[11px] bg-card border border-[#262626] rounded-md px-3 py-2">
                           <span className="text-gray-300">{pid}</span>
-                          <span className="text-[9px] font-black uppercase text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded">Unrecognized</span>
+                          <span className="text-[9px] font-black uppercase text-muted-foreground border border-gray-700 px-1.5 py-0.5 rounded">Unrecognized</span>
                         </div>
                       ))}
                     </div>
@@ -590,74 +590,74 @@ export default function AgentDetailPage() {
 
         {activeTab === 'strategy' && (
           <>
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block">STRATEGY</span>
+            <div className="bg-card rounded-xl p-5 border border-border space-y-4">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase block">STRATEGY</span>
               <div className="space-y-2.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Strategy ID</span>
-                  <span className="font-mono text-gray-200">{agent.strategyId ?? '—'}</span>
+                  <span className="text-muted-foreground">Strategy ID</span>
+                  <span className="font-mono text-gray-200">{agent.strategyId ?? 'â€”'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Type</span>
-                  <span className="text-gray-200 capitalize">{agent.type ?? '—'}</span>
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="text-gray-200 capitalize">{agent.type ?? 'â€”'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Risk</span>
-                  <span className="text-gray-200">{agent.riskLevel ?? '—'}</span>
+                  <span className="text-muted-foreground">Risk</span>
+                  <span className="text-gray-200">{agent.riskLevel ?? 'â€”'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Cost / Run</span>
-                  <span className="text-gray-200 font-mono">{agent.costPerExecution != null ? `${agent.costPerExecution} credits` : '—'}</span>
+                  <span className="text-muted-foreground">Cost / Run</span>
+                  <span className="text-gray-200 font-mono">{agent.costPerExecution != null ? `${agent.costPerExecution} credits` : 'â€”'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block">PROTOCOLS</span>
+            <div className="bg-card rounded-xl p-5 border border-border space-y-3">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase block">PROTOCOLS</span>
               {agent.protocols && agent.protocols.length > 0 ? (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {agent.protocols.map((p) => (
-                    <span key={p} className="flex items-center gap-2 text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-[#333] px-2.5 py-1">
+                    <span key={p} className="flex items-center gap-2 text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-border px-2.5 py-1">
                       <CryptoIcon symbol={p} size={18} />
                       {p}
                     </span>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-500">No protocols specified for this agent.</p>
+                <p className="text-xs text-muted-foreground">No protocols specified for this agent.</p>
               )}
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block">CAPABILITIES</span>
+            <div className="bg-card rounded-xl p-5 border border-border space-y-3">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase block">CAPABILITIES</span>
               {agent.capabilities && agent.capabilities.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-2">
                   {agent.capabilities.map((c) => (
-                    <span key={capLabel(c)} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-[#333] px-2.5 py-1">{capLabel(c)}</span>
+                    <span key={capLabel(c)} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-border px-2.5 py-1">{capLabel(c)}</span>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-500">No capabilities specified.</p>
+                <p className="text-xs text-muted-foreground">No capabilities specified.</p>
               )}
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-2.5 text-xs">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase block mb-1">AGENT INFO</span>
+            <div className="bg-card rounded-xl p-5 border border-border space-y-2.5 text-xs">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase block mb-1">AGENT INFO</span>
               <div className="flex justify-between">
-                <span className="text-gray-500">Agent ID</span>
+                <span className="text-muted-foreground">Agent ID</span>
                 <span className="font-mono text-gray-200">{agent.id}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Created</span>
+                <span className="text-muted-foreground">Created</span>
                 <span className="text-gray-200">{new Date(agent.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Chain</span>
+                <span className="text-muted-foreground">Chain</span>
                 <span className="text-gray-200 font-mono">{agent.chainId ? `BNB ${agent.chainId}` : 'BNB Chain'}</span>
               </div>
               {agent.walletAddress && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Wallet</span>
+                  <span className="text-muted-foreground">Wallet</span>
                   <span className="text-gray-200 font-mono">{agent.walletAddress}</span>
                 </div>
               )}
@@ -666,9 +666,9 @@ export default function AgentDetailPage() {
         )}
 
         {activeTab === 'activity' && (
-          <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <div className="bg-card rounded-xl p-5 border border-border">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase">ACTIVITY</span>
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase">ACTIVITY</span>
               {confirmedCount > 0 && (
                 <button type="button" onClick={() => setActiveTab('overview')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
                   VIEW PERFORMANCE
@@ -683,28 +683,28 @@ export default function AgentDetailPage() {
                   {activityError ? (
                   <div className="space-y-3">
                     <p className="text-sm font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
-                    <p className="text-xs text-gray-400 leading-relaxed max-w-sm mx-auto">{activityError}</p>
-                    <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                    <p className="text-xs text-muted-foreground leading-relaxed max-w-sm mx-auto">{activityError}</p>
+                    <p className="text-[11px] text-muted-foreground max-w-sm mx-auto">
                       Live activity is only visible to the account that hired this agent. Hire it to see its audit trail, or sign in with the owning account.
                     </p>
                   </div>
                 ) : (
-                  <p className="text-sm font-black text-gray-400 mb-1">No activity events yet</p>
+                  <p className="text-sm font-black text-muted-foreground mb-1">No activity events yet</p>
                 )}
-                  <p className="text-xs text-gray-500">Events will appear here once this agent records its first on-chain activity (e.g. AI decisions, submissions, confirmations).</p>
+                  <p className="text-xs text-muted-foreground">Events will appear here once this agent records its first on-chain activity (e.g. AI decisions, submissions, confirmations).</p>
                 </div>
               ) : (
                 events.slice(0, 8).map((ev) => (
                   <div key={ev.id} className="flex items-start gap-3 text-xs">
-                    <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-border flex items-center justify-center text-[#F0B90B] shrink-0">
                       {getTimelineIcon(ev.eventType)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline mb-0.5">
                         <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
-                        <span className="text-[10px] font-mono text-gray-500">{new Date(ev.createdAt).toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground">{new Date(ev.createdAt).toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <p className="text-gray-400 text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
+                      <p className="text-muted-foreground text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
                     </div>
                   </div>
                 ))

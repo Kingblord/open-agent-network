@@ -15,9 +15,10 @@ interface ConfirmDialogProps {
 }
 
 /**
- * Replaces native confirm() with a scoped destructive dialog (BAN dark theme).
- * Used for safe/destructive actions (revoke, pause, delete key) so we never
- * rely on the browser's blocking dialog.
+ * Replaces native confirm() with a scoped destructive dialog (theme-aware —
+ * uses bg-card/text-foreground tokens so it follows light/dark like the rest
+ * of the app). Used for safe/destructive actions (revoke, pause, delete key)
+ * so we never rely on the browser's blocking dialog.
  */
 export function ConfirmDialog({
   open,
@@ -43,16 +44,16 @@ export function ConfirmDialog({
   if (!open && !mounted) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4">
-        <h3 className={`text-base font-black uppercase ${dangerous ? 'text-red-400' : 'text-white'}`}>{title}</h3>
-        {description && <p className="text-xs text-gray-400 leading-relaxed">{description}</p>}
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4">
+        <h3 className={`text-base font-black uppercase ${dangerous ? 'text-red-500' : 'text-foreground'}`}>{title}</h3>
+        {description && <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>}
         <div className="flex gap-2 pt-2">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase rounded disabled:opacity-60"
+            className="flex-1 bg-secondary text-secondary-foreground text-xs font-black py-2.5 uppercase rounded disabled:opacity-60"
           >
             {cancelLabel}
           </button>

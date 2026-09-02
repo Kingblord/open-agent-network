@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -100,14 +100,14 @@ export default function HistoryPage() {
   const formatPayload = (payload: Record<string, unknown>) => {
     const entries = Object.entries(payload);
     if (entries.length === 0) return 'Agent event recorded';
-    return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' · ');
+    return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' Â· ');
   };
 
   const isTransaction = (type: string) => TRANSACTION_TYPES.has(type);
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4">
             <div className="h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
@@ -119,13 +119,13 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <div className="pb-20">
-        <header className="bg-black px-5 pt-6 pb-4 flex items-center justify-between border-b border-[#1A1A1A]">
+        <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between border-b border-[#1A1A1A]">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/dashboard')}
-              className="w-8 h-8 rounded-lg bg-[#111] border border-[#222] flex items-center justify-center text-gray-400 hover:text-white"
+              className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -145,7 +145,7 @@ export default function HistoryPage() {
               className={`px-4 py-2 text-[10px] font-black tracking-wider uppercase rounded ${
                 activeFilter === filter
                   ? 'bg-[#F0B90B] text-black'
-                  : 'bg-[#1A1A1A] text-white border border-[#333]'
+                  : 'bg-[#1A1A1A] text-foreground border border-border'
               }`}
             >
               {filter}
@@ -155,23 +155,23 @@ export default function HistoryPage() {
 
         <div className="mx-5 mt-4 space-y-3">
           {dataLoading && (
-            <div className="text-center py-10 text-gray-500 text-sm">
+            <div className="text-center py-10 text-muted-foreground text-sm">
               <div className="inline-block w-6 h-6 border-2 border-[#F0B90B] border-t-transparent rounded-full animate-spin mb-2" />
               Loading activity...
             </div>
           )}
 
           {!dataLoading && loadError && (
-            <div className="bg-[#111] rounded-xl p-6 border border-[#222] text-center">
-              <p className="text-sm font-black text-gray-400">{loadError}</p>
-              <p className="text-xs text-gray-500 mt-1">Please check your connection and try again.</p>
+            <div className="bg-card rounded-xl p-6 border border-border text-center">
+              <p className="text-sm font-black text-muted-foreground">{loadError}</p>
+              <p className="text-xs text-muted-foreground mt-1">Please check your connection and try again.</p>
             </div>
           )}
 
           {!dataLoading &&
             !loadError &&
             filteredEvents.map((ev) => (
-              <div key={ev.id} className="bg-[#111] rounded-xl p-4 border border-[#222]">
+              <div key={ev.id} className="bg-card rounded-xl p-4 border border-border">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 bg-[#F0B90B] flex items-center justify-center shrink-0">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -194,13 +194,13 @@ export default function HistoryPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-black text-white capitalize">
+                        <p className="text-sm font-black text-foreground capitalize">
                           {ev.eventType.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">{formatPayload(ev.payload)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{formatPayload(ev.payload)}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-[10px] text-gray-500">{timeAgo(ev.createdAt)}</p>
+                        <p className="text-[10px] text-muted-foreground">{timeAgo(ev.createdAt)}</p>
                         <span className="bg-[#F0B90B] text-black text-[9px] font-black uppercase px-2 py-0.5 mt-1 inline-block">
                           LOG
                         </span>
@@ -212,7 +212,7 @@ export default function HistoryPage() {
             ))}
 
           {!dataLoading && !loadError && filteredEvents.length === 0 && (
-            <div className="text-center py-12 bg-[#111] rounded-xl border border-[#222]">
+            <div className="text-center py-12 bg-card rounded-xl border border-border">
               <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-[#F0B90B] flex items-center justify-center">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="4" y="8" width="16" height="12" rx="2" />
@@ -222,8 +222,8 @@ export default function HistoryPage() {
                   <line x1="12" y1="4" x2="12" y2="8" />
                 </svg>
               </div>
-              <div className="text-white font-bold text-base mb-1">No activity found</div>
-              <p className="text-xs text-gray-400 max-w-xs mx-auto">
+              <div className="text-foreground font-bold text-base mb-1">No activity found</div>
+              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
                 {activeFilter === 'TRANSACTIONS'
                   ? 'No on-chain transaction events recorded yet. Transactions will appear once BAN submits executions for your agents.'
                   : activeFilter === 'AGENTS'

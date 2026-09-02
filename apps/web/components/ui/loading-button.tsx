@@ -11,7 +11,7 @@ interface LoadingButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANTS: Record<string, string> = {
   primary: 'bg-[#F0B90B] text-black hover:bg-yellow-400',
   destructive: 'bg-red-500 text-black hover:bg-red-400',
-  outline: 'bg-[#1A1A1A] border border-[#333] text-gray-300 hover:border-[#F0B90B]/50 hover:text-white',
+  outline: 'bg-secondary border border-border text-secondary-foreground hover:border-accent/60 hover:text-foreground',
 };
 
 /**

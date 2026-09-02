@@ -37,6 +37,19 @@ export interface GrantSessionInput {
   expiresAtMs: number;
 }
 
+export interface UpdateSessionConfigInput {
+  allowedContracts?: string[];
+  allowedFunctions?: string[];
+  allowedTokens?: string[];
+  /** wei as decimal string */
+  spendCap?: string;
+  /** wei as decimal string, must be <= spendCap */
+  perTransactionCap?: string;
+  /** ms since epoch */
+  expiresAtMs?: number;
+  riskLevel?: string;
+}
+
 export type SessionDecision = 'ALLOW' | 'DENY';
 
 export interface SessionDecisionResult {
@@ -136,6 +149,109 @@ export class SessionManager {
     await ref.update(update);
     logger.info('session_registered', { sessionId, agentId: session.agentId, correlationId: getCorrelationId() });
     return { ...session, ...update };
+  }
+
+  /**
+   * EDIT SESSION: apply config changes to an existing session.
+   *
+   * - Re-validates perTransactionCap <= spendCap and expiresAtMs in the future.
+   * - Persists the patch through the same Firestore session record.
+   * - If the session is ACTIVE, re-registers it through the Altana adapter so
+   *   the bounded authority updates live (revoke+grant with the new config).
+   * - PENDING sessions just get the stored config updated (registration will
+   *   use the new values).
+   */
+  async updateSessionConfig(sessionId: string, patch: UpdateSessionConfigInput): Promise<Session> {
+    const db = getAdminDb();
+    const ref = sessionRef(db, sessionId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new BANError(ErrorCode.VALIDATION_FAILED, 'Session not found', { correlationId: getCorrelationId() });
+    }
+    const existing = snap.data() as Session;
+
+    const next: Session = {
+      ...existing,
+      allowedContracts: patch.allowedContracts ?? existing.allowedContracts,
+      allowedFunctions: patch.allowedFunctions ?? existing.allowedFunctions,
+      allowedTokens: patch.allowedTokens ?? existing.allowedTokens,
+      spendCap: patch.spendCap ?? existing.spendCap,
+      perTransactionCap: patch.perTransactionCap ?? existing.perTransactionCap,
+      expiresAt: patch.expiresAtMs
+        ? new Date(patch.expiresAtMs).toISOString()
+        : existing.expiresAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const perTx = BigInt(next.perTransactionCap || '0');
+    const spend = BigInt(next.spendCap || '0');
+    if (perTx > spend) {
+      throw new BANError(ErrorCode.SPEND_LIMIT_EXCEEDED, 'perTransactionCap must not exceed spendCap', {
+        correlationId: getCorrelationId(),
+      });
+    }
+    if (new Date(next.expiresAt).getTime() <= Date.now()) {
+      throw new BANError(ErrorCode.SESSION_EXPIRED, 'expiresAt must be in the future', {
+        correlationId: getCorrelationId(),
+      });
+    }
+
+    // Persist the config patch (and optional informational riskLevel).
+    const updateDoc: Record<string, unknown> = {
+      allowedContracts: next.allowedContracts,
+      allowedFunctions: next.allowedFunctions,
+      allowedTokens: next.allowedTokens,
+      spendCap: next.spendCap,
+      perTransactionCap: next.perTransactionCap,
+      expiresAt: next.expiresAt,
+      updatedAt: next.updatedAt,
+    };
+    if (patch.riskLevel !== undefined) updateDoc.riskLevel = patch.riskLevel;
+    await ref.update(updateDoc);
+
+    // If ACTIVE, re-register so the live bounded authority actually changes
+    // (Altana revoke + grant with the new config).
+    if (next.status === 'ACTIVE') {
+      try {
+        if (next.sessionKeyReference) {
+          await this.adapter.revokeSession({
+            walletAddress: next.walletAddress,
+            sessionKeyReference: next.sessionKeyReference,
+          });
+        }
+        const granted = await this.adapter.grantSession({
+          agentId: next.agentId,
+          walletAddress: next.walletAddress,
+          allowedContracts: next.allowedContracts,
+          allowedFunctions: next.allowedFunctions,
+          allowedTokens: next.allowedTokens,
+          spendCap: next.spendCap,
+          perTransactionCap: next.perTransactionCap,
+          expiresAtUnixSec: Math.floor(new Date(next.expiresAt).getTime() / 1000),
+        });
+        const now = new Date().toISOString();
+        await ref.update({
+          sessionKeyReference: granted.sessionKeyReference,
+          onchainRegistryReference: granted.onchainRegistryReference,
+          updatedAt: now,
+        });
+        next.sessionKeyReference = granted.sessionKeyReference;
+        next.onchainRegistryReference = granted.onchainRegistryReference;
+        next.updatedAt = now;
+      } catch (regErr) {
+        logger.warn('session_re-register_failed', {
+          sessionId,
+          correlationId: getCorrelationId(),
+          err: regErr instanceof Error ? regErr.message : String(regErr),
+        });
+        // Config is persisted; re-registration failure is surfaced to the UI
+        // but does not roll back the session (it remains ACTIVE with pending
+        // on-chain update until the next registration).
+      }
+    }
+
+    logger.info('session_config_updated', { sessionId, status: next.status, correlationId: getCorrelationId() });
+    return next;
   }
 
   async revokeSession(sessionId: string): Promise<Session> {

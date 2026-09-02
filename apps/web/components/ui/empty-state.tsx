@@ -17,7 +17,7 @@ interface EmptyStateProps {
  */
 export function EmptyState({ title, description, actionLabel, actionHref, onAction }: EmptyStateProps) {
   return (
-    <div className="text-center bg-[#111] border border-[#222] rounded-2xl p-6 py-10">
+    <div className="text-center bg-card border border-border rounded-2xl p-6 py-10">
       <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-[#F0B90B] flex items-center justify-center">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="4" y="8" width="16" height="12" rx="2" />
@@ -27,8 +27,8 @@ export function EmptyState({ title, description, actionLabel, actionHref, onActi
           <line x1="12" y1="4" x2="12" y2="8" />
         </svg>
       </div>
-      <div className="text-white font-bold text-base mb-1">{title}</div>
-      {description && <p className="text-xs text-gray-400 mb-6 max-w-xs mx-auto">{description}</p>}
+      <div className="text-foreground font-bold text-base mb-1">{title}</div>
+      {description && <p className="text-xs text-muted-foreground mb-6 max-w-xs mx-auto">{description}</p>}
       {(actionLabel && (actionHref || onAction)) && (
         actionHref ? (
           <Link

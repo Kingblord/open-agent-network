@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,7 @@ export default function ProfilePage() {
   const [credits, setCredits] = useState<number | null>(null);
   const [serverWallet, setServerWallet] = useState<string | null>(null);
 
-  // Manage Agents — owned deployed agents (not the canonical template pool).
+  // Manage Agents â€” owned deployed agents (not the canonical template pool).
   const [myAgents, setMyAgents] = useState<ProfileAgent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentDeleteOpen, setAgentDeleteOpen] = useState<ProfileAgent | null>(null);
@@ -85,7 +85,7 @@ export default function ProfilePage() {
         if (data?.walletAddress) setServerWallet(data.walletAddress);
       })
       .catch(() => {
-        // Non-fatal — fall back to active/linked address below.
+        // Non-fatal â€” fall back to active/linked address below.
       });
     return () => {
       cancelled = true;
@@ -138,14 +138,14 @@ export default function ProfilePage() {
 
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
-    : '—';
+    : 'â€”';
 
   const walletAddress = activeAddress ?? user?.walletAddress ?? linkedAddress ?? serverWallet ?? null;
   const walletConnected = Boolean(walletAddress);
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen dark:bg-black dark:text-white bg-white text-black">
+      <div className="flex items-center justify-center min-h-screen dark:bg-background dark:text-foreground bg-white text-black">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4">
             <div className="h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
@@ -159,16 +159,16 @@ export default function ProfilePage() {
   const displayName = user.name || user.email?.split('@')[0] || 'BAN User';
 
   return (
-    <div className="min-h-screen dark:bg-black dark:text-white bg-white text-black font-sans antialiased transition-colors duration-200">
+    <div className="min-h-screen dark:bg-background dark:text-foreground bg-white text-black font-sans antialiased transition-colors duration-200">
       <div className="pb-20">
         {/* Header with Title, ThemeToggle, and Settings */}
-        <header className="dark:bg-black bg-white px-5 pt-6 pb-4 flex items-center justify-between border-b dark:border-[#1A1A1A] border-gray-200">
+        <header className="dark:bg-background bg-white px-5 pt-6 pb-4 flex items-center justify-between border-b dark:border-[#1A1A1A] border-gray-200">
           <h2 className="text-[22px] font-black text-[#F0B90B] tracking-wide">PROFILE</h2>
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <button
               onClick={() => router.push('/settings')}
-              className="w-10 h-10 rounded-lg dark:bg-[#111] bg-gray-50 border dark:border-[#222] border-gray-300 flex items-center justify-center text-[#F0B90B] hover:border-[#F0B90B] transition"
+              className="w-10 h-10 rounded-lg dark:bg-card bg-gray-50 border dark:border-border border-gray-300 flex items-center justify-center text-[#F0B90B] hover:border-[#F0B90B] transition"
               aria-label="Settings"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -181,7 +181,7 @@ export default function ProfilePage() {
 
         <div className="mx-5 mt-4 bg-[#F0B90B] rounded-xl p-5">
           <div className="flex items-center gap-4 mb-5">
-            <div className="w-16 h-16 rounded-full bg-black flex items-center justify-center border-2 border-black">
+            <div className="w-16 h-16 rounded-full bg-background flex items-center justify-center border-2 border-black">
               <span className="text-[#F0B90B] text-xl font-black">
                 {displayName.charAt(0).toUpperCase()}
               </span>
@@ -197,14 +197,14 @@ export default function ProfilePage() {
                 <span className="text-[10px] font-mono text-black/70 truncate">
                   {user.id ? `${user.id.slice(0, 6)}...${user.id.slice(-4)}` : ''}
                 </span>
-                <span className="bg-black text-[#F0B90B] text-[8px] font-black px-1.5 py-0.5 uppercase">Verified</span>
+                <span className="bg-background text-[#F0B90B] text-[8px] font-black px-1.5 py-0.5 uppercase">Verified</span>
               </div>
             </div>
           </div>
           <div className="flex justify-between">
             {[
-              { label: 'AGENTS', value: agentCount != null ? `${agentCount}` : '—' },
-              { label: 'CREDITS', value: credits != null ? `${credits}` : '—' },
+              { label: 'AGENTS', value: agentCount != null ? `${agentCount}` : 'â€”' },
+              { label: 'CREDITS', value: credits != null ? `${credits}` : 'â€”' },
               { label: 'MEMBER SINCE', value: memberSince },
             ].map((stat) => (
               <div key={stat.label} className="text-center flex-1">
@@ -215,9 +215,9 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="mx-5 mt-4 dark:bg-[#111] bg-gray-50 rounded-xl p-5 border dark:border-[#222] border-gray-200">
+        <div className="mx-5 mt-4 dark:bg-card bg-gray-50 rounded-xl p-5 border dark:border-border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase">Wallet</h3>
+            <h3 className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Wallet</h3>
             {walletConnected ? (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-green-600 dark:text-green-400 uppercase tracking-wider">
                 <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
@@ -225,7 +225,7 @@ export default function ProfilePage() {
               </span>
             ) : (
               !hydrating && (
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-muted-foreground dark:text-muted-foreground uppercase tracking-wider">
                   <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
                   Not connected
                 </span>
@@ -235,9 +235,9 @@ export default function ProfilePage() {
           {walletConnected ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs dark:text-gray-400 text-gray-500">Address</span>
+                <span className="text-xs dark:text-muted-foreground text-muted-foreground">Address</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono dark:text-white text-black">
+                  <span className="text-xs font-mono dark:text-foreground text-black">
                     {walletAddress ? `${walletAddress.slice(0, 10)}...${walletAddress.slice(-6)}` : ''}
                   </span>
                   <button
@@ -253,14 +253,14 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs dark:text-gray-400 text-gray-500">Network</span>
-                <span className="dark:bg-[#1A1A1A] bg-white text-[10px] text-[#F0B90B] font-black px-2.5 py-1 border dark:border-[#333] border-gray-300 uppercase tracking-wider">
+                <span className="text-xs dark:text-muted-foreground text-muted-foreground">Network</span>
+                <span className="dark:bg-[#1A1A1A] bg-white text-[10px] text-[#F0B90B] font-black px-2.5 py-1 border dark:border-border border-gray-300 uppercase tracking-wider">
                   BNB Chain
                 </span>
               </div>
               <button
                 onClick={() => walletAddress && window.open(`https://bscscan.com/address/${walletAddress}`, '_blank')}
-                className="w-full mt-2 text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center justify-center gap-1 py-2 border dark:border-[#333] border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
+                className="w-full mt-2 text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center justify-center gap-1 py-2 border dark:border-border border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
               >
                 View on BscScan
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -272,7 +272,7 @@ export default function ProfilePage() {
           ) : (
             <button
               onClick={() => router.push('/settings')}
-              className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black text-[#F0B90B] border dark:border-[#333] border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
+              className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black text-[#F0B90B] border dark:border-border border-gray-300 rounded-lg hover:border-[#F0B90B] transition"
             >
               Connect wallet
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -283,10 +283,10 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* MANAGE AGENTS — list owned deployed agents with delete */}
-        <div className="mx-5 mt-4 dark:bg-[#111] bg-gray-50 rounded-xl p-5 border dark:border-[#222] border-gray-200">
+        {/* MANAGE AGENTS â€” list owned deployed agents with delete */}
+        <div className="mx-5 mt-4 dark:bg-card bg-gray-50 rounded-xl p-5 border dark:border-border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase">Manage Agents</h3>
+            <h3 className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Manage Agents</h3>
             <button
               onClick={() => router.push('/my-agents')}
               className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1"
@@ -300,43 +300,43 @@ export default function ProfilePage() {
           </div>
 
           {agentsLoading ? (
-            <p className="text-xs dark:text-gray-400 text-gray-500">Loading deployed agents...</p>
+            <p className="text-xs dark:text-muted-foreground text-muted-foreground">Loading deployed agents...</p>
           ) : myAgents.length === 0 ? (
-            <p className="text-xs dark:text-gray-400 text-gray-500">
+            <p className="text-xs dark:text-muted-foreground text-muted-foreground">
               No deployed agents yet.{' '}
               <button
                 onClick={() => router.push('/agents')}
                 className="text-[#F0B90B] font-black uppercase"
               >
-                Browse marketplace →
+                Browse marketplace â†’
               </button>
             </p>
           ) : (
             <div className="space-y-2">
               {myAgents.slice(0, 5).map((agent) => (
-                <div key={agent.id} className="flex items-center gap-3 dark:bg-black/40 bg-white border dark:border-[#222] border-gray-200 rounded-lg p-3">
+                <div key={agent.id} className="flex items-center gap-3 dark:bg-background/40 bg-white border dark:border-border border-gray-200 rounded-lg p-3">
                   <button
                     onClick={() => router.push(`/my-agents/${agent.id}`)}
                     className="flex-1 min-w-0 text-left"
                   >
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-black dark:text-white text-black truncate">{agent.name}</p>
+                      <p className="text-sm font-black dark:text-foreground text-black truncate">{agent.name}</p>
                       <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
                         agent.status === 'ACTIVE'
                           ? 'text-green-600 dark:text-green-400 border-green-500/40 bg-green-500/10'
-                          : 'text-gray-400 border-gray-400/40 bg-gray-500/10'
+                          : 'text-muted-foreground border-gray-400/40 bg-gray-500/10'
                       }`}>
                         {agent.status}
                       </span>
                     </div>
-                    <p className="text-[10px] font-mono text-gray-400 mt-0.5 truncate">
+                    <p className="text-[10px] font-mono text-muted-foreground mt-0.5 truncate">
                       {agent.id}
                     </p>
                   </button>
                   <button
                     onClick={() => setAgentDeleteOpen(agent)}
                     aria-label={`Delete agent ${agent.name}`}
-                    className="shrink-0 w-9 h-9 rounded-lg dark:bg-[#1A1A1A] bg-gray-100 border dark:border-[#333] border-gray-300 flex items-center justify-center text-red-400 hover:border-red-500/50 transition"
+                    className="shrink-0 w-9 h-9 rounded-lg dark:bg-[#1A1A1A] bg-gray-100 border dark:border-border border-gray-300 flex items-center justify-center text-red-400 hover:border-red-500/50 transition"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="3 6 5 6 21 6" />
@@ -349,8 +349,8 @@ export default function ProfilePage() {
           )}
         </div>
 
-        <div className="mx-5 mt-4 dark:bg-[#111] bg-gray-50 rounded-xl p-5 border dark:border-[#222] border-gray-200">
-          <h3 className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase mb-4">Quick Links</h3>
+        <div className="mx-5 mt-4 dark:bg-card bg-gray-50 rounded-xl p-5 border dark:border-border border-gray-200">
+          <h3 className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase mb-4">Quick Links</h3>
           <div className="space-y-2">
             {[
               { label: 'Transaction History', path: '/history' },
@@ -361,7 +361,7 @@ export default function ProfilePage() {
               <button
                 key={link.label}
                 onClick={() => router.push(link.path)}
-                className="w-full flex items-center justify-between py-3 border-b dark:border-[#222] border-gray-200 last:border-b-0 dark:text-gray-300 text-gray-600 hover:text-[#F0B90B] transition"
+                className="w-full flex items-center justify-between py-3 border-b dark:border-border border-gray-200 last:border-b-0 dark:text-gray-300 text-gray-600 hover:text-[#F0B90B] transition"
               >
                 <span className="text-sm">{link.label}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -399,7 +399,7 @@ export default function ProfilePage() {
         title="Delete agent?"
         description={
           agentDeleteOpen
-            ? `"${agentDeleteOpen.name}" will be revoked and permanently removed from your profile. Its dedicated signing key will be destroyed — this cannot be undone.`
+            ? `"${agentDeleteOpen.name}" will be revoked and permanently removed from your profile. Its dedicated signing key will be destroyed â€” this cannot be undone.`
             : undefined
         }
         confirmLabel="Delete"

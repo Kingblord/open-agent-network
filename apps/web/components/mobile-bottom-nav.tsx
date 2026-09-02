@@ -16,18 +16,18 @@ export function MobileBottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[#111] border-t border-[#222] px-2 pb-safe z-50">
+    <nav className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 pb-safe z-50">
       <div className="flex items-center justify-around h-16 max-w-md mx-auto">
         {navigationItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          
+
           return (
             <Link
               key={item.name}
               href={item.href}
               className={cn(
                 'flex flex-col items-center justify-center flex-1 h-full gap-1',
-                isActive ? 'text-[#F0B90B]' : 'text-gray-500 hover:text-gray-400'
+                isActive ? 'text-[#F0B90B]' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               <item.icon className="w-5 h-5" />

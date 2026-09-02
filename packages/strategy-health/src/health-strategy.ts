@@ -17,6 +17,8 @@ export interface HealthStrategyDeps {
   riskModel?: HealthRiskModel;
   selector?: HealthCandidateSelector;
   observationBuilder?: ObservationBuilder;
+  /** Task-config threading: same seam grid uses — optional bounds/knobs the user set on the task. */
+  config?: Record<string, unknown>;
 }
 
 /**
@@ -29,6 +31,10 @@ export interface HealthStrategyDeps {
  * It does NOT invoke the PolicyEngine or ExecutionEngine — a corrective
  * proposal is returned STILL-UNEXECUTED for M5/M8/live-loop in M18. This mirrors
  * M9's YieldStrategy and keeps the AI a reasoning/selection layer only.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so the user's allowed contracts/tokens drive the health
+ * snapshot instead of empty defaults.
  */
 export class HealthStrategy implements StrategyEngine {
   private readonly strategyId: string;
@@ -38,6 +44,7 @@ export class HealthStrategy implements StrategyEngine {
   private readonly riskModel: HealthRiskModel;
   private readonly selector: HealthCandidateSelector;
   private readonly observationBuilder: ObservationBuilder;
+  private readonly config: Record<string, unknown> | null;
 
   constructor(deps: HealthStrategyDeps) {
     this.strategyId = deps.strategyId ?? 'health-factor-monitor';
@@ -47,13 +54,20 @@ export class HealthStrategy implements StrategyEngine {
     this.riskModel = deps.riskModel ?? new HealthRiskModel();
     this.selector = deps.selector ?? new HealthCandidateSelector(this.calculator);
     this.observationBuilder = deps.observationBuilder ?? new ObservationBuilder(this.strategyId);
+    this.config = deps.config ?? null;
   }
 
   async observe(agent: Agent, _correlationId: string): Promise<Observation[]> {
-    // M10 calls the strategy-relevant corrective candidates for the position.
-    // (address/protocol/assets resolved from the agent in the live loop; for the
-    // hermetic unit path a concrete snapshot is provided by tests.)
-    const snapshot = await this.data.fetch(agent.walletAddress ?? '', agent.protocols[0] ?? '', [], []);
+    // Task-config threading (fail-closed): when the user's task row carries
+    // allowed contracts/tokens, feed them into the health snapshot so the
+    // monitor actually watches the user's positions — never fabricates.
+    const allowedContracts = Array.isArray(this.config?.allowedContracts)
+      ? (this.config!.allowedContracts as string[])
+      : [];
+    const allowedTokens = Array.isArray(this.config?.allowedTokens)
+      ? (this.config!.allowedTokens as string[])
+      : [];
+    const snapshot = await this.data.fetch(agent.walletAddress ?? '', agent.protocols[0] ?? '', allowedContracts, allowedTokens);
     const candidates = this.selector.select(snapshot);
     return [this.observationBuilder.build(agent, snapshot, candidates)];
   }

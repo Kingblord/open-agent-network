@@ -14,6 +14,10 @@ import { ObservationBuilder } from './observation-builder.js';
  * It does NOT invoke the PolicyEngine or ExecutionEngine — a corrective
  * proposal is returned STILL-UNEXECUTED for M5/M8/live-loop in M18. This mirrors
  * M9's YieldStrategy and keeps the AI a reasoning/selection layer only.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so the user's allowed contracts/tokens drive the health
+ * snapshot instead of empty defaults.
  */
 export class HealthStrategy {
     strategyId;
@@ -23,6 +27,7 @@ export class HealthStrategy {
     riskModel;
     selector;
     observationBuilder;
+    config;
     constructor(deps) {
         this.strategyId = deps.strategyId ?? 'health-factor-monitor';
         this.brain = deps.brain;
@@ -31,12 +36,19 @@ export class HealthStrategy {
         this.riskModel = deps.riskModel ?? new HealthRiskModel();
         this.selector = deps.selector ?? new HealthCandidateSelector(this.calculator);
         this.observationBuilder = deps.observationBuilder ?? new ObservationBuilder(this.strategyId);
+        this.config = deps.config ?? null;
     }
     async observe(agent, _correlationId) {
-        // M10 calls the strategy-relevant corrective candidates for the position.
-        // (address/protocol/assets resolved from the agent in the live loop; for the
-        // hermetic unit path a concrete snapshot is provided by tests.)
-        const snapshot = await this.data.fetch(agent.walletAddress ?? '', agent.protocols[0] ?? '', [], []);
+        // Task-config threading (fail-closed): when the user's task row carries
+        // allowed contracts/tokens, feed them into the health snapshot so the
+        // monitor actually watches the user's positions — never fabricates.
+        const allowedContracts = Array.isArray(this.config?.allowedContracts)
+            ? this.config.allowedContracts
+            : [];
+        const allowedTokens = Array.isArray(this.config?.allowedTokens)
+            ? this.config.allowedTokens
+            : [];
+        const snapshot = await this.data.fetch(agent.walletAddress ?? '', agent.protocols[0] ?? '', allowedContracts, allowedTokens);
         const candidates = this.selector.select(snapshot);
         return [this.observationBuilder.build(agent, snapshot, candidates)];
     }

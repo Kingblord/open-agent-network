@@ -13,7 +13,8 @@ export declare class GridDataProvider {
     private readonly price;
     constructor(deps: GridDataProviderDeps);
     /**
-     * Fetch the current price of a token (in integer cents USD).
+     * Fetch the current price of a token (in integer cents USD), with a
+     * human-readable USD string for the AI observation layer.
      */
     fetchPriceCents(token: string): Promise<{
         priceCents: number;

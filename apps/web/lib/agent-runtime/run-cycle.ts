@@ -79,8 +79,10 @@ export interface RunCycleOptions {
   onDecision?: (decision: { status: string; reasoning: string; decisionId?: string }) => void;
   /** Job this cycle belongs to (user-funds permission scoping). */
   jobId?: string;
-  /** TRUE only for jobs that move the USER’s own funds — requires an ACTIVE EIP-7702 permission before any execution. */
+  /** TRUE only for jobs that move the USER's own funds — requires an ACTIVE EIP-7702 permission before any execution. */
   requiresUserFunds?: boolean;
+  /** Task-derived strategy config (grid bounds etc.) threaded into the strategy so user params actually drive observe(). */
+  strategyConfig?: Record<string, unknown>;
 }
 
 async function getSessionForAgent(agentId: string): Promise<Session | null> {
@@ -211,9 +213,10 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // 1) Resolve the session (must be ACTIVE for execution).
     const session = opts.session ?? (await getSessionForAgent(agentId));
 
-    // 2) Observe (real strategy adapter).
+    // 2) Observe (real strategy adapter). Task-derived config is threaded in so
+    //    user-set bounds/caps reach the strategy (fixes hardcoded grid bounds).
     const strategy: import('@ban/agent-core').StrategyEngine =
-      opts.strategy ?? (await resolveStrategy(agent));
+      opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig));
     const observations = await strategy.observe(agent, correlationId);
     await persistAuditEvent({
       type: 'AGENT_OBSERVED',
@@ -492,7 +495,6 @@ async function resolveDataProvider(): Promise<ToolAdapters> {
   return DevDataProvider.instance();
 }
 
-/** Resolve the strategy engine by agent type + the dev brain (honest). */
 /**
  * Resolve the brain provider:
  *   - BAN_AI_PROVIDER=openrouter  -> OpenRouterBrainAdapter (REAL inference;
@@ -510,7 +512,28 @@ function resolveBrainProvider(): BrainAdapter {
   return new DevBrainAdapter();
 }
 
-async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').StrategyEngine> {
+/** Grid bounds from task config (USD dollars → integer cents) + gridCount/capital. */
+function resolveGridConfigFromTask(taskConfig?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!taskConfig || typeof taskConfig !== 'object') return undefined;
+  const grid = (taskConfig.grid ?? taskConfig) as Record<string, unknown>;
+  const lowerUsd = Number(grid.gridLowerPriceUsd ?? grid.gridLowerUsd);
+  const upperUsd = Number(grid.gridUpperPriceUsd ?? grid.gridUpperUsd);
+  const gridCount = Number(grid.gridCount);
+  const capitalUsd = Number(grid.gridCapitalUsd ?? grid.capitalUsd);
+  const maxOrderUsd = Number(grid.gridMaxOrderUsd ?? grid.maxOrderUsd);
+  const out: Record<string, unknown> = {};
+  if (Number.isFinite(lowerUsd) && lowerUsd > 0) out.lowerPriceCents = Math.round(lowerUsd * 100);
+  if (Number.isFinite(upperUsd) && upperUsd > 0) out.upperPriceCents = Math.round(upperUsd * 100);
+  if (Number.isFinite(gridCount) && gridCount >= 2) out.gridCount = Math.floor(gridCount);
+  if (Number.isFinite(capitalUsd) && capitalUsd > 0) out.capitalCents = Math.round(capitalUsd * 100);
+  if (Number.isFinite(maxOrderUsd) && maxOrderUsd > 0) out.maxOrderSizeCents = Math.round(maxOrderUsd * 100);
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+async function resolveStrategy(
+  agent: Agent,
+  taskConfig?: Record<string, unknown>,
+): Promise<import('@ban/agent-core').StrategyEngine> {
   const brain = resolveBrainProvider(); // deterministic or real AI per env
   const type = agent.type ?? '';
   const dev = await resolveDataProvider();
@@ -521,6 +544,8 @@ async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').
       brain,
       data: new YieldDataProvider(dev.yield),
       network: 'bnb-mainnet',
+      // Thread the task-derived config so a user-set network/topN drives observe().
+      config: taskConfig,
     });
   }
   if (type === 'health') {
@@ -528,6 +553,8 @@ async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').
     return new HealthStrategy({
       brain,
       data: new HealthDataProvider(dev.lending, dev.price),
+      // Thread allowed contracts/tokens so the monitor watches user positions.
+      config: taskConfig,
     });
   }
   if (type === 'lp') {
@@ -535,13 +562,17 @@ async function resolveStrategy(agent: Agent): Promise<import('@ban/agent-core').
     return new LpStrategy({
       brain,
       data: new LpDataProvider({ liquidity: dev.liquidity, price: dev.price }),
+      // Thread task config so a user-set pool address drives observe().
+      config: taskConfig,
     });
   }
   if (type === 'grid') {
     const { GridDataProvider, GridStrategy } = await import('@ban/strategy-grid');
+    const gridConfig = resolveGridConfigFromTask(taskConfig);
     return new GridStrategy({
       brain,
       data: new GridDataProvider({ price: dev.price }),
+      config: gridConfig,
     });
   }
   throw new BANError(ErrorCode.VALIDATION_FAILED, `No strategy engine for agent type '${type}'`, {

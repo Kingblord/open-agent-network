@@ -7,12 +7,12 @@ type AlertTone = 'success' | 'error' | 'info' | 'warning';
 const TONES: Record<AlertTone, { box: string; text: string; icon: string }> = {
   success: {
     box: 'bg-emerald-500/10 border-emerald-500/30',
-    text: 'text-emerald-400',
+    text: 'text-emerald-600 dark:text-emerald-400',
     icon: 'M20 6L9 17l-5-5',
   },
   error: {
     box: 'bg-red-500/10 border-red-500/30',
-    text: 'text-red-400',
+    text: 'text-red-600 dark:text-red-400',
     icon: 'M18 6L6 18M6 6l12 12',
   },
   info: {
@@ -22,7 +22,7 @@ const TONES: Record<AlertTone, { box: string; text: string; icon: string }> = {
   },
   warning: {
     box: 'bg-amber-500/10 border-amber-500/30',
-    text: 'text-amber-400',
+    text: 'text-amber-600 dark:text-amber-400',
     icon: 'M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z',
   },
 };
@@ -39,7 +39,7 @@ export function AlertBanner({ tone = 'info', title, description }: { tone?: Aler
       <span className={`mt-0.5 shrink-0 ${toneCfg.text}`}>{Icon}</span>
       <div className="min-w-0">
         <p className={`text-xs font-black uppercase tracking-wide ${toneCfg.text}`}>{title}</p>
-        {description && <p className="mt-1 text-xs leading-relaxed text-gray-400">{description}</p>}
+        {description && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}
       </div>
     </div>
   );

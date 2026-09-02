@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -100,7 +100,7 @@ export default function PortfolioPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4"><div className="h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" /></div>
           <p className="text-[#F0B90B] font-mono text-xs uppercase tracking-widest">Loading portfolio...</p>
@@ -112,41 +112,41 @@ export default function PortfolioPage() {
   const totalCapital = positions.reduce((s, p) => s + p.capitalUsd, 0);
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased pb-24">
-      <header className="bg-black px-5 pt-6 pb-4 flex items-center justify-between">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-24">
+      <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between">
         <h2 className="text-[22px] font-black text-[#F0B90B] tracking-wide">PORTFOLIO</h2>
       </header>
 
-      <div className="mx-5 mt-2 bg-[#111] rounded-xl p-5 border border-[#222]">
+      <div className="mx-5 mt-2 bg-card rounded-xl p-5 border border-border">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Total portfolio value</span>
+          <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Total portfolio value</span>
         </div>
         {dataLoading ? (
-          <div className="py-4 text-center text-gray-500 text-xs">Loading positions...</div>
+          <div className="py-4 text-center text-muted-foreground text-xs">Loading positions...</div>
         ) : hasAnyPositions ? (
           <div className="flex items-baseline gap-3 mb-4">
-            <p className="text-[40px] font-black leading-none text-white">
+            <p className="text-[40px] font-black leading-none text-foreground">
               ${totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
         ) : (
           <div>
-            <p className="text-lg font-black text-gray-400 mb-1">No positions yet</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-lg font-black text-muted-foreground mb-1">No positions yet</p>
+            <p className="text-xs text-muted-foreground">
               Portfolio metrics will appear after BAN records its first on-chain position.
             </p>
           </div>
         )}
       </div>
 
-      <div className="mx-5 mt-4 bg-[#111] rounded-xl p-5 border border-[#222]">
-        <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Positions</h3>
+      <div className="mx-5 mt-4 bg-card rounded-xl p-5 border border-border">
+        <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Positions</h3>
         {dataLoading ? (
-          <p className="text-xs text-gray-500">Loading...</p>
+          <p className="text-xs text-muted-foreground">Loading...</p>
         ) : positions.length === 0 ? (
           <div className="text-center py-6">
-            <p className="text-sm font-black text-gray-400 mb-1">No positions recorded</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm font-black text-muted-foreground mb-1">No positions recorded</p>
+            <p className="text-xs text-muted-foreground">
               No execution position records exist yet. On-chain allocations will be listed here once BAN records them.
             </p>
           </div>
@@ -156,15 +156,15 @@ export default function PortfolioPage() {
               <button
                 key={p.agentId}
                 onClick={() => router.push(`/my-agents/${p.agentId}`)}
-                className="w-full flex items-center justify-between p-3 bg-[#1A1A1A] rounded-lg border border-[#333] hover:border-[#F0B90B]/50 transition"
+                className="w-full flex items-center justify-between p-3 bg-[#1A1A1A] rounded-lg border border-border hover:border-[#F0B90B]/50 transition"
               >
                 <div>
-                  <p className="text-sm font-bold text-white">{p.name}</p>
-                  <p className="text-[10px] text-gray-500 font-mono">{p.agentId.slice(0, 12)}...</p>
+                  <p className="text-sm font-bold text-foreground">{p.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono">{p.agentId.slice(0, 12)}...</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-[#F0B90B]">${p.capitalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                  <p className="text-[10px] text-gray-500">Capital managed</p>
+                  <p className="text-[10px] text-muted-foreground">Capital managed</p>
                 </div>
               </button>
             ))}
@@ -172,35 +172,35 @@ export default function PortfolioPage() {
         )}
       </div>
 
-      <div className="mx-5 mt-4 bg-[#111] rounded-xl p-5 border border-[#222]">
-        <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Operational Performance</h3>
+      <div className="mx-5 mt-4 bg-card rounded-xl p-5 border border-border">
+        <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Operational Performance</h3>
         {dataLoading ? (
-          <p className="text-xs text-gray-500">Loading...</p>
+          <p className="text-xs text-muted-foreground">Loading...</p>
         ) : (
           <div className="flex justify-between">
             <div className="text-center flex-1">
-              <p className="text-xs text-gray-500 font-bold mb-1">Confirmed</p>
-              <p className="text-lg font-black text-white">{confirmedCount}</p>
+              <p className="text-xs text-muted-foreground font-bold mb-1">Confirmed</p>
+              <p className="text-lg font-black text-foreground">{confirmedCount}</p>
             </div>
             <div className="text-center flex-1">
-              <p className="text-xs text-gray-500 font-bold mb-1">Failed</p>
+              <p className="text-xs text-muted-foreground font-bold mb-1">Failed</p>
               <p className="text-lg font-black text-red-400">{failedCount}</p>
             </div>
             <div className="text-center flex-1">
-              <p className="text-xs text-gray-500 font-bold mb-1">Success rate</p>
+              <p className="text-xs text-muted-foreground font-bold mb-1">Success rate</p>
               <p className="text-lg font-black text-[#F0B90B]">
-                {successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}
+                {successRate != null ? `${(successRate * 100).toFixed(0)}%` : 'â€”'}
               </p>
             </div>
             <div className="text-center flex-1">
-              <p className="text-xs text-gray-500 font-bold mb-1">Gas used</p>
-              <p className="text-lg font-black text-white font-mono">{feesBnb ?? '—'}</p>
+              <p className="text-xs text-muted-foreground font-bold mb-1">Gas used</p>
+              <p className="text-lg font-black text-foreground font-mono">{feesBnb ?? 'â€”'}</p>
             </div>
           </div>
         )}
-        <div className="mt-4 pt-3 border-t border-[#222]">
-          <p className="text-[10px] font-black text-gray-500 tracking-widest uppercase mb-2">P&amp;L &amp; Allocation</p>
-          <p className="text-xs text-gray-500">
+        <div className="mt-4 pt-3 border-t border-border">
+          <p className="text-[10px] font-black text-muted-foreground tracking-widest uppercase mb-2">P&amp;L &amp; Allocation</p>
+          <p className="text-xs text-muted-foreground">
             P&amp;L and allocation breakdowns are not displayed until BAN records on-chain position data for your agents.
           </p>
         </div>

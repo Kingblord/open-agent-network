@@ -89,7 +89,7 @@ export function CopyAddress({
       }}
       title="Copy wallet address"
       aria-label={`Copy wallet address ${address}`}
-      className={`inline-flex items-center gap-1.5 rounded border border-[#333] bg-black/40 px-2 py-1 font-mono hover:border-[#F0B90B]/60 hover:text-[#F0B90B] transition ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded border border-border bg-muted/40 px-2 py-1 font-mono text-foreground hover:border-[#F0B90B]/60 hover:text-[#F0B90B] transition ${className}`}
     >
       <span className="truncate">{showFull ? address : shorten(address)}</span>
       {copied ? (
@@ -102,7 +102,7 @@ export function CopyAddress({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="shrink-0 text-emerald-400"
+          className="shrink-0 text-emerald-500"
           aria-hidden="true"
         >
           <polyline points="20 6 9 17 4 12" />
@@ -117,7 +117,7 @@ export function CopyAddress({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="shrink-0 text-gray-500"
+          className="shrink-0 text-muted-foreground"
           aria-hidden="true"
         >
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />

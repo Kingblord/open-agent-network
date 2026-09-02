@@ -54,8 +54,8 @@ export function WalletPromptModal() {
   if (!show) return null
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-sm border-2 border-[#F0B90B]/40 bg-[#111] rounded-xl p-6">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-background/70 p-4">
+      <div className="w-full max-w-sm border-2 border-[#F0B90B]/40 bg-card rounded-xl p-6">
         <div className="mb-3 flex items-center justify-between">
           <span className="font-mono text-[10px] font-black uppercase tracking-widest text-[#F0B90B]">
             Wallet required
@@ -76,10 +76,10 @@ export function WalletPromptModal() {
           </svg>
         </div>
 
-        <h3 className="mb-2 text-lg font-black uppercase tracking-tight text-white">
+        <h3 className="mb-2 text-lg font-black uppercase tracking-tight text-foreground">
           You have not connected your wallet yet
         </h3>
-        <p className="mb-5 text-xs leading-relaxed text-gray-400">
+        <p className="mb-5 text-xs leading-relaxed text-muted-foreground">
           Connect a BNB Smart Chain wallet so your agents can operate with
           session-bounded authority. Your connection is saved.
         </p>
@@ -110,7 +110,7 @@ export function WalletPromptModal() {
               markDismissed()
               setDismissed(true)
             }}
-            className="w-full border border-[#333] rounded px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-400 hover:text-white hover:border-gray-500 transition"
+            className="w-full border border-border rounded px-3 py-2 text-[10px] font-black uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-accent/60 transition"
           >
             Not now
           </button>

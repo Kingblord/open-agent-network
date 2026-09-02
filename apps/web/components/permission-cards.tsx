@@ -14,7 +14,7 @@ import type { AgentPermission } from '@ban/schemas'
  * Reads the CALLER'S OWN records via GET /api/permissions and renders status,
  * scope (protocols/functions/tokens), spend ceilings, validity, and nonce.
  *
- * PENDING → ACTIVE only AFTER the user signs the one-time authorization digest
+ * PENDING → ACTIVE ONLY after the user signs the one-time authorization digest
  * in their connected wallet. The digest is the SAME one the server recovers
  * (`@ban/eip7702` eip7702Digest: keccak(chain 56 ‖ impl address ‖ nonce)); the
  * wallet's EIP-191 (personal_sign) signature over that digest is verified
@@ -44,13 +44,13 @@ function shortAddr(a: string | undefined | null): string {
 function statusColor(status: string): string {
   switch (status) {
     case 'ACTIVE':
-      return 'text-emerald-400 border-emerald-400/40 bg-emerald-400/10'
+      return 'text-emerald-500 border-emerald-500/40 bg-emerald-500/10 dark:text-emerald-400'
     case 'PENDING':
-      return 'text-amber-400 border-amber-400/40 bg-amber-400/10'
+      return 'text-amber-500 border-amber-500/40 bg-amber-500/10 dark:text-amber-400'
     case 'REVOKED':
-      return 'text-red-400 border-red-400/40 bg-red-400/10'
+      return 'text-red-500 border-red-500/40 bg-red-500/10 dark:text-red-400'
     default:
-      return 'text-gray-400 border-gray-400/40 bg-gray-400/10'
+      return 'text-muted-foreground border-border bg-muted'
   }
 }
 
@@ -201,7 +201,7 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black text-white tracking-widest uppercase">
+        <span className="text-[10px] font-black text-foreground tracking-widest uppercase">
           EIP-7702 PERMISSIONS (USER FUNDS)
         </span>
         <button
@@ -214,11 +214,11 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
       </div>
 
       {loading ? (
-        <p className="text-xs text-gray-500 py-2">Loading permissions…</p>
+        <p className="text-xs text-muted-foreground py-2">Loading permissions…</p>
       ) : permissions.length === 0 ? (
-        <div className="border border-[#222] rounded-lg p-3">
-          <p className="text-sm font-black text-gray-400 mb-1">No permissions yet</p>
-          <p className="text-xs text-gray-500">
+        <div className="border border-border rounded-lg p-3">
+          <p className="text-sm font-black text-muted-foreground mb-1">No permissions yet</p>
+          <p className="text-xs text-muted-foreground">
             User-funds jobs need one signed EIP-7702 authorization before the agent can touch your funds.
             Create the permission profile first (this needs a PENDING record from the agent flow).
           </p>
@@ -226,42 +226,42 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
       ) : (
         <div className="space-y-2">
           {permissions.map((p) => (
-            <div key={p.id} className="border border-[#222] rounded-lg p-3 space-y-2">
+            <div key={p.id} className="border border-border rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className={`text-[9px] font-black uppercase tracking-wider border rounded px-1.5 py-0.5 ${statusColor(p.status)}`}>
                     {p.status}
                   </span>
-                  <span className="text-[10px] font-mono text-gray-500 truncate" title={p.id}>
+                  <span className="text-[10px] font-mono text-muted-foreground truncate" title={p.id}>
                     {p.id.slice(0, 12)}…
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-gray-500">nonce {p.nonce ?? '0'}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">nonce {p.nonce ?? '0'}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <span className="text-gray-500 block text-[10px] uppercase tracking-wide">Spend cap</span>
-                  <span className="font-black text-white font-mono">{p.spend?.spendLimit ?? '—'}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wide">Spend cap</span>
+                  <span className="font-black text-foreground font-mono">{p.spend?.spendLimit ?? '—'}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block text-[10px] uppercase tracking-wide">Per tx</span>
-                  <span className="font-black text-white font-mono">{p.spend?.perTransactionCap ?? '—'}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wide">Per tx</span>
+                  <span className="font-black text-foreground font-mono">{p.spend?.perTransactionCap ?? '—'}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block text-[10px] uppercase tracking-wide">User</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wide">User</span>
                   <span className="font-black text-[#F0B90B] font-mono">{shortAddr(p.userAddress)}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block text-[10px] uppercase tracking-wide">Valid until</span>
-                  <span className="font-black text-gray-300">{expiresLabel(p)}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wide">Valid until</span>
+                  <span className="font-black text-foreground">{expiresLabel(p)}</span>
                 </div>
               </div>
 
-              <div className="text-[10px] text-gray-500 space-y-0.5">
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
                 {p.allowedProtocols?.length > 0 && (
                   <div className="flex gap-1.5 flex-wrap">
-                    <span className="uppercase text-gray-600">Protocols:</span>
+                    <span className="uppercase text-muted-foreground">Protocols:</span>
                     {p.allowedProtocols.map((x) => (
                       <span key={x} className="text-[#F0B90B]/80">{x}</span>
                     ))}
@@ -269,17 +269,17 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
                 )}
                 {p.allowedFunctions?.length > 0 && (
                   <div className="flex gap-1.5 flex-wrap">
-                    <span className="uppercase text-gray-600">Functions:</span>
+                    <span className="uppercase text-muted-foreground">Functions:</span>
                     {p.allowedFunctions.map((x) => (
-                      <span key={x} className="text-gray-300 font-mono">{x}</span>
+                      <span key={x} className="text-foreground font-mono">{x}</span>
                     ))}
                   </div>
                 )}
                 {p.allowedTokens?.length > 0 && (
                   <div className="flex gap-1.5 flex-wrap">
-                    <span className="uppercase text-gray-600">Tokens:</span>
+                    <span className="uppercase text-muted-foreground">Tokens:</span>
                     {p.allowedTokens.map((x) => (
-                      <span key={x} className="text-gray-300 font-mono">{x}</span>
+                      <span key={x} className="text-foreground font-mono">{x}</span>
                     ))}
                   </div>
                 )}
@@ -305,11 +305,11 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
                   {canActivate ? 'SIGN & ACTIVATE' : 'CONNECT WALLET TO SIGN'}
                 </LoadingButton>
               ) : (
-                <p className="text-[10px] text-gray-600 uppercase tracking-wide">Terminal — no further action</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Terminal — no further action</p>
               )}
 
               {signError && busyId === p.id && (
-                <p className="text-[11px] text-red-400">{signError}</p>
+                <p className="text-[11px] text-red-500 dark:text-red-400">{signError}</p>
               )}
             </div>
           ))}
@@ -317,7 +317,7 @@ export function PermissionCards({ agentId }: PermissionCardsProps) {
       )}
 
       {!IMPL_ADDRESS && (
-        <p className="text-[10px] text-amber-400/80">
+        <p className="text-[10px] text-amber-600 dark:text-amber-400/80">
           NEXT_PUBLIC_BAN_EIP7702_IMPL_ADDRESS not configured — activation is disabled (fail-closed). Operational (Altana) flows are unaffected.
         </p>
       )}

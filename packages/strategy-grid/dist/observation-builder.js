@@ -16,15 +16,17 @@ export class GridObservationBuilder {
             },
             currentPrice: {
                 cents: currentPriceCents,
-                display: humanReadablePrice,
+                // USD dollars with an explicit unit so the model can never read
+                // $687.06 as "687.06 cents" (the cause of the bogus PASS).
+                display: `$${humanReadablePrice} USD`,
             },
             crossing: crossing
                 ? {
                     direction: crossing.direction,
                     levelIndex: crossing.level.index,
-                    levelPrice: crossing.level.priceCents / 100,
-                    previousPrice: crossing.previousPriceCents / 100,
-                    currentPrice: crossing.currentPriceCents / 100,
+                    levelPriceUsd: crossing.level.priceCents / 100,
+                    previousPriceUsd: crossing.previousPriceCents / 100,
+                    currentPriceUsd: crossing.currentPriceCents / 100,
                 }
                 : null,
             candidates: candidates.map((c) => ({

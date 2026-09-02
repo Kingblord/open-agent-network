@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -50,7 +50,7 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
 function summarizePayload(payload: Record<string, unknown>): string {
   const entries = Object.entries(payload);
   if (entries.length === 0) return 'Agent event recorded.';
-  return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' · ');
+  return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' Â· ');
 }
 
 function eventToNotification(event: ActivityEvent): Notification {
@@ -190,12 +190,12 @@ export default function NotificationsPage() {
   const grouped = groupByDate(visible);
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased pb-24">
-      <header className="bg-black px-5 pt-6 pb-4 flex items-center justify-between border-b border-[#222]">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-24">
+      <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.back()}
-            className="w-8 h-8 rounded-lg bg-[#111] border border-[#222] flex items-center justify-center text-gray-400 hover:text-white"
+            className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
@@ -203,7 +203,7 @@ export default function NotificationsPage() {
           </button>
           <div>
             <h1 className="text-[22px] font-black text-[#F0B90B] tracking-wide">NOTIFICATIONS</h1>
-            <p className="text-[10px] text-gray-400 font-mono">{unreadCount} unread</p>
+            <p className="text-[10px] text-muted-foreground font-mono">{unreadCount} unread</p>
           </div>
         </div>
         <button
@@ -216,19 +216,19 @@ export default function NotificationsPage() {
 
       <div className="px-5 py-4 space-y-6">
         {loadingFeed ? (
-          <div className="text-center py-12 text-gray-500 text-sm">
+          <div className="text-center py-12 text-muted-foreground text-sm">
             <div className="inline-block w-6 h-6 border-2 border-[#F0B90B] border-t-transparent rounded-full animate-spin mb-2" />
             Loading agent activity...
           </div>
         ) : Object.entries(grouped).length === 0 ? (
-          <div className="text-center py-12 bg-[#111] border border-[#222] rounded-2xl p-6">
+          <div className="text-center py-12 bg-card border border-border rounded-2xl p-6">
             <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[#F0B90B] flex items-center justify-center">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="black" /><circle cx="15" cy="13" r="1.5" fill="black" />
               </svg>
             </div>
-            <div className="text-white font-bold text-base mb-1">No notifications yet</div>
-            <p className="text-xs text-gray-400 max-w-xs mx-auto">
+            <div className="text-foreground font-bold text-base mb-1">No notifications yet</div>
+            <p className="text-xs text-muted-foreground max-w-xs mx-auto">
               Agent activity, transactions, and alerts will appear here once BAN records events for your agents.
             </p>
           </div>
@@ -236,15 +236,15 @@ export default function NotificationsPage() {
           Object.entries(grouped).map(([date, list]) => (
             <div key={date}>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[10px] font-black text-gray-500 tracking-widest uppercase">{date}</h2>
+                <h2 className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">{date}</h2>
                 <div className="h-px bg-[#222] flex-1 ml-3" />
               </div>
               <div className="space-y-2">
                 {list.map((notification) => (
                   <div
                     key={notification.id}
-                    className={`bg-[#111] border rounded-xl p-4 transition-all ${
-                      notification.read ? 'border-[#222]' : 'border-[#F0B90B]/30 bg-[#F0B90B]/5'
+                    className={`bg-card border rounded-xl p-4 transition-all ${
+                      notification.read ? 'border-border' : 'border-[#F0B90B]/30 bg-[#F0B90B]/5'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -256,17 +256,17 @@ export default function NotificationsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <p className={`text-sm font-bold ${notification.read ? 'text-white' : 'text-[#F0B90B]'}`}>
+                            <p className={`text-sm font-bold ${notification.read ? 'text-foreground' : 'text-[#F0B90B]'}`}>
                               {notification.title}
                             </p>
-                            <p className="text-xs text-gray-400 mt-0.5">{notification.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{notification.description}</p>
                           </div>
                           {!notification.read && (
                             <span className="w-2 h-2 rounded-full bg-[#F0B90B] shrink-0 mt-1" />
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="text-[10px] text-gray-500">{timeAgo(notification.timestamp)}</span>
+                          <span className="text-[10px] text-muted-foreground">{timeAgo(notification.timestamp)}</span>
                           {notification.priority === 'high' && (
                             <span className="text-[9px] font-bold text-red-400 uppercase bg-red-400/10 px-1.5 py-0.5 rounded">
                               High

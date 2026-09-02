@@ -54,29 +54,33 @@
   --sidebar-border: oklch(0.96 0.015 95 / 22%);
 }
 
+/* Light theme: proper neutral palette. The BNB brand yellow (#F0B90B) is
+   reserved for the accent (buttons, badges, highlights) — it is NOT the page
+   background/card color in light mode (that was the old bug where the whole
+   app turned into a yellow wall when toggled to light). */
 html.light {
   color-scheme: light;
-  --background: #F0B90B;
-  --foreground: oklch(0.15 0.02 155);
-  --card: #F0B90B;
-  --card-foreground: oklch(0.15 0.02 155);
-  --popover: #F0B90B;
-  --popover-foreground: oklch(0.15 0.02 155);
-  --primary: oklch(1 0 0);
-  --primary-foreground: oklch(0.12 0.03 155);
-  --secondary: #F0B90B;
-  --secondary-foreground: oklch(0.22 0.02 155);
-  --muted: #F0B90B;
-  --muted-foreground: oklch(0.42 0.03 155);
-  --accent: oklch(1 0 0);
-  --accent-foreground: oklch(0.12 0.03 155);
-  --destructive: oklch(0.58 0.2 25);
-  --border: oklch(0.15 0.02 155 / 30%);
-  --input: oklch(0.15 0.02 155 / 35%);
-  --ring: oklch(1 0 0);
-  --sidebar: #F0B90B;
-  --sidebar-foreground: oklch(0.15 0.02 155);
-  --sidebar-border: oklch(0.15 0.02 155 / 25%);
+  --background: oklch(0.985 0.002 260);
+  --foreground: oklch(0.18 0.02 260);
+  --card: oklch(0.99 0.001 260);
+  --card-foreground: oklch(0.18 0.02 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 260);
+  --primary: oklch(0.13 0.02 260);
+  --primary-foreground: oklch(0.985 0.002 260);
+  --secondary: oklch(0.93 0.01 260);
+  --secondary-foreground: oklch(0.25 0.02 260);
+  --muted: oklch(0.94 0.008 260);
+  --muted-foreground: oklch(0.45 0.02 260);
+  --accent: #F0B90B;
+  --accent-foreground: oklch(0.13 0.02 260);
+  --destructive: oklch(0.55 0.2 25);
+  --border: oklch(0.2 0.015 260 / 20%);
+  --input: oklch(0.2 0.015 260 / 22%);
+  --ring: #F0B90B;
+  --sidebar: oklch(0.93 0.01 260);
+  --sidebar-foreground: oklch(0.22 0.02 260);
+  --sidebar-border: oklch(0.2 0.015 260 / 18%);
 }
 
 @layer base {

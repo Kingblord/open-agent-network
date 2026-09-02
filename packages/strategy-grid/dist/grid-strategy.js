@@ -13,6 +13,7 @@ export class GridStrategy {
     riskModel;
     selector;
     observationBuilder;
+    configOverride;
     /** In-memory grid state (will be replaced by Firestore persistence in M18). */
     state = null;
     constructor(deps) {
@@ -23,10 +24,12 @@ export class GridStrategy {
         this.riskModel = deps.riskModel ?? new GridRiskModel();
         this.selector = deps.selector ?? new GridCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
         this.observationBuilder = deps.observationBuilder ?? new GridObservationBuilder(this.strategyId);
+        this.configOverride = deps.config ?? null;
     }
     async observe(agent, _correlationId) {
-        // Initialize grid state if not yet created (from agent's strategy config)
-        // For M12, we use a test config — in M18 this comes from Firestore.
+        // Initialize grid state from the task-derived config when the caller
+        // provided one (run-cycle threads the task row's grid bounds here).
+        // Fall back to the M12 hermetic test config ONLY when nothing was passed.
         if (!this.state) {
             const config = {
                 lowerPriceCents: 50000,
@@ -36,7 +39,17 @@ export class GridStrategy {
                 maxOrderSizeCents: 50000,
                 maxActiveExposureCents: 100000,
                 expiresAt: new Date(Date.now() + 86400000).toISOString(),
+                ...(this.configOverride ?? {}),
             };
+            // Fail-closed: an invalid task range must never produce a broken grid.
+            if (!Number.isFinite(config.lowerPriceCents) || !Number.isFinite(config.upperPriceCents)) {
+                throw new BANError(ErrorCode.VALIDATION_FAILED, 'Grid config bounds must be finite numbers', {
+                    retryable: false,
+                });
+            }
+            if (config.lowerPriceCents >= config.upperPriceCents) {
+                config.upperPriceCents = config.lowerPriceCents + 1;
+            }
             const levels = this.calculator.generateLevels(config.lowerPriceCents, config.upperPriceCents, config.gridCount, config.capitalCents, config.maxOrderSizeCents);
             const { priceCents } = await this.data.fetchPriceCents('BNB');
             this.state = {
@@ -48,6 +61,22 @@ export class GridStrategy {
                 stopped: false,
                 lastPriceCents: priceCents,
             };
+        }
+        else if (this.configOverride) {
+            // The task config changed between cycles (edit-session / new task):
+            // rebuild levels from the merged bounds instead of silently keeping
+            // stale levels computed for the old range.
+            const nextConfig = {
+                ...this.state.config,
+                ...(this.configOverride ?? {}),
+            };
+            if (nextConfig.lowerPriceCents >= nextConfig.upperPriceCents) {
+                nextConfig.upperPriceCents = nextConfig.lowerPriceCents + 1;
+            }
+            if (JSON.stringify(nextConfig) !== JSON.stringify(this.state.config)) {
+                const levels = this.calculator.generateLevels(nextConfig.lowerPriceCents, nextConfig.upperPriceCents, nextConfig.gridCount, nextConfig.capitalCents, nextConfig.maxOrderSizeCents);
+                this.state = { ...this.state, config: nextConfig, levels };
+            }
         }
         // Fetch current price
         const { priceCents, humanReadable } = await this.data.fetchPriceCents('BNB');

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -134,7 +134,7 @@ export default function SettingsPage() {
         setNewKeyName('');
         setShowCreateKey(false);
         await loadApiKeys();
-        toast.success({ title: 'API key created', description: 'Copy it now — it will not be shown again.' });
+        toast.success({ title: 'API key created', description: 'Copy it now â€” it will not be shown again.' });
       } else {
         const err = await res.json();
         const msg = err.error || 'Failed to create API key.';
@@ -198,7 +198,7 @@ export default function SettingsPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4">
             <div className="h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
@@ -210,13 +210,13 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <div className="pb-20">
-        <header className="bg-black px-5 pt-6 pb-4 flex items-center justify-between border-b border-[#1A1A1A]">
+        <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between border-b border-[#1A1A1A]">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/profile')}
-              className="w-8 h-8 rounded-lg bg-[#111] border border-[#222] flex items-center justify-center text-gray-400 hover:text-white"
+              className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -236,7 +236,7 @@ export default function SettingsPage() {
               className={`flex-1 py-2.5 text-[10px] font-black tracking-wider uppercase rounded-lg transition ${
                 activeTab === tab
                   ? 'bg-[#F0B90B] text-black'
-                  : 'text-gray-400 hover:text-white'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab}
@@ -246,46 +246,46 @@ export default function SettingsPage() {
 
         {activeTab === 'GENERAL' && (
           <div className="mx-5 mt-4 space-y-4">
-            {/* Connected wallet — replaces the old mislabeled "Wallet Address" (developer ID) field */}
+            {/* Connected wallet â€” replaces the old mislabeled "Wallet Address" (developer ID) field */}
             <WalletConnectCard />
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Profile Information</h3>
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Profile Information</h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Display Name</label>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Display Name</label>
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-black border border-[#333] rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#F0B90B]"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder-gray-600 focus:outline-none focus:border-[#F0B90B]"
                     placeholder="Enter your name"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Email</label>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Email</label>
                   <input
                     type="email"
                     value={user.email || ''}
                     disabled
-                    className="w-full bg-[#1A1A1A] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-gray-400 cursor-not-allowed"
+                    className="w-full bg-[#1A1A1A] border border-border rounded-lg px-3 py-2.5 text-sm text-muted-foreground cursor-not-allowed"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Developer ID</label>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Developer ID</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={user.id || ''}
                       disabled
-                      className="flex-1 bg-[#1A1A1A] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-gray-400 font-mono cursor-not-allowed"
+                      className="flex-1 bg-[#1A1A1A] border border-border rounded-lg px-3 py-2.5 text-sm text-muted-foreground font-mono cursor-not-allowed"
                     />
                     <button
                       onClick={() => { navigator.clipboard.writeText(user.id || ''); toast.success({ title: 'Copied', description: 'Developer ID copied to clipboard.' }); }}
-                      className="px-3 py-2.5 bg-[#1A1A1A] border border-[#333] rounded-lg text-[#F0B90B] hover:border-[#F0B90B] transition"
+                      className="px-3 py-2.5 bg-[#1A1A1A] border border-border rounded-lg text-[#F0B90B] hover:border-[#F0B90B] transition"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -312,15 +312,15 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Account</h3>
-              <div className="flex items-center justify-between py-2.5 border-b border-[#222]">
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Account</h3>
+              <div className="flex items-center justify-between py-2.5 border-b border-border">
                 <span className="text-sm text-gray-300">Credits balance</span>
-                <span className="text-sm font-black text-[#F0B90B]">{credits != null ? credits : '—'}</span>
+                <span className="text-sm font-black text-[#F0B90B]">{credits != null ? credits : 'â€”'}</span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-gray-300">Developer ID</span>
-                <span className="text-sm font-mono text-white">{user.id.slice(0, 16)}...</span>
+                <span className="text-sm font-mono text-foreground">{user.id.slice(0, 16)}...</span>
               </div>
             </div>
           </div>
@@ -328,9 +328,9 @@ export default function SettingsPage() {
 
         {activeTab === 'API' && (
           <div className="mx-5 mt-4 space-y-4">
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+            <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[10px] font-black text-white tracking-widest uppercase">API Keys</h3>
+                <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase">API Keys</h3>
                 <button
                   onClick={() => setShowCreateKey(true)}
                   className="bg-[#F0B90B] text-black text-[10px] font-black px-3 py-1.5 uppercase tracking-wider rounded"
@@ -340,19 +340,19 @@ export default function SettingsPage() {
               </div>
 
               {showCreateKey && (
-                <div className="mb-4 p-3 bg-[#1A1A1A] rounded-lg border border-[#333]">
+                <div className="mb-4 p-3 bg-[#1A1A1A] rounded-lg border border-border">
                   <input
                     type="text"
                     value={newKeyName}
                     onChange={(e) => setNewKeyName(e.target.value)}
                     placeholder="Key name (e.g., Production)"
-                    className="w-full bg-black border border-[#333] rounded px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#F0B90B] mb-2"
+                    className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground placeholder-gray-600 focus:outline-none focus:border-[#F0B90B] mb-2"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={() => setShowCreateKey(false)}
                       disabled={creatingKey}
-                      className="flex-1 bg-[#222] text-white text-xs font-black py-2 uppercase tracking-wider rounded disabled:opacity-60"
+                      className="flex-1 bg-[#222] text-foreground text-xs font-black py-2 uppercase tracking-wider rounded disabled:opacity-60"
                     >
                       Cancel
                     </button>
@@ -370,19 +370,19 @@ export default function SettingsPage() {
 
               {revealedKey && (
                 <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                  <p className="text-xs text-emerald-400 font-bold mb-1">API Key created — copy it now, it won&apos;t be shown again.</p>
+                  <p className="text-xs text-emerald-400 font-bold mb-1">API Key created â€” copy it now, it won&apos;t be shown again.</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-black text-emerald-300 font-mono text-xs px-3 py-2 rounded break-all">{revealedKey}</code>
+                    <code className="flex-1 bg-background text-emerald-300 font-mono text-xs px-3 py-2 rounded break-all">{revealedKey}</code>
                     <button
                       onClick={() => { navigator.clipboard.writeText(revealedKey); toast.success({ title: 'Copied', description: 'API key copied to clipboard.' }); }}
-                      className="px-3 py-2 bg-[#1A1A1A] border border-[#333] text-[#F0B90B] text-xs font-black uppercase rounded hover:border-[#F0B90B]"
+                      className="px-3 py-2 bg-[#1A1A1A] border border-border text-[#F0B90B] text-xs font-black uppercase rounded hover:border-[#F0B90B]"
                     >
                       Copy
                     </button>
                   </div>
                   <button
                     onClick={() => setRevealedKey(null)}
-                    className="mt-2 text-[10px] font-black text-gray-400 uppercase"
+                    className="mt-2 text-[10px] font-black text-muted-foreground uppercase"
                   >
                     Dismiss
                   </button>
@@ -391,13 +391,13 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 {keysLoading ? (
-                  <p className="text-center py-4 text-gray-500 text-xs">Loading API keys...</p>
+                  <p className="text-center py-4 text-muted-foreground text-xs">Loading API keys...</p>
                 ) : (
                   apiKeys.map((key) => (
-                    <div key={key.id} className="flex items-center justify-between p-3 bg-[#1A1A1A] rounded-lg border border-[#333]">
+                    <div key={key.id} className="flex items-center justify-between p-3 bg-[#1A1A1A] rounded-lg border border-border">
                       <div>
-                        <div className="text-sm font-bold text-white">{key.name}</div>
-                        <div className="text-[10px] text-gray-500 font-mono">
+                        <div className="text-sm font-bold text-foreground">{key.name}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">
                           Created {new Date(key.createdAt).toLocaleDateString()}
                         </div>
                       </div>
@@ -413,7 +413,7 @@ export default function SettingsPage() {
                 )}
 
                 {!keysLoading && apiKeys.length === 0 && (
-                  <div className="text-center py-6 text-gray-500 text-xs">
+                  <div className="text-center py-6 text-muted-foreground text-xs">
                     No API keys created yet
                   </div>
                 )}
@@ -424,18 +424,18 @@ export default function SettingsPage() {
 
         {activeTab === 'SECURITY' && (
           <div className="mx-5 mt-4 space-y-4">
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Security Settings</h3>
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Security Settings</h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between py-2.5 border-b border-[#222]">
+                <div className="flex items-center justify-between py-2.5 border-b border-border">
                   <span className="text-sm text-gray-300">Two-Factor Authentication</span>
-                  <span className="text-sm font-black text-gray-400">Managed by BAN</span>
+                  <span className="text-sm font-black text-muted-foreground">Managed by BAN</span>
                 </div>
-                <div className="flex items-center justify-between py-2.5 border-b border-[#222]">
+                <div className="flex items-center justify-between py-2.5 border-b border-border">
                   <span className="text-sm text-gray-300">Agent Policy Enforcement</span>
                   <span className="text-sm font-black text-emerald-400">ALWAYS ON</span>
                 </div>
-                <div className="flex items-center justify-between py-2.5 border-b border-[#222]">
+                <div className="flex items-center justify-between py-2.5 border-b border-border">
                   <span className="text-sm text-gray-300">Transaction Signing</span>
                   <span className="text-sm font-black text-emerald-400">SESSION-KEY BOUND</span>
                 </div>
@@ -446,8 +446,8 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <h3 className="text-[10px] font-black text-white tracking-widest uppercase mb-4">Danger Zone</h3>
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Danger Zone</h3>
               <button
                 onClick={() => setPendingAction({ type: 'logout' })}
                 className="w-full bg-red-400/10 border border-red-400/30 text-red-400 font-black text-xs py-3 tracking-wider uppercase rounded-lg hover:bg-red-400/20 transition"

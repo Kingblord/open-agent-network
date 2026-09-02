@@ -11,6 +11,13 @@
  *
  * The AI receives only precomputed deterministic grid candidates — it
  * never generates price levels, order sizes, or stop conditions.
+ *
+ * Task-config threading (fixes "current price 687.06 cents"): the caller
+ * (run-cycle) passes the user's task-derived bounds via `config` — real
+ * lower/upper/gridCount/capital from the task row override the M12 test
+ * defaults, so a task configured for e.g. $400–$900 actually trades that
+ * range instead of always comparing BNB price against the hardcoded
+ * $500–$600 test grid.
  */
 import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
@@ -32,6 +39,8 @@ export interface GridStrategyDeps {
   riskModel?: GridRiskModel;
   selector?: GridCandidateSelector;
   observationBuilder?: GridObservationBuilder;
+  /** Task-derived config overrides (bounds/caps). Absent → M12 defaults. */
+  config?: Partial<GridConfig>;
 }
 
 export class GridStrategy implements StrategyEngine {
@@ -42,6 +51,7 @@ export class GridStrategy implements StrategyEngine {
   private readonly riskModel: GridRiskModel;
   private readonly selector: GridCandidateSelector;
   private readonly observationBuilder: GridObservationBuilder;
+  private readonly configOverride: Partial<GridConfig> | null;
 
   /** In-memory grid state (will be replaced by Firestore persistence in M18). */
   private state: GridState | null = null;
@@ -54,11 +64,13 @@ export class GridStrategy implements StrategyEngine {
     this.riskModel = deps.riskModel ?? new GridRiskModel();
     this.selector = deps.selector ?? new GridCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
     this.observationBuilder = deps.observationBuilder ?? new GridObservationBuilder(this.strategyId);
+    this.configOverride = deps.config ?? null;
   }
 
   async observe(agent: Agent, _correlationId: string): Promise<Observation[]> {
-    // Initialize grid state if not yet created (from agent's strategy config)
-    // For M12, we use a test config — in M18 this comes from Firestore.
+    // Initialize grid state from the task-derived config when the caller
+    // provided one (run-cycle threads the task row's grid bounds here).
+    // Fall back to the M12 hermetic test config ONLY when nothing was passed.
     if (!this.state) {
       const config: GridConfig = {
         lowerPriceCents: 50000,
@@ -68,7 +80,17 @@ export class GridStrategy implements StrategyEngine {
         maxOrderSizeCents: 50000,
         maxActiveExposureCents: 100000,
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        ...(this.configOverride ?? {}),
       };
+      // Fail-closed: an invalid task range must never produce a broken grid.
+      if (!Number.isFinite(config.lowerPriceCents) || !Number.isFinite(config.upperPriceCents)) {
+        throw new BANError(ErrorCode.VALIDATION_FAILED, 'Grid config bounds must be finite numbers', {
+          retryable: false,
+        });
+      }
+      if (config.lowerPriceCents >= config.upperPriceCents) {
+        config.upperPriceCents = config.lowerPriceCents + 1;
+      }
       const levels = this.calculator.generateLevels(
         config.lowerPriceCents,
         config.upperPriceCents,
@@ -86,6 +108,27 @@ export class GridStrategy implements StrategyEngine {
         stopped: false,
         lastPriceCents: priceCents,
       };
+    } else if (this.configOverride) {
+      // The task config changed between cycles (edit-session / new task):
+      // rebuild levels from the merged bounds instead of silently keeping
+      // stale levels computed for the old range.
+      const nextConfig: GridConfig = {
+        ...this.state.config,
+        ...(this.configOverride ?? {}),
+      };
+      if (nextConfig.lowerPriceCents >= nextConfig.upperPriceCents) {
+        nextConfig.upperPriceCents = nextConfig.lowerPriceCents + 1;
+      }
+      if (JSON.stringify(nextConfig) !== JSON.stringify(this.state.config)) {
+        const levels = this.calculator.generateLevels(
+          nextConfig.lowerPriceCents,
+          nextConfig.upperPriceCents,
+          nextConfig.gridCount,
+          nextConfig.capitalCents,
+          nextConfig.maxOrderSizeCents,
+        );
+        this.state = { ...this.state, config: nextConfig, levels };
+      }
     }
 
     // Fetch current price

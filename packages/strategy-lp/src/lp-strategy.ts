@@ -10,6 +10,10 @@
  *
  * The AI receives only precomputed deterministic candidates — it never
  * generates ticks, liquidity amounts, or contract parameters.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so a user-set pool address (or a protocol marker) drives
+ * observe() instead of only the agent's first protocol.
  */
 
 import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
@@ -31,6 +35,8 @@ export interface LpStrategyDeps {
   riskModel?: LpRiskModel;
   selector?: LpCandidateSelector;
   observationBuilder?: LpObservationBuilder;
+  /** Task-config threading: same seam grid uses — optional bounds/knobs the user set on the task. */
+  config?: Record<string, unknown>;
 }
 
 export class LpStrategy implements StrategyEngine {
@@ -41,6 +47,7 @@ export class LpStrategy implements StrategyEngine {
   private readonly riskModel: LpRiskModel;
   private readonly selector: LpCandidateSelector;
   private readonly observationBuilder: LpObservationBuilder;
+  private readonly config: Record<string, unknown> | null;
 
   constructor(deps: LpStrategyDeps) {
     this.strategyId = deps.strategyId ?? 'lp-rebalance';
@@ -50,13 +57,19 @@ export class LpStrategy implements StrategyEngine {
     this.riskModel = deps.riskModel ?? new LpRiskModel();
     this.selector = deps.selector ?? new LpCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
     this.observationBuilder = deps.observationBuilder ?? new LpObservationBuilder(this.strategyId, this.calculator);
+    this.config = deps.config ?? null;
   }
 
   async observe(agent: Agent, _correlationId: string): Promise<Observation[]> {
     // In the live agent loop, the pool address and owner are resolved from the
     // agent's protocol portfolio. For the hermetic unit path a concrete pool
     // and position are provided by tests.
-    const poolAddress = agent.protocols[0] ?? '';
+    // Task-config threading: allow an explicit pool address from the task row;
+    // fall back to the agent's first protocol. Fail-closed (never fabricates).
+    const poolAddress =
+      typeof this.config?.poolAddress === 'string' && this.config!.poolAddress
+        ? (this.config!.poolAddress as string)
+        : (agent.protocols[0] ?? '');
     const walletAddress = agent.walletAddress ?? '';
     const pool = await this.data.fetchPoolState(poolAddress, 18, 18);
     let position: import('./types.js').LpPosition | null = null;

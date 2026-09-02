@@ -19,8 +19,8 @@ export default function NetworkModeBadge({ mode }: NetworkModeBadgeProps) {
 
   if (normalized === 'LIVE') {
     return (
-      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
         LIVE
       </span>
     );
@@ -28,8 +28,8 @@ export default function NetworkModeBadge({ mode }: NetworkModeBadgeProps) {
 
   if (normalized === 'TESTNET') {
     return (
-      <span className="text-xs font-bold text-amber-400 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+      <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
         TESTNET
       </span>
     );
@@ -37,16 +37,16 @@ export default function NetworkModeBadge({ mode }: NetworkModeBadgeProps) {
 
   if (normalized === 'SIMULATED') {
     return (
-      <span className="text-xs font-bold text-gray-400 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+      <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
         SIMULATED
       </span>
     );
   }
 
   return (
-    <span className="text-xs font-bold text-gray-500 flex items-center gap-1">
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
+    <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
       NO DATA
     </span>
   );

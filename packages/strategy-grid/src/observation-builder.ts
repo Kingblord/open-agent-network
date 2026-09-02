@@ -5,6 +5,12 @@
  * candidates. Exposes only deterministic candidate facts — never raw
  * market data, execution parameters, or uncontrolled price information
  * the AI could misuse.
+ *
+ * UNIT SAFETY (fixes "current price 687.06 cents"): `currentPrice.display`
+ * is now a USD-denominated string ("$687.06 USD") and `currentPrice.cents`
+ * is documented as USD-cents. The crossing prices are rendered in USD
+ * dollars (divided by 100) so the LLM can never mistake a dollar figure
+ * for a cents figure when comparing against `upperPriceCents`.
  */
 import type { Agent, Observation } from '@ban/schemas';
 import type { GridConfig, GridLevel, GridCrossing, GridCandidate, GridFill, GridState } from './types.js';
@@ -38,15 +44,17 @@ export class GridObservationBuilder {
       },
       currentPrice: {
         cents: currentPriceCents,
-        display: humanReadablePrice,
+        // USD dollars with an explicit unit so the model can never read
+        // $687.06 as "687.06 cents" (the cause of the bogus PASS).
+        display: `$${humanReadablePrice} USD`,
       },
       crossing: crossing
         ? {
             direction: crossing.direction,
             levelIndex: crossing.level.index,
-            levelPrice: crossing.level.priceCents / 100,
-            previousPrice: crossing.previousPriceCents / 100,
-            currentPrice: crossing.currentPriceCents / 100,
+            levelPriceUsd: crossing.level.priceCents / 100,
+            previousPriceUsd: crossing.previousPriceCents / 100,
+            currentPriceUsd: crossing.currentPriceCents / 100,
           }
         : null,
       candidates: candidates.map((c) => ({

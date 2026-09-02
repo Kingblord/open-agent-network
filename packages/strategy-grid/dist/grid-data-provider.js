@@ -4,16 +4,20 @@ export class GridDataProvider {
         this.price = deps.price;
     }
     /**
-     * Fetch the current price of a token (in integer cents USD).
+     * Fetch the current price of a token (in integer cents USD), with a
+     * human-readable USD string for the AI observation layer.
      */
     async fetchPriceCents(token) {
         const result = await this.price.getTokenPrice(token);
         // Convert float price string to integer cents
         const priceFloat = parseFloat(result.priceUsd);
         const priceCents = Math.round(priceFloat * 100);
+        // USD dollars with thousands separator and explicit USD suffix, avoiding
+        // any "687.06 cents" ambiguity in the AI observation.
+        const humanReadable = `$${priceFloat.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         return {
             priceCents,
-            humanReadable: result.priceUsd,
+            humanReadable,
         };
     }
 }

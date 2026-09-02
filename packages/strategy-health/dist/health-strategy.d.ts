@@ -14,6 +14,8 @@ export interface HealthStrategyDeps {
     riskModel?: HealthRiskModel;
     selector?: HealthCandidateSelector;
     observationBuilder?: ObservationBuilder;
+    /** Task-config threading: same seam grid uses — optional bounds/knobs the user set on the task. */
+    config?: Record<string, unknown>;
 }
 /**
  * M10 — HealthStrategy (implements @ban/agent-core StrategyEngine).
@@ -25,6 +27,10 @@ export interface HealthStrategyDeps {
  * It does NOT invoke the PolicyEngine or ExecutionEngine — a corrective
  * proposal is returned STILL-UNEXECUTED for M5/M8/live-loop in M18. This mirrors
  * M9's YieldStrategy and keeps the AI a reasoning/selection layer only.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so the user's allowed contracts/tokens drive the health
+ * snapshot instead of empty defaults.
  */
 export declare class HealthStrategy implements StrategyEngine {
     private readonly strategyId;
@@ -34,6 +40,7 @@ export declare class HealthStrategy implements StrategyEngine {
     private readonly riskModel;
     private readonly selector;
     private readonly observationBuilder;
+    private readonly config;
     constructor(deps: HealthStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;
     decide(observation: Observation, agent: Agent, hooks?: {

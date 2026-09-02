@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
@@ -130,10 +130,10 @@ export default function DashboardPage() {
 
   // Sum of confirmed transactions across owned agents (real).
   const totalConfirmed = agents.reduce((sum, a) => sum + (performanceMap[a.id]?.confirmedCount ?? 0), 0);
-  // Total fees paid in wei → displayed only when > 0.
+  // Total fees paid in wei â†’ displayed only when > 0.
   const totalFeesWei = agents.reduce((sum, a) => sum + Number(performanceMap[a.id]?.totalFeesWei ?? '0'), 0);
   const feesPresent = totalFeesWei > 0;
-  const feesDisplay = feesPresent ? `${(totalFeesWei / 1e18).toFixed(4)} BNB` : '—';
+  const feesDisplay = feesPresent ? `${(totalFeesWei / 1e18).toFixed(4)} BNB` : 'â€”';
 
   // Portfolio value only when an agent has real positions. Otherwise honest empty.
   const anyRealPositions = agents.some((a) => performanceMap[a.id]?.hasPositions);
@@ -151,7 +151,7 @@ export default function DashboardPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen dark:bg-black dark:text-white bg-white text-black">
+      <div className="flex items-center justify-center min-h-screen dark:bg-background dark:text-foreground bg-white text-black">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4"><div className="h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" /></div>
           <p className="text-[#F0B90B] font-mono text-xs uppercase tracking-widest">Loading network...</p>
@@ -186,9 +186,9 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen dark:bg-black dark:text-white bg-white text-black font-sans antialiased transition-colors duration-200">
+    <div className="min-h-screen dark:bg-background dark:text-foreground bg-white text-black font-sans antialiased transition-colors duration-200">
       <div className="pb-20">
-        <header className="dark:bg-black bg-white px-5 pt-6 pb-4 flex items-center justify-between border-b dark:border-[#1A1A1A] border-gray-200">
+        <header className="dark:bg-background bg-white px-5 pt-6 pb-4 flex items-center justify-between border-b dark:border-[#1A1A1A] border-gray-200">
           <div>
             <h1 className="text-[28px] font-black leading-none tracking-tight text-[#F0B90B]">BAN</h1>
             <div className="text-[10px] font-bold leading-tight text-[#F0B90B] tracking-wider mt-0.5">
@@ -236,7 +236,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between">
-            <button type="button" onClick={() => router.push('/agents')} className="bg-black text-white text-[11px] font-black tracking-widest uppercase px-5 py-3 flex items-center gap-1.5">
+            <button type="button" onClick={() => router.push('/agents')} className="bg-background text-foreground text-[11px] font-black tracking-widest uppercase px-5 py-3 flex items-center gap-1.5">
               <span className="text-[#F0B90B] text-base leading-none">+</span> Hire agent
             </button>
             <button type="button" onClick={() => router.push('/my-agents')} className="text-black text-[11px] font-black tracking-wider uppercase flex items-center gap-1.5">
@@ -248,10 +248,10 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <div className="mx-5 mt-5 dark:bg-[#111] bg-gray-50 rounded-xl p-4 border dark:border-[#222] border-gray-200">
+        <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase">Portfolio overview</span>
-            <button type="button" onClick={() => router.push('/portfolio')} className="dark:bg-[#1A1A1A] bg-white text-[10px] dark:text-white text-black font-bold px-2.5 py-1.5 flex items-center gap-1 border dark:border-[#333] border-gray-300">
+            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Portfolio overview</span>
+            <button type="button" onClick={() => router.push('/portfolio')} className="dark:bg-[#1A1A1A] bg-white text-[10px] dark:text-foreground text-black font-bold px-2.5 py-1.5 flex items-center gap-1 border dark:border-border border-gray-300">
               Total value
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 4l2 2 2-2" /></svg>
             </button>
@@ -259,7 +259,7 @@ export default function DashboardPage() {
           {anyRealPositions ? (
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-[32px] font-black leading-none dark:text-white text-black">
+                <p className="text-[32px] font-black leading-none dark:text-foreground text-black">
                   ${portfolioValueUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
                 <p className="text-sm font-bold text-[#F0B90B] mt-1">Active positions</p>
@@ -267,8 +267,8 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="py-2">
-              <p className="text-base font-black text-gray-400">No positions yet</p>
-              <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
+              <p className="text-base font-black text-muted-foreground">No positions yet</p>
+              <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-1">
                 Portfolio metrics will appear after BAN records its first position.
               </p>
             </div>
@@ -279,9 +279,9 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black text-[#F0B90B] tracking-widest uppercase">SMART MONEY</span>
-              <span className="text-[9px] dark:text-gray-500 text-gray-400">by BAN</span>
+              <span className="text-[9px] dark:text-muted-foreground text-muted-foreground">by BAN</span>
             </div>
-            <button type="button" onClick={() => router.push('/my-agents')} className="text-[10px] font-black dark:text-gray-400 text-gray-500 tracking-wider uppercase flex items-center gap-1 hover:text-[#F0B90B] transition-colors">
+            <button type="button" onClick={() => router.push('/my-agents')} className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-wider uppercase flex items-center gap-1 hover:text-[#F0B90B] transition-colors">
               View all
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14" /><path d="M12 5l7 7-7 7" />
@@ -291,13 +291,13 @@ export default function DashboardPage() {
         </div>
 
         {dataLoading ? (
-          <div className="mx-5 mt-2 text-center text-xs text-gray-400 py-6">
+          <div className="mx-5 mt-2 text-center text-xs text-muted-foreground py-6">
             Loading your agents...
           </div>
         ) : agents.filter((a) => a.status !== 'REVOKED').length === 0 || dataError ? (
-          <div className="mx-5 mt-2 dark:bg-[#111] bg-gray-50 rounded-xl p-6 border dark:border-[#222] border-gray-200 text-center">
-            <p className="text-sm font-black text-gray-400">{dataError || 'No active agents deployed'}</p>
-            <p className="text-xs dark:text-gray-500 text-gray-500 mt-1 mb-4">
+          <div className="mx-5 mt-2 dark:bg-card bg-gray-50 rounded-xl p-6 border dark:border-border border-gray-200 text-center">
+            <p className="text-sm font-black text-muted-foreground">{dataError || 'No active agents deployed'}</p>
+            <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-1 mb-4">
               {dataError
                 ? 'Please check your connection and try again.'
                 : 'Hire or register an autonomous agent to start securing BNB Chain positions.'}
@@ -323,17 +323,17 @@ export default function DashboardPage() {
                   key={ag.id}
                   type="button"
                   onClick={() => ag && router.push(`/my-agents/${ag.id}`)}
-                  className="relative dark:bg-[#111] bg-gray-50 border dark:border-[#222] border-gray-200 rounded-xl p-4 text-left"
+                  className="relative dark:bg-card bg-gray-50 border dark:border-border border-gray-200 rounded-xl p-4 text-left"
                 >
                   <div className="w-10 h-10 bg-[#F0B90B] flex items-center justify-center mb-3">{STRATEGY_ICONS[key] || null}</div>
-                  <p className="text-[11px] font-black dark:text-white text-black tracking-wider mb-2">{ag.name}</p>
+                  <p className="text-[11px] font-black dark:text-foreground text-black tracking-wider mb-2">{ag.name}</p>
                   <div className="flex items-center gap-1.5 mb-3">
                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-400' : 'bg-gray-400'}`} />
-                    <span className="text-[9px] font-bold dark:text-gray-400 text-gray-500 uppercase">{ag.status}</span>
+                    <span className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase">{ag.status}</span>
                   </div>
-                  <p className="text-[9px] font-bold dark:text-gray-500 text-gray-400 uppercase tracking-wider">Success rate</p>
-                  <p className={`text-lg font-black ${metricValue ? 'dark:text-white text-black' : 'text-gray-400'}`}>
-                    {metricValue || '—'}
+                  <p className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase tracking-wider">Success rate</p>
+                  <p className={`text-lg font-black ${metricValue ? 'dark:text-foreground text-black' : 'text-muted-foreground'}`}>
+                    {metricValue || 'â€”'}
                   </p>
                   {isActive && (
                     <div className="absolute bottom-0 right-0 w-8 h-8 bg-[#F0B90B] flex items-center justify-center">
@@ -348,21 +348,21 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="mx-5 mt-5 mb-6 dark:bg-[#111] bg-gray-50 rounded-xl p-4 border dark:border-[#222] border-gray-200">
+        <div className="mx-5 mt-5 mb-6 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-black dark:text-white text-black tracking-widest uppercase">Latest activity</span>
+            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Latest activity</span>
             <button type="button" onClick={() => router.push('/history')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
               View all
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5l7 7-7 7" /></svg>
             </button>
           </div>
           {activity.length === 0 ? (
-            <p className="text-xs dark:text-gray-500 text-gray-400 py-2">
+            <p className="text-xs dark:text-muted-foreground text-muted-foreground py-2">
               No activity recorded yet. Agent actions will appear here.
             </p>
           ) : (
             activity.slice(0, 3).map((event, idx, arr) => (
-              <div key={event.id} className={`flex items-start gap-3 ${idx < arr.length - 1 ? 'pb-4 border-b dark:border-[#222] border-gray-200 mb-4' : ''}`}>
+              <div key={event.id} className={`flex items-start gap-3 ${idx < arr.length - 1 ? 'pb-4 border-b dark:border-border border-gray-200 mb-4' : ''}`}>
                 <div className="w-9 h-9 bg-[#F0B90B] flex items-center justify-center shrink-0">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M7 17L17 7" /><path d="M7 7h10v10" />
@@ -370,10 +370,10 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-black capitalize text-black">{event.eventType.replace(/_/g, ' ')}</p>
-                  <p className="text-xs dark:text-gray-400 text-gray-500 mt-0.5">{formatActivityPayload(event.payload)}</p>
+                  <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-0.5">{formatActivityPayload(event.payload)}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-[10px] text-gray-400 mb-1">{timeAgo(event.createdAt)}</p>
+                  <p className="text-[10px] text-muted-foreground mb-1">{timeAgo(event.createdAt)}</p>
                   <span className="bg-[#F0B90B] text-black text-[9px] font-black uppercase px-2 py-0.5">LOG</span>
                 </div>
               </div>

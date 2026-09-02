@@ -31,11 +31,11 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
 const ICONS: Record<ToastType, { path: string; color: string }> = {
   success: {
-    color: 'text-emerald-400 border-emerald-500/40',
+    color: 'text-emerald-600 dark:text-emerald-400 border-emerald-500/40',
     path: 'M20 6L9 17l-5-5',
   },
   error: {
-    color: 'text-red-400 border-red-500/40',
+    color: 'text-red-600 dark:text-red-400 border-red-500/40',
     path: 'M18 6L6 18M6 6l12 12',
   },
   info: {
@@ -43,7 +43,7 @@ const ICONS: Record<ToastType, { path: string; color: string }> = {
     path: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   },
   warning: {
-    color: 'text-amber-400 border-amber-500/40',
+    color: 'text-amber-600 dark:text-amber-400 border-amber-500/40',
     path: 'M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z',
   },
 };
@@ -53,7 +53,8 @@ function normalize(opts: ToastOptions | string): ToastOptions {
 }
 
 /**
- * Global toast system (BAN dark theme).
+ * Global toast system (theme-aware — follows light/dark like the rest of the
+ * app via bg-card/text-foreground tokens; brand accents stay #F0B90B).
  * Supports success / error / info / warning, stacked, auto-dismissing, dismissible.
  * Mount <ToastProvider> once in the root layout, then use useToast() in any client page.
  */
@@ -105,23 +106,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           return (
             <div
               key={t.id}
-              className="pointer-events-auto w-full rounded-xl border border-[#333] bg-[#111]/95 backdrop-blur p-3.5 shadow-2xl shadow-black/50"
+              className="pointer-events-auto w-full rounded-xl border border-border bg-card/95 backdrop-blur p-3.5 shadow-2xl shadow-black/30"
             >
               <div className="flex items-start gap-3">
-                <div className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border bg-black ${icon.color}`}>
+                <div className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border bg-muted ${icon.color}`}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d={icon.path} />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-black text-white uppercase tracking-wide">{t.title}</p>
-                  {t.description && <p className="mt-0.5 text-xs leading-relaxed text-gray-400">{t.description}</p>}
+                  <p className="text-sm font-black text-foreground uppercase tracking-wide">{t.title}</p>
+                  {t.description && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t.description}</p>}
                 </div>
                 <button
                   type="button"
                   onClick={() => dismiss(t.id)}
                   aria-label="Dismiss"
-                  className={`-mr-1 -mt-1 shrink-0 grid size-6 place-items-center text-gray-500 hover:text-white transition ${!t.dismissable ? 'hidden' : ''}`}
+                  className={`-mr-1 -mt-1 shrink-0 grid size-6 place-items-center text-muted-foreground hover:text-foreground transition ${!t.dismissable ? 'hidden' : ''}`}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <path d="M18 6L6 18M6 6l12 12" />

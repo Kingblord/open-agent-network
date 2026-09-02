@@ -12,6 +12,9 @@ import { isErc8004LiveConfigured, syncErc8004Live } from '@/lib/erc8004-live';
 
 const logger = createStructuredLogger('api.agents');
 
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+
 /**
  * M3 - Agent Registry control-plane routes.
  *
@@ -44,6 +47,11 @@ const logger = createStructuredLogger('api.agents');
  *                      `verified`/reputation-neutral fields. Discovery
  *                      does NOT grant execution authority — execution still
  *                      requires the agent to be in the BAN agent registry.
+ *
+ *                      Pagination: `?page=1&limit=20` (1-based page, default
+ *                      limit 10, max 50) slices the final merged marketplace
+ *                      payload and returns `{ page, limit, total }` so the UI
+ *                      can render 1 2 3 … pager controls.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -161,9 +169,16 @@ export async function GET(request: NextRequest) {
     const statusParsed = statusRaw ? AgentStatusSchema.safeParse(statusRaw) : undefined;
     const status = statusRaw && statusParsed?.success ? statusParsed.data : undefined;
 
-    const limit = Number(request.nextUrl.searchParams.get('limit') ?? '50') || 50;
+    const limitRaw = Number(request.nextUrl.searchParams.get('limit') ?? String(DEFAULT_LIMIT));
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(Math.floor(limitRaw), MAX_LIMIT)
+        : DEFAULT_LIMIT;
+    const pageRaw = Number(request.nextUrl.searchParams.get('page') ?? '1');
+    const page =
+      Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1;
 
-    const agents = await agentRegistry.list({ ownerId: requestedOwnerId, status, limit });
+    const agents = await agentRegistry.list({ ownerId: requestedOwnerId, status, limit: MAX_LIMIT });
 
     // Owner-scoped listing (authenticated) may see own agents in any status.
     // Public browsing (unauthenticated) shows only ACTIVE agents with public
@@ -181,10 +196,6 @@ export async function GET(request: NextRequest) {
       agents.filter((a) => a.status === 'ACTIVE'),
     ).map(toPublicAgent);
 
-    // ERC-8004 merge (public marketplace only): BAN-native listings that are
-    // ALREADY in the registry are skipped (they'd double-render); external
-    // ERC-8004 agents (incl. live-scanned) are appended so the marketplace
-    // can discover them too.
     // ERC-8004 merge (public marketplace only): BAN-native listings are the
     // SAME four bots as the authoritative registry agents but under
     // ERC-8004 ids (ban-* vs agent_*) — match them by strategyId (the
@@ -205,18 +216,31 @@ export async function GET(request: NextRequest) {
       })
       .map(erc8004ToPublicAgent);
 
-    const payload = [...publicAgents, ...erc8004Listings];
+    const fullPayload = [...publicAgents, ...erc8004Listings];
+    const total = fullPayload.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+    const agentsPage = fullPayload.slice(offset, offset + limit);
 
     logger.info('agents_listed', {
       correlationId: getCorrelationId(),
-      count: payload.length,
+      count: agentsPage.length,
+      total,
+      page: safePage,
+      limit,
       erc8004Count: erc8004Listings.length,
       sourceFeed: isErc8004LiveConfigured() ? 'live-8004scan' : 'registry',
     });
 
     return NextResponse.json({
       ok: true,
-      agents: payload,
+      agents: agentsPage,
+      page: safePage,
+      limit,
+      total,
+      totalPages,
+      offset,
       erc8004: {
         sourceFeed: isErc8004LiveConfigured() ? 'live-8004scan' : 'registry',
         lastSyncAt: liveSync.lastSyncAt,

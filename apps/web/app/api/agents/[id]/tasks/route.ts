@@ -6,8 +6,9 @@ import 'server-only';
  *
  * POST /api/agents/:id/tasks  -> create a task + create/register the scoped
  *                                session (same bounded authority as the
- *                                sessions route), activate the agent, and run
- *                                one closed-loop cycle immediately.
+ *                                sessions route), activate the agent, run one
+ *                                closed-loop cycle immediately, and kick the
+ *                                self-sustaining Inngest loop.
  * GET  /api/agents/:id/tasks  -> list tasks for an agent (newest first).
  *
  * The task config captures EVERY config the backend consumes:
@@ -18,6 +19,11 @@ import 'server-only';
  *     @ban/registry into canonical addresses)
  *   - risk level (informational, recorded on the session)
  *   - expiry (days -> ms)
+ *   - GRID STRATEGY BOUNDS (USD dollars, optional; only used by grid agents):
+ *     gridLowerPriceUsd / gridUpperPriceUsd / gridCount / gridCapitalUsd /
+ *     gridMaxOrderUsd — threaded through `strategyConfig` into the immediate
+ *     run AND the Inngest tick, so the strategy observes the user's exact
+ *     range instead of hermetic $500–$600 defaults ("687.06 cents" bug).
  *
  * A task is persisted in Firestore (`agent_tasks`) with its full resolved
  * config so the UI can show exactly what the backend runs with. It never
@@ -62,6 +68,12 @@ export interface TaskRecord {
     allowedFunctions: string[];
     riskLevel: string;
     expiresAtMs: number;
+    // Optional grid bounds — only present when the user set them (grid agents).
+    gridLowerPriceUsd?: number;
+    gridUpperPriceUsd?: number;
+    gridCount?: number;
+    gridCapitalUsd?: number;
+    gridMaxOrderUsd?: number;
   };
   sessionId: string | null;
   lastRun: {
@@ -87,6 +99,34 @@ function stripUndefined(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+/** Parse optional grid fields from the request body (USD dollars). */
+function extractGridConfig(b: Record<string, unknown>): {
+  gridLowerPriceUsd?: number;
+  gridUpperPriceUsd?: number;
+  gridCount?: number;
+  gridCapitalUsd?: number;
+  gridMaxOrderUsd?: number;
+} {
+  const out: {
+    gridLowerPriceUsd?: number;
+    gridUpperPriceUsd?: number;
+    gridCount?: number;
+    gridCapitalUsd?: number;
+    gridMaxOrderUsd?: number;
+  } = {};
+  const lower = Number(b.gridLowerPriceUsd ?? b.gridLowerUsd);
+  const upper = Number(b.gridUpperPriceUsd ?? b.gridUpperUsd);
+  const gridCount = Number(b.gridCount);
+  const capital = Number(b.gridCapitalUsd ?? b.capitalUsd);
+  const maxOrder = Number(b.gridMaxOrderUsd ?? b.maxOrderUsd);
+  if (Number.isFinite(lower) && lower > 0) out.gridLowerPriceUsd = lower;
+  if (Number.isFinite(upper) && upper > 0) out.gridUpperPriceUsd = upper;
+  if (Number.isFinite(gridCount) && gridCount >= 2) out.gridCount = Math.floor(gridCount);
+  if (Number.isFinite(capital) && capital > 0) out.gridCapitalUsd = capital;
+  if (Number.isFinite(maxOrder) && maxOrder > 0) out.gridMaxOrderUsd = maxOrder;
+  return out;
 }
 
 async function createTaskRecord(agentId: string, ownerId: string, config: TaskRecord['config'], sessionId: string | null, runResult: Record<string, unknown> | null): Promise<TaskRecord> {
@@ -187,6 +227,10 @@ export async function POST(
     const riskLevel = typeof b.riskLevel === 'string' ? b.riskLevel : 'LOW';
     const expiresAtMs = typeof b.expiresAtMs === 'number' && b.expiresAtMs > Date.now() ? b.expiresAtMs : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
+    // Grid bounds (optional, USD dollars) — persisted on the task row AND fed
+    // to runAgentCycle so the strategy actually uses the user's range.
+    const gridConfig = extractGridConfig(b);
+
     const manager = sessionManagerFactory();
     const session = await manager.create({
       agentId: id,
@@ -237,7 +281,24 @@ export async function POST(
     }
 
     // Run one closed loop immediately (honest result — never fabricated).
+    // strategyConfig = the task row's config (incl. grid bounds) so the very
+    // first cycle observes with the USER's params, not the hermetic defaults.
     const correlationId = getCorrelationId();
+    const strategyConfig: Record<string, unknown> = {
+      network: 'BNB Smart Chain',
+      chainId: 56,
+      maxTxUsd,
+      dailyLimitUsd,
+      maxTxWei,
+      dailyWei,
+      allowedTokens: Array.isArray(b.allowedTokens) ? (b.allowedTokens as string[]) : [],
+      allowedProtocols: Array.isArray(b.allowedProtocols) ? (b.allowedProtocols as string[]) : [],
+      allowedFunctions,
+      riskLevel,
+      expiresAtMs,
+      ...gridConfig,
+    };
+
     let runResult: Record<string, unknown> | null = null;
     try {
       const result = await runAgentCycle({
@@ -245,6 +306,7 @@ export async function POST(
         userId: user.developerId,
         correlationId,
         session: registeredSession,
+        strategyConfig,
       });
       // Build a Firestore-safe result: NEVER include undefined fields.
       // ok:true  -> { ok, stage, executionId?, note? }
@@ -264,7 +326,7 @@ export async function POST(
       runResult = { ok: false, reason: 'cycle_error', code: ErrorCode.INTERNAL };
     }
 
-    const task = await createTaskRecord(id, user.developerId, {
+    const taskConfig: TaskRecord['config'] = {
       network: 'BNB Smart Chain',
       chainId: 56,
       maxTxUsd,
@@ -276,7 +338,10 @@ export async function POST(
       allowedFunctions,
       riskLevel,
       expiresAtMs,
-    }, registeredSession.sessionId, runResult);
+      ...gridConfig,
+    };
+
+    const task = await createTaskRecord(id, user.developerId, taskConfig, registeredSession.sessionId, runResult);
 
     // Kick the self-sustaining loop (Inngest ban/agent.tick-loop) so the
     // agent keeps running every ~2 minutes (heartbeat + next cycles) while
@@ -309,6 +374,7 @@ export async function POST(
       registration,
       runOk: runResult?.ok,
       correlationId,
+      grid: Object.keys(gridConfig).length > 0 ? gridConfig : undefined,
     });
 
     return NextResponse.json(

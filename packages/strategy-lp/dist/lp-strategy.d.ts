@@ -10,6 +10,10 @@
  *
  * The AI receives only precomputed deterministic candidates — it never
  * generates ticks, liquidity amounts, or contract parameters.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so a user-set pool address (or a protocol marker) drives
+ * observe() instead of only the agent's first protocol.
  */
 import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/schemas';
 import type { StrategyEngine } from '@ban/agent-core';
@@ -27,6 +31,8 @@ export interface LpStrategyDeps {
     riskModel?: LpRiskModel;
     selector?: LpCandidateSelector;
     observationBuilder?: LpObservationBuilder;
+    /** Task-config threading: same seam grid uses — optional bounds/knobs the user set on the task. */
+    config?: Record<string, unknown>;
 }
 export declare class LpStrategy implements StrategyEngine {
     private readonly strategyId;
@@ -36,6 +42,7 @@ export declare class LpStrategy implements StrategyEngine {
     private readonly riskModel;
     private readonly selector;
     private readonly observationBuilder;
+    private readonly config;
     constructor(deps: LpStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;
     decide(observation: Observation, agent: Agent, hooks?: {

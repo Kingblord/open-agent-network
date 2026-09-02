@@ -10,6 +10,10 @@
  *
  * The AI receives only precomputed deterministic candidates — it never
  * generates ticks, liquidity amounts, or contract parameters.
+ *
+ * Task-config threading: like grid, this strategy can receive the caller's
+ * task-derived config so a user-set pool address (or a protocol marker) drives
+ * observe() instead of only the agent's first protocol.
  */
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
@@ -25,6 +29,7 @@ export class LpStrategy {
     riskModel;
     selector;
     observationBuilder;
+    config;
     constructor(deps) {
         this.strategyId = deps.strategyId ?? 'lp-rebalance';
         this.brain = deps.brain;
@@ -33,12 +38,17 @@ export class LpStrategy {
         this.riskModel = deps.riskModel ?? new LpRiskModel();
         this.selector = deps.selector ?? new LpCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
         this.observationBuilder = deps.observationBuilder ?? new LpObservationBuilder(this.strategyId, this.calculator);
+        this.config = deps.config ?? null;
     }
     async observe(agent, _correlationId) {
         // In the live agent loop, the pool address and owner are resolved from the
         // agent's protocol portfolio. For the hermetic unit path a concrete pool
         // and position are provided by tests.
-        const poolAddress = agent.protocols[0] ?? '';
+        // Task-config threading: allow an explicit pool address from the task row;
+        // fall back to the agent's first protocol. Fail-closed (never fabricates).
+        const poolAddress = typeof this.config?.poolAddress === 'string' && this.config.poolAddress
+            ? this.config.poolAddress
+            : (agent.protocols[0] ?? '');
         const walletAddress = agent.walletAddress ?? '';
         const pool = await this.data.fetchPoolState(poolAddress, 18, 18);
         let position = null;

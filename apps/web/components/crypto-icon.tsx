@@ -89,7 +89,7 @@ export function CryptoIcon({ symbol, className = '', size = 28 }: CryptoIconProp
   return (
     <div
       style={{ width: size, height: size }}
-      className={`rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[10px] font-bold text-[#F0B90B] shrink-0 ${className}`}
+      className={`rounded-full bg-muted border border-border flex items-center justify-center text-[10px] font-bold text-[#F0B90B] shrink-0 ${className}`}
     >
       {norm.slice(0, 2) || 'TK'}
     </div>

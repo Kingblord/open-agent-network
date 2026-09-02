@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -100,8 +100,8 @@ interface ActivityEvent {
   createdAt: string;
 }
 
-// Shape of GET /api/protocols → { ok, snapshot } (derived from the fail-closed
-// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
+// Shape of GET /api/protocols â†’ { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot â€” never fabricated).
 interface RegistryContractEntry {
   id: string;
   address: string;
@@ -228,8 +228,8 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
       const cr = (payload.cycleResult ?? {}) as Record<string, unknown>;
       const stage = typeof cr.stage === 'string' ? cr.stage : '';
       if (stage === 'confirmed') return 'Cycle confirmed an on-chain transaction';
-      if (stage === 'awaited') return 'Cycle complete — awaiting execution (session/wallet)';
-      if (stage === 'decided') return 'Cycle complete — agent passed (no action)';
+      if (stage === 'awaited') return 'Cycle complete â€” awaiting execution (session/wallet)';
+      if (stage === 'decided') return 'Cycle complete â€” agent passed (no action)';
       return stage ? `Cycle finished at stage: ${stage}` : 'Scheduler heartbeat recorded';
     }
     default: {
@@ -243,7 +243,7 @@ function renderUsdc(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
 
-// mustflow §6 bounded-authority options (client-side lists; server resolves
+// mustflow Â§6 bounded-authority options (client-side lists; server resolves
 // them through the fail-closed BAN registries into canonical addresses).
 const TOKEN_OPTIONS = [
   { symbol: 'BNB', label: 'BNB (native)' },
@@ -252,12 +252,12 @@ const TOKEN_OPTIONS = [
   { symbol: 'USDC', label: 'USDC' },
 ];
 
-// mustflow §10-§13: protocol selectability is derived from the LIVE registry
-// snapshot (GET /api/protocols → buildBnbRegistrySnapshot). This used to be
-// hardcoded verified:false — which greyed out PancakeSwap/Venus even though the
+// mustflow Â§10-Â§13: protocol selectability is derived from the LIVE registry
+// snapshot (GET /api/protocols â†’ buildBnbRegistrySnapshot). This used to be
+// hardcoded verified:false â€” which greyed out PancakeSwap/Venus even though the
 // registry marks them verified + EXECUTION_ENABLED. We now fall back to
 // enabled-by-default only when the snapshot cannot be loaded; the server's
-// fail-closed resolution is always the real gate (unverified → CONTRACT_NOT_ALLOWED).
+// fail-closed resolution is always the real gate (unverified â†’ CONTRACT_NOT_ALLOWED).
 const FALLBACK_PROTOCOL_OPTIONS = [
   { id: 'pancakeswap', label: 'PancakeSwap', verified: true },
   { id: 'venus', label: 'Venus', verified: true },
@@ -331,6 +331,19 @@ export default function MyAgentDetailPage() {
   const [priceLoading, setPriceLoading] = useState(false);
   const [protocolSnapshot, setProtocolSnapshot] = useState<RegistrySnapshot | null>(null);
   const [protocolSnapshotError, setProtocolSnapshotError] = useState<string | null>(null);
+  const [editSessionOpen, setEditSessionOpen] = useState(false);
+  const [editSessionTarget, setEditSessionTarget] = useState<Session | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    maxTxUsd: '1',
+    dailyLimitUsd: '5',
+    allowedTokens: [] as string[],
+    allowedProtocols: [] as string[],
+    allowedFunctions: '',
+    riskLevel: 'LOW',
+    expiresAtDays: 30,
+  });
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (mounted && !loading && !user) router.push('/login'); }, [mounted, user, loading, router]);
@@ -520,7 +533,7 @@ export default function MyAgentDetailPage() {
     }
     setTaskLoading(true);
     try {
-      // mustflow §6 USD-denominated limits → wei (native BNB, 18 decimals).
+      // mustflow Â§6 USD-denominated limits â†’ wei (native BNB, 18 decimals).
       const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
       const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
 
@@ -570,6 +583,82 @@ export default function MyAgentDetailPage() {
       toast.error({ title: 'Task failed', description: 'An unexpected error occurred.' });
     } finally {
       setTaskLoading(false);
+    }
+  };
+
+  const openEditSession = () => {
+    const target = sessions.find((s) => s.status === 'ACTIVE') || sessions[0] || null;
+    if (!target) {
+      toast.error({ title: 'No session', description: 'Create a task first so there is a session to edit.' });
+      setTaskError('Create a task first so there is a session to edit.');
+      setShowTaskModal(true);
+      return;
+    }
+    setEditSessionTarget(target);
+    const spendBNB = Number(target.spendCap) > 0 ? Number(target.spendCap) / 1e18 : 5;
+    const perTxBNB = Number(target.perTransactionCap) > 0 ? Number(target.perTransactionCap) / 1e18 : 1;
+    const days = Math.max(1, Math.ceil((new Date(target.expiresAt).getTime() - Date.now()) / 86400000));
+    setEditForm({
+      dailyLimitUsd: String(spendBNB),
+      maxTxUsd: String(perTxBNB),
+      allowedTokens: Array.isArray(target.allowedTokens) ? target.allowedTokens : [],
+      allowedProtocols: [],
+      allowedFunctions: (target.allowedFunctions ?? []).join(', '),
+      riskLevel: 'LOW',
+      expiresAtDays: days,
+    });
+    setEditError(null);
+    setEditSessionOpen(true);
+  };
+
+  const handleEditSession = async () => {
+    if (!editSessionTarget) return;
+    setEditError(null);
+    const perTxBNB = Number(editForm.maxTxUsd);
+    const dailyBNB = Number(editForm.dailyLimitUsd);
+    if (!Number.isFinite(perTxBNB) || perTxBNB <= 0 || !Number.isFinite(dailyBNB) || dailyBNB <= 0 || perTxBNB > dailyBNB) {
+      setEditError('Max per transaction must be > 0 and not exceed the daily spend cap.');
+      return;
+    }
+    const perTransactionCap = Math.floor(perTxBNB * 1e18).toString();
+    const spendCap = Math.floor(dailyBNB * 1e18).toString();
+    const allowedFunctions = editForm.allowedFunctions
+      ? editForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/agents/${params.id}/sessions/${editSessionTarget.sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spendCap,
+          perTransactionCap,
+          allowedTokens: editForm.allowedTokens,
+          allowedProtocols: editForm.allowedProtocols,
+          // Preserve existing canonical contracts unless the user changed protocols.
+          allowedContracts: editSessionTarget.allowedContracts ?? [],
+          allowedFunctions,
+          riskLevel: editForm.riskLevel,
+          expiresAtMs: Date.now() + editForm.expiresAtDays * 24 * 60 * 60 * 1000,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setEditError(data?.error || 'Failed to update session.');
+        return;
+      }
+      toast.success({
+        title: 'Session updated',
+        description: data.reRegistered ? 'Session limits and authority re-registered live.' : 'Session configuration saved.',
+      });
+      setEditSessionOpen(false);
+      await fetchSessions();
+      await fetchTasks();
+    } catch (err) {
+      console.error('Edit session error:', err);
+      setEditError('An unexpected error occurred.');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -673,7 +762,7 @@ export default function MyAgentDetailPage() {
     const option = protocolOptions.find((p) => p.id === id);
     if (option && !option.verified) {
       setTaskError(
-        `${option.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled). Remove it or try again later.`
+        `${option.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled). Remove it or try again later.`
       );
       return;
     }
@@ -691,7 +780,7 @@ export default function MyAgentDetailPage() {
   };
 
   const timeAgo = (iso: string | null) => {
-    if (!iso) return '—';
+    if (!iso) return 'â€”';
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
@@ -703,7 +792,7 @@ export default function MyAgentDetailPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="inline-block animate-spin h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
       </div>
     );
@@ -711,7 +800,7 @@ export default function MyAgentDetailPage() {
 
   if (pageLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
         <div className="text-center space-y-3">
           <div className="inline-block animate-spin h-8 w-8 border-4 border-[#F0B90B] border-t-transparent rounded-full" />
           <p className="text-xs text-[#F0B90B] font-mono tracking-widest uppercase">Loading Agent Details...</p>
@@ -722,8 +811,8 @@ export default function MyAgentDetailPage() {
 
   if (!agent) {
     return (
-      <div className="min-h-screen bg-black text-white p-6 flex flex-col items-center justify-center">
-        <p className="text-gray-400 mb-4">Agent not found</p>
+      <div className="min-h-screen bg-background text-foreground p-6 flex flex-col items-center justify-center">
+        <p className="text-muted-foreground mb-4">Agent not found</p>
         <button onClick={() => router.push('/my-agents')} className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase tracking-wider">Return to My Agents</button>
       </div>
     );
@@ -752,7 +841,7 @@ export default function MyAgentDetailPage() {
       case 'EXECUTION_ENABLED': return 'text-green-400 border-green-500/40 bg-green-500/10';
       case 'SIMULATION': return 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10';
       case 'READ_ONLY': return 'text-blue-400 border-blue-500/40 bg-blue-500/10';
-      default: return 'text-gray-400 border-gray-600 bg-gray-800/40';
+      default: return 'text-muted-foreground border-gray-600 bg-gray-800/40';
     }
   };
 
@@ -791,22 +880,22 @@ export default function MyAgentDetailPage() {
   const balanceBnb = balance && balance.balanceBnb != null ? Number(balance.balanceBnb) : null;
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased pb-28">
-      <header className="sticky top-0 z-40 bg-black/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
-        <button onClick={() => router.push('/my-agents')} className="text-white hover:text-[#F0B90B] transition" aria-label="Back">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-28">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
+        <button onClick={() => router.push('/my-agents')} className="text-foreground hover:text-[#F0B90B] transition" aria-label="Back">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h1 className="text-sm font-black tracking-[0.2em] uppercase text-white">AGENT DETAILS</h1>
-        <button onClick={() => setActiveViewTab(activeViewTab === 'overview' ? 'analytics' : 'overview')} className="text-[10px] font-black text-[#F0B90B] border border-[#333] px-2.5 py-1.5 bg-[#111]">
+        <h1 className="text-sm font-black tracking-[0.2em] uppercase text-foreground">AGENT DETAILS</h1>
+        <button onClick={() => setActiveViewTab(activeViewTab === 'overview' ? 'analytics' : 'overview')} className="text-[10px] font-black text-[#F0B90B] border border-border px-2.5 py-1.5 bg-card">
           {activeViewTab === 'overview' ? 'ANALYTICS' : 'OVERVIEW'}
         </button>
       </header>
 
       <div className="px-5 pt-4 space-y-4">
         {/* Hero card (same as before) */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+        <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-start gap-4 mb-4">
             <div className="w-14 h-14 rounded-full bg-[#F0B90B] flex items-center justify-center shrink-0 border-2 border-black">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -820,7 +909,7 @@ export default function MyAgentDetailPage() {
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                   {agent.status}
                 </span>
-                {primaryProtocol && <span className="text-xs text-gray-400">On {primaryProtocolLabel}</span>}
+                {primaryProtocol && <span className="text-xs text-muted-foreground">On {primaryProtocolLabel}</span>}
                 {agent.riskLevel && (
                   <span className="text-[9px] font-black tracking-wider uppercase bg-[#F0B90B]/20 text-[#F0B90B] px-2 py-0.5 rounded">
                     {agent.riskLevel} RISK
@@ -834,65 +923,65 @@ export default function MyAgentDetailPage() {
             {agent.description || 'Autonomous BNB Chain agent registered on BAN.'}
           </p>
 
-          <div className="grid grid-cols-3 gap-2 pt-4 border-t border-[#222] text-center">
+          <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border text-center">
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
-              <p className="text-base font-black text-white">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CONFIRMED EXEC</p>
+              <p className="text-base font-black text-foreground">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
-              <p className="text-base font-black text-white">{tvlDisplay ?? '—'}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
+              <p className="text-base font-black text-foreground">{tvlDisplay ?? 'â€”'}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">SUCCESS RATE</p>
-              <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-gray-400'}>{successRateText ?? '—'}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">SUCCESS RATE</p>
+              <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-muted-foreground'}>{successRateText ?? 'â€”'}</p>
             </div>
           </div>
 
           {performance && (
-            <div className="mt-4 pt-3 border-t border-[#222] grid grid-cols-2 gap-2 text-center">
-              <div className="bg-[#161616] rounded-lg p-3">
-                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p>
-                <p className="text-sm font-black text-white">{performance.totalTrades}</p>
+            <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 gap-2 text-center">
+              <div className="bg-card rounded-lg p-3">
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Total trades</p>
+                <p className="text-sm font-black text-foreground">{performance.totalTrades}</p>
               </div>
-              <div className="bg-[#161616] rounded-lg p-3">
-                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Avg execution</p>
-                <p className="text-sm font-black text-white">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
+              <div className="bg-card rounded-lg p-3">
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Avg execution</p>
+                <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : 'â€”'}</p>
               </div>
             </div>
           )}
 
           {performance && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span>Mode</span>
-              <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
+              <span className="font-black text-[#F0B90B] uppercase">{performance.mode} â€” {performance.modeReason}</span>
             </div>
           )}
         </div>
 
         {/* WALLET + TOP UP (with transaction confirmation gate) */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+        <div className="bg-card rounded-xl p-5 border border-border space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">AGENT WALLET</span>
-            <span className="text-[9px] font-mono text-gray-500">BNB 56</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">AGENT WALLET</span>
+            <span className="text-[9px] font-mono text-muted-foreground">BNB 56</span>
           </div>
 
           {agent.walletAddress ? (
             <>
               <div>
-                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Address</p>
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Address</p>
                 <p className="text-xs font-mono text-[#F0B90B] break-all">{agent.walletAddress}</p>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">Balance</span>
-                <span className="text-lg font-black text-white font-mono">
+                <span className="text-xs text-muted-foreground">Balance</span>
+                <span className="text-lg font-black text-foreground font-mono">
                   {balanceLoading && balance == null ? (
                     <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
                   ) : balanceBnb != null ? (
                     `${renderUsdc(balanceBnb!, 6)} BNB`
                   ) : (
-                    '—'
+                    'â€”'
                   )}
                 </span>
               </div>
@@ -909,20 +998,20 @@ export default function MyAgentDetailPage() {
                   type="button"
                   onClick={() => fetchBalance(true)}
                   disabled={balanceLoading}
-                  className="w-full bg-[#1A1A1A] border border-[#333] text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-[#F0B90B]/50 transition disabled:opacity-60"
+                  className="w-full bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-[#F0B90B]/50 transition disabled:opacity-60"
                 >
                   REFRESH
                 </button>
               </div>
 
-              <p className="text-[10px] text-gray-500 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
                 The agent can only use funds in this dedicated wallet. Top up BNB here so it can pay gas and execute within its session limits.
               </p>
             </>
           ) : (
             <div className="py-2 space-y-3">
-              <p className="text-sm font-black text-gray-400">No wallet provisioned</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm font-black text-muted-foreground">No wallet provisioned</p>
+              <p className="text-xs text-muted-foreground">
                 This agent does not have a dedicated BNB wallet yet. Create a task or contact support to provision it before topping up.
               </p>
             </div>
@@ -930,30 +1019,30 @@ export default function MyAgentDetailPage() {
         </div>
 
         {/* SCHEDULER HEARTBEAT */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+        <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">Scheduler Heartbeat</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">Scheduler Heartbeat</span>
             <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">~2m</span>
           </div>
           {latestTick ? (
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
-                <span className="text-white font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
+                <span className="text-foreground font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
               </div>
-              <span className="text-gray-400 font-mono">{timeAgo(latestTick.createdAt)} · {(latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage ? 'loop active' : 'heartbeat'}</span>
+              <span className="text-muted-foreground font-mono">{timeAgo(latestTick.createdAt)} Â· {(latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage ? 'loop active' : 'heartbeat'}</span>
             </div>
           ) : (
-            <p className="text-xs text-gray-500">
-              No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-gray-400">/api/inngest</span> (no GitHub Actions).
+            <p className="text-xs text-muted-foreground">
+              No scheduled ticks yet. Create a task â€” Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
             </p>
           )}
         </div>
 
-        {/* TASKS — user-visible unit of work */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+        {/* TASKS â€” user-visible unit of work */}
+        <div className="bg-card rounded-xl p-5 border border-border space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">TASKS</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">TASKS</span>
             <button
               type="button"
               onClick={() => { setShowTaskModal(true); setTaskError(null); fetchBnbPrice(); }}
@@ -964,32 +1053,32 @@ export default function MyAgentDetailPage() {
           </div>
 
           {tasks.length === 0 ? (
-            <p className="text-xs text-gray-500 py-2">
-              No tasks yet. Create a task to configure the agent&apos;s bounded authority and start the loop (observe → policy → execute).
+            <p className="text-xs text-muted-foreground py-2">
+              No tasks yet. Create a task to configure the agent&apos;s bounded authority and start the loop (observe â†’ policy â†’ execute).
             </p>
           ) : (
             <div className="space-y-3">
               {tasks.slice(0, 5).map((task) => (
-                <div key={task.taskId} className="bg-[#161616] border border-[#262626] rounded-lg p-3.5 space-y-2">
+                <div key={task.taskId} className="bg-card border border-[#262626] rounded-lg p-3.5 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-black text-[#F0B90B] font-mono">{task.taskId.slice(0, 14)}</span>
                     <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${task.status === 'COMPLETED' ? 'text-green-400 border-green-500/40 bg-green-500/10' : task.status === 'FAILED' ? 'text-red-400 border-red-500/40 bg-red-500/10' : 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10'}`}>
                       {task.status}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-gray-400">
-                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
-                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
-                    <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.riskLevel}</span>
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-muted-foreground">
+                    <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
+                    <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
+                    <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.riskLevel}</span>
                     {task.config.allowedTokens.length > 0 && (
-                      <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.allowedTokens.join(', ')}</span>
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedTokens.join(', ')}</span>
                     )}
                     {task.config.allowedProtocols.length > 0 && (
-                      <span className="bg-black/40 border border-[#222] px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
                     )}
                   </div>
                   {task.lastRun && (
-                    <div className="flex items-center justify-between text-[10px] text-gray-500">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                       <span className="font-mono">
                         {task.lastRun.result?.ok === true || (task.lastRun.result && 'stage' in task.lastRun.result)
                           ? `Last run: ${String(task.lastRun.result.stage ?? 'ok')}`
@@ -1007,10 +1096,10 @@ export default function MyAgentDetailPage() {
         </div>
 
         {/* PERMISSIONS & LIMITS (session view) */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-4">
+        <div className="bg-card rounded-xl p-5 border border-border space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">PERMISSIONS & LIMITS</span>
-            <button type="button" onClick={() => { setShowTaskModal(true); setTaskError(null); fetchBnbPrice(); }} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-[#333] hover:text-white">
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERMISSIONS & LIMITS</span>
+            <button type="button" onClick={openEditSession} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-border hover:text-foreground">
               EDIT SESSION
             </button>
           </div>
@@ -1019,30 +1108,30 @@ export default function MyAgentDetailPage() {
             <>
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-gray-400">Spend Cap</span>
-                  <span className="text-white font-black font-mono">
-                    {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : '—'}
+                  <span className="text-muted-foreground">Spend Cap</span>
+                  <span className="text-foreground font-black font-mono">
+                    {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : 'â€”'}
                   </span>
                 </div>
                 <div className="h-1.5 bg-[#222] rounded-full overflow-hidden" />
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Max Tx / Session</span>
-                <span className="text-white font-black font-mono">
-                  {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : '—'}
+                <span className="text-muted-foreground">Max Tx / Session</span>
+                <span className="text-foreground font-black font-mono">
+                  {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : 'â€”'}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-gray-400 block mb-1">Session</span>
-                <span className="text-white font-black font-mono">{activeSession.sessionId.slice(0, 10)}...</span>
-                <span className="text-xs text-gray-500 ml-2">({activeSession.status})</span>
+                <span className="text-xs text-muted-foreground block mb-1">Session</span>
+                <span className="text-foreground font-black font-mono">{activeSession.sessionId.slice(0, 10)}...</span>
+                <span className="text-xs text-muted-foreground ml-2">({activeSession.status})</span>
               </div>
               {activeSession.allowedFunctions && activeSession.allowedFunctions.length > 0 && (
                 <div>
-                  <span className="text-xs text-gray-400 block mb-1.5">Allowed Functions</span>
+                  <span className="text-xs text-muted-foreground block mb-1.5">Allowed Functions</span>
                   <div className="flex flex-wrap gap-1.5">
                     {activeSession.allowedFunctions.map((fn) => (
-                      <span key={fn} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-[#333] px-2 py-0.5">{fn}</span>
+                      <span key={fn} className="text-[10px] font-black text-[#F0B90B] bg-[#1A1A1A] border border-border px-2 py-0.5">{fn}</span>
                     ))}
                   </div>
                 </div>
@@ -1050,14 +1139,14 @@ export default function MyAgentDetailPage() {
             </>
           ) : (
             <div className="pt-2 pb-1">
-              <p className="text-sm font-black text-gray-400 mb-1">No active session</p>
-              <p className="text-xs text-gray-500">Create a task to set spend caps and allowed functions (a scoped session is created for you).</p>
+              <p className="text-sm font-black text-muted-foreground mb-1">No active session</p>
+              <p className="text-xs text-muted-foreground">Create a task to set spend caps and allowed functions (a scoped session is created for you).</p>
             </div>
           )}
 
           {failedEvents > 0 && (
             <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Failed / denied events</span>
+              <span className="text-muted-foreground">Failed / denied events</span>
               <span className="text-red-400 font-black">{failedEvents}</span>
             </div>
           )}
@@ -1073,7 +1162,7 @@ export default function MyAgentDetailPage() {
                 PAUSE AGENT
               </LoadingButton>
             ) : agent.status === 'REVOKED' ? (
-              <button type="button" disabled className="w-full bg-[#1A1A1A] border border-[#333] text-gray-500 font-black text-xs py-3.5 tracking-[0.15em] uppercase cursor-not-allowed">
+              <button type="button" disabled className="w-full bg-[#1A1A1A] border border-border text-muted-foreground font-black text-xs py-3.5 tracking-[0.15em] uppercase cursor-not-allowed">
                 REVOKED (TERMINAL)
               </button>
             ) : (
@@ -1087,22 +1176,82 @@ export default function MyAgentDetailPage() {
               </LoadingButton>
             )}
             {agent.status !== 'REVOKED' && (
-              <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-[#333] text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
+              <button type="button" onClick={() => setRevokeOpen(true)} disabled={actionLoading === 'revoke'} className="w-full bg-[#1A1A1A] border border-border text-red-400 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-60">
                 {actionLoading === 'revoke' ? 'REVOKING...' : 'REVOKE ACCESS'}
               </button>
             )}
           </div>
         </div>
 
-        {/* EIP-7702 PERMISSIONS (USER FUNDS) — one-time bounded authorization records */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+        {/* EDIT SESSION MODAL */}
+        {editSessionOpen && editSessionTarget && (
+          <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-background/70 backdrop-blur-sm p-0 sm:p-4">
+            <div className="w-full max-w-lg bg-card border border-border rounded-2xl p-5 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase">EDIT SESSION</span>
+                <button type="button" onClick={() => setEditSessionOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Max per transaction (BNB)</label>
+                  <input type="number" min="0" step="any" value={editForm.maxTxUsd} onChange={(e) => setEditForm((f) => ({ ...f, maxTxUsd: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Daily spend cap (BNB)</label>
+                  <input type="number" min="0" step="any" value={editForm.dailyLimitUsd} onChange={(e) => setEditForm((f) => ({ ...f, dailyLimitUsd: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed tokens</label>
+                  <div className="flex flex-wrap gap-2">
+                    {TOKEN_OPTIONS.map((t) => (
+                      <button key={t.symbol} type="button" onClick={() => setEditForm((f) => ({ ...f, allowedTokens: f.allowedTokens.includes(t.symbol) ? f.allowedTokens.filter((x) => x !== t.symbol) : [...f.allowedTokens, t.symbol] }))} className={`px-2.5 py-1 text-[10px] font-black rounded border ${editForm.allowedTokens.includes(t.symbol) ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-muted-foreground border-border'}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed protocols</label>
+                  <div className="flex flex-wrap gap-2">
+                    {protocolOptions.map((p) => (
+                      <button key={p.id} type="button" onClick={() => setEditForm((f) => ({ ...f, allowedProtocols: f.allowedProtocols.includes(p.id) ? f.allowedProtocols.filter((x) => x !== p.id) : [...f.allowedProtocols, p.id] }))} className={`px-2.5 py-1 text-[10px] font-black rounded border ${editForm.allowedProtocols.includes(p.id) ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : p.verified ? 'bg-[#1A1A1A] text-muted-foreground border-border' : 'bg-[#1A1A1A] text-gray-600 border-border line-through'}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">Existing canonical contracts are preserved unless you change protocols here.</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed functions (comma separated)</label>
+                  <input type="text" value={editForm.allowedFunctions} onChange={(e) => setEditForm((f) => ({ ...f, allowedFunctions: e.target.value }))} placeholder="deposit, withdraw, swap" className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Expires in (days)</label>
+                  <input type="number" min="1" value={editForm.expiresAtDays} onChange={(e) => setEditForm((f) => ({ ...f, expiresAtDays: Number(e.target.value) }))} className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
+                </div>
+                {editError && <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">{editError}</div>}
+                <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={() => setEditSessionOpen(false)} className="flex-1 bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3 uppercase tracking-wider">CANCEL</button>
+                  <button type="button" onClick={handleEditSession} disabled={editSaving} className="flex-1 bg-[#F0B90B] text-black font-black text-xs py-3 uppercase tracking-wider disabled:opacity-60">
+                    {editSaving ? 'SAVING...' : 'SAVE CHANGES'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* EIP-7702 PERMISSIONS (USER FUNDS) â€” one-time bounded authorization records */}
+        <div className="bg-card rounded-xl p-5 border border-border">
           <PermissionCards agentId={agent.id} />
         </div>
 
         {/* LIVE ACTIVITY */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+        <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">LIVE ACTIVITY</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">LIVE ACTIVITY</span>
             <button type="button" onClick={() => setActiveViewTab('analytics')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
               VIEW ALL ANALYTICS
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M7 7h10v10" /></svg>
@@ -1112,29 +1261,29 @@ export default function MyAgentDetailPage() {
           <div className="space-y-4">
             {events.length === 0 ? (
               activityError ? (
-                <div className="bg-[#161616] border border-[#333] rounded-lg p-3.5 space-y-2">
+                <div className="bg-card border border-border rounded-lg p-3.5 space-y-2">
                   <p className="text-xs font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">{activityError}</p>
-                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                  <p className="text-xs text-muted-foreground leading-relaxed">{activityError}</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
                     This agent&apos;s live activity is only visible to the account that owns it.
                     If you hired it, sign in with that account to see the audit trail.
                   </p>
                 </div>
               ) : (
-                <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+                <p className="text-xs text-muted-foreground py-2">No activity events recorded yet.</p>
               )
             ) : (
               events.slice(0, 6).map((ev) => (
                 <div key={ev.id} className="flex items-start gap-3 text-xs">
-                  <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-border flex items-center justify-center text-[#F0B90B] shrink-0">
                     {getTimelineIcon(ev.eventType)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline mb-0.5">
                       <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
-                      <span className="text-[10px] font-mono text-gray-500">{formatEventTimestamp(ev.createdAt)}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">{formatEventTimestamp(ev.createdAt)}</span>
                     </div>
-                    <p className="text-gray-400 text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
+                    <p className="text-muted-foreground text-[11px] truncate">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
                   </div>
                 </div>
               ))
@@ -1142,89 +1291,89 @@ export default function MyAgentDetailPage() {
           </div>
         </div>
 
-                {/* REVIEW TERMINAL (overview) — live loop stream */}
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+                {/* REVIEW TERMINAL (overview) â€” live loop stream */}
+        <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
-            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
+            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
           </div>
           <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
         </div>
 
         {/* PERFORMANCE */}
 
-        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+        <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE</span>
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERFORMANCE</span>
           </div>
 
           <div className="mb-2">
-            <p className="text-[9px] text-gray-500 font-black uppercase tracking-wider">REALIZED P&L</p>
-            <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-gray-400'}>
+            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-wider">REALIZED P&L</p>
+            <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-muted-foreground'}>
               {realizedPnlUsd != null ? `$${renderUsdc(realizedPnlUsd)}` : 'Not available'}
             </p>
-            <p className="text-[10px] text-gray-500 mt-1">
+            <p className="text-[10px] text-muted-foreground mt-1">
               {realizedPnlUsd != null
                 ? 'Derived from signed on-chain position records.'
                 : 'P&L appears once BAN records a closed on-chain position for this agent.'}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[#222]">
+          <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-border">
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p>
-              <p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Confirmed</p>
+              <p className="text-sm font-black text-foreground">{performance?.confirmedCount ?? 0}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Failed</p>
               <p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Gas (BNB)</p>
-              <p className="text-sm font-black text-white font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : '—'}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Gas (BNB)</p>
+              <p className="text-sm font-black text-foreground font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : 'â€”'}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Last executed</p>
-              <p className="text-sm font-black text-white">{timeAgo(lastExecutedAt)}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Last executed</p>
+              <p className="text-sm font-black text-foreground">{timeAgo(lastExecutedAt)}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ANALYTICS VIEW — full-screen panel with performance + full activity */}
+      {/* ANALYTICS VIEW â€” full-screen panel with performance + full activity */}
       {activeViewTab === 'analytics' && (
-        <div className="fixed inset-0 z-[70] bg-black overflow-y-auto pb-28">
-          <div className="sticky top-0 bg-black/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
-            <button onClick={() => setActiveViewTab('overview')} className="text-white hover:text-[#F0B90B] transition" aria-label="Back">
+        <div className="fixed inset-0 z-[70] bg-background overflow-y-auto pb-28">
+          <div className="sticky top-0 bg-background/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
+            <button onClick={() => setActiveViewTab('overview')} className="text-foreground hover:text-[#F0B90B] transition" aria-label="Back">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
-            <h1 className="text-sm font-black tracking-[0.2em] uppercase text-white">ANALYTICS</h1>
-            <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-[#333] px-2.5 py-1.5 bg-[#111]">BACK</button>
+            <h1 className="text-sm font-black tracking-[0.2em] uppercase text-foreground">ANALYTICS</h1>
+            <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-border px-2.5 py-1.5 bg-card">BACK</button>
           </div>
           <div className="px-5 pt-4 space-y-4">
-                        {/* Review terminal — live closed-loop stream (real events only) */}
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+                        {/* Review terminal â€” live closed-loop stream (real events only) */}
+            <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black text-white tracking-widest uppercase">REVIEW TERMINAL</span>
-                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
+                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
               </div>
               <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
             </div>
 
             {/* Performance summary */}
 
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222] space-y-3">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase">PERFORMANCE SUMMARY</span>
+            <div className="bg-card rounded-xl p-5 border border-border space-y-3">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERFORMANCE SUMMARY</span>
               <div className="grid grid-cols-2 gap-3">
-                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Confirmed</p><p className="text-sm font-black text-white">{performance?.confirmedCount ?? 0}</p></div>
-                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Failed</p><p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p></div>
-                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Total trades</p><p className="text-sm font-black text-white">{performance?.totalTrades ?? 0}</p></div>
-                <div><p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">Success rate</p><p className="text-sm font-black text-emerald-400">{successRateText ?? '—'}</p></div>
+                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Confirmed</p><p className="text-sm font-black text-foreground">{performance?.confirmedCount ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Failed</p><p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Total trades</p><p className="text-sm font-black text-foreground">{performance?.totalTrades ?? 0}</p></div>
+                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Success rate</p><p className="text-sm font-black text-emerald-400">{successRateText ?? 'â€”'}</p></div>
               </div>
               {realizedPnlUsd != null && (
-                <div className="pt-3 border-t border-[#222]">
-                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider mb-1">REALIZED P&L</p>
-                  <p className={realizedPnlUsd != null ? `text-xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-xl font-black text-gray-400'}>
+                <div className="pt-3 border-t border-border">
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">REALIZED P&L</p>
+                  <p className={realizedPnlUsd != null ? `text-xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-xl font-black text-muted-foreground'}>
                     {realizedPnlUsd != null ? `$${renderUsdc(realizedPnlUsd)}` : 'Not available'}
                   </p>
                 </div>
@@ -1232,32 +1381,32 @@ export default function MyAgentDetailPage() {
             </div>
 
             {/* Full activity */}
-            <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
-              <span className="text-[10px] font-black text-white tracking-widest uppercase mb-4 block">FULL ACTIVITY</span>
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4 block">FULL ACTIVITY</span>
               {events.length === 0 ? (
                 activityError ? (
-                <div className="bg-[#161616] border border-[#333] rounded-lg p-3.5 space-y-2">
+                <div className="bg-card border border-border rounded-lg p-3.5 space-y-2">
                   <p className="text-xs font-black text-[#F0B90B] uppercase tracking-wider">Activity restricted</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">{activityError}</p>
-                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                  <p className="text-xs text-muted-foreground leading-relaxed">{activityError}</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
                     This agent&apos;s live activity is only visible to the account that owns it.
                     If you hired it, sign in with that account to see the audit trail.
                   </p>
                 </div>
               ) : (
-                <p className="text-xs text-gray-500 py-2">No activity events recorded yet.</p>
+                <p className="text-xs text-muted-foreground py-2">No activity events recorded yet.</p>
               )
               ) : (
                 <div className="space-y-4">
                   {events.map((ev) => (
                     <div key={ev.id} className="flex items-start gap-3 text-xs">
-                      <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-[#333] flex items-center justify-center text-[#F0B90B] shrink-0">{getTimelineIcon(ev.eventType)}</div>
+                      <div className="w-7 h-7 rounded-full bg-[#1A1A1A] border border-border flex items-center justify-center text-[#F0B90B] shrink-0">{getTimelineIcon(ev.eventType)}</div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-0.5">
                           <p className="font-black text-gray-200">{getTimelineTitle(ev.eventType)}</p>
-                          <span className="text-[10px] font-mono text-gray-500">{formatEventTimestamp(ev.createdAt)}</span>
+                          <span className="text-[10px] font-mono text-muted-foreground">{formatEventTimestamp(ev.createdAt)}</span>
                         </div>
-                        <p className="text-gray-400 text-[11px]">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
+                        <p className="text-muted-foreground text-[11px]">{getTimelineSubtitle(ev.eventType, ev.payload)}</p>
                       </div>
                     </div>
                   ))}
@@ -1269,50 +1418,50 @@ export default function MyAgentDetailPage() {
       )}
 
 
-      {/* TASK CONFIG MODAL — captures every config the backend consumes */}
+      {/* TASK CONFIG MODAL â€” captures every config the backend consumes */}
       {showTaskModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-black text-[#F0B90B] uppercase">Create Task</h3>
-            <p className="text-[11px] text-gray-500 -mt-2">
+            <p className="text-[11px] text-muted-foreground -mt-2">
               Configure the agent&apos;s bounded authority. A scoped session is created with these exact limits, the agent is activated, and the closed loop runs immediately.
             </p>
 
             {/* Network */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1">Network</label>
-              <div className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-gray-200 rounded">
-                BNB Smart Chain (56) <span className="text-[10px] text-gray-500">— BAN execution chain</span>
+              <label className="block text-xs font-black text-muted-foreground mb-1">Network</label>
+              <div className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-gray-200 rounded">
+                BNB Smart Chain (56) <span className="text-[10px] text-muted-foreground">â€” BAN execution chain</span>
               </div>
             </div>
 
             {/* USD limits */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-black text-gray-400 mb-1">Max transaction (USD)</label>
+                <label className="block text-xs font-black text-muted-foreground mb-1">Max transaction (USD)</label>
                 <input
                   type="number"
                   min="1"
                   value={sessionForm.maxTxUsd}
                   onChange={(e) => setSessionForm({ ...sessionForm, maxTxUsd: e.target.value })}
-                  className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
                 />
               </div>
               <div>
-                <label className="block text-xs font-black text-gray-400 mb-1">Daily limit (USD)</label>
+                <label className="block text-xs font-black text-muted-foreground mb-1">Daily limit (USD)</label>
                 <input
                   type="number"
                   min="1"
                   value={sessionForm.dailyLimitUsd}
                   onChange={(e) => setSessionForm({ ...sessionForm, dailyLimitUsd: e.target.value })}
-                  className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
                 />
               </div>
             </div>
 
-            {/* Live USD → BNB rate */}
-            <div className="flex items-center justify-between text-[11px] text-gray-500">
-              <span>USD → BNB conversion</span>
+            {/* Live USD â†’ BNB rate */}
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>USD â†’ BNB conversion</span>
               <span className="font-mono text-gray-300">
                 {bnbUsdPrice != null ? `1 BNB = $${bnbUsdPrice.toFixed(2)}` : 'Price unavailable'}
               </span>
@@ -1330,7 +1479,7 @@ export default function MyAgentDetailPage() {
 
             {/* Allowed tokens */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1.5">Allowed tokens</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed tokens</label>
               <div className="flex flex-wrap gap-1.5">
                 {TOKEN_OPTIONS.map((t) => {
                   const active = sessionForm.allowedTokens.includes(t.symbol);
@@ -1339,19 +1488,19 @@ export default function MyAgentDetailPage() {
                       key={t.symbol}
                       type="button"
                       onClick={() => toggleToken(t.symbol)}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {t.label}
                     </button>
                   );
                 })}
               </div>
-              <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN token registry (fail-closed).</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN token registry (fail-closed).</p>
             </div>
 
             {/* Allowed protocols */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1.5">Allowed protocols</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed protocols</label>
               <div className="flex flex-wrap gap-1.5">
                 {protocolOptions.map((p) => {
                   const active = sessionForm.allowedProtocols.includes(p.id);
@@ -1362,44 +1511,44 @@ export default function MyAgentDetailPage() {
                       type="button"
                       disabled={disabled}
                       onClick={() => toggleProtocol(p.id)}
-                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified ≠ enabled).` : undefined}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-[#111] text-gray-600 border-[#222] cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled).` : undefined}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-card text-gray-600 border-border cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {p.label}
-                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying…)</span>}
+                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifyingâ€¦)</span>}
                       {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
                     </button>
                   );
                 })}
               </div>
               {protocolSnapshotError && (
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Registry snapshot unavailable — showing last-known verified state; the server still validates fail-closed before any session is created.
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Registry snapshot unavailable â€” showing last-known verified state; the server still validates fail-closed before any session is created.
                 </p>
               )}
               {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Protocols are recognized but not yet verified for autonomous execution (verified ≠ enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Protocols are recognized but not yet verified for autonomous execution (verified â‰  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
                 </p>
               )}
-              <p className="text-[10px] text-gray-500 mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
             </div>
 
             {/* Allowed functions */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1">Allowed functions</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1">Allowed functions</label>
               <input
                 type="text"
                 value={sessionForm.allowedFunctions}
                 onChange={(e) => setSessionForm({ ...sessionForm, allowedFunctions: e.target.value })}
                 placeholder="e.g. swap, deposit, withdraw"
-                className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
               />
             </div>
 
             {/* Risk */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1.5">Risk level</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Risk level</label>
               <div className="flex flex-wrap gap-1.5">
                 {RISK_OPTIONS.map((r) => {
                   const active = sessionForm.riskLevel === r;
@@ -1408,7 +1557,7 @@ export default function MyAgentDetailPage() {
                       key={r}
                       type="button"
                       onClick={() => setSessionForm({ ...sessionForm, riskLevel: r })}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-[#333] hover:border-[#F0B90B]/50'}`}
+                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {r}
                     </button>
@@ -1419,17 +1568,17 @@ export default function MyAgentDetailPage() {
 
             {/* Duration */}
             <div>
-              <label className="block text-xs font-black text-gray-400 mb-1">Session duration (days)</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1">Session duration (days)</label>
               <input
                 type="number"
                 min="1"
                 value={sessionForm.expiresAtDays}
                 onChange={(e) => setSessionForm({ ...sessionForm, expiresAtDays: Number(e.target.value) })}
-                className="w-full bg-black border border-[#333] px-3 py-2 text-xs font-mono text-white rounded"
+                className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
               />
             </div>
 
-            {/* Inline registry-error (422) — user-facing, no stack trace */}
+            {/* Inline registry-error (422) â€” user-facing, no stack trace */}
             {taskError && (
               <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3 py-2 text-[11px] text-red-300 leading-relaxed">
                 {taskError}
@@ -1437,26 +1586,26 @@ export default function MyAgentDetailPage() {
             )}
 
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
+              <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#222] text-foreground text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
               <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice}>Create Task</LoadingButton>
             </div>
           </div>
         </div>
       )}
 
-      {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
+      {/* TRANSACTION CONFIRMATION â€” shown before any wallet top-up */}
       <TransactionConfirmModal
         open={topupOpen}
         title="Confirm Top Up"
         subtitle={`Top up the agent wallet on BNB Smart Chain (chain 56)`}
         lines={[
           { label: 'Agent', value: agent.name, tone: 'gold' },
-          { label: 'Recipient', value: agent.walletAddress ?? '—', mono: true },
+          { label: 'Recipient', value: agent.walletAddress ?? 'â€”', mono: true },
           { label: 'Amount', value: `${topupAmount || '0'} BNB`, tone: 'gold', mono: true },
           { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
           { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
         ]}
-        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that."
+        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain â€” no balance change is assumed before that."
         confirmLabel="Confirm Top Up"
         confirmLoadingLabel="Sending..."
         confirmLoading={topupLoading}
@@ -1466,47 +1615,47 @@ export default function MyAgentDetailPage() {
 
       {/* Top-up instruction result */}
       {topupResult && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-[#333] rounded-xl p-6 w-full max-w-md space-y-4">
+        <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4">
             <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <h3 className="text-base font-black text-emerald-400 uppercase tracking-wider">Deposit instruction</h3>
-            <div className="bg-black/40 border border-[#222] rounded-lg p-4 space-y-3 text-xs">
+            <div className="bg-background/40 border border-border rounded-lg p-4 space-y-3 text-xs">
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Request</span>
+                <span className="text-muted-foreground">Request</span>
                 <span className="font-mono font-black text-gray-200">{topupResult.topupRequestId}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Send to</span>
+                <span className="text-muted-foreground">Send to</span>
                 <span className="font-mono font-black text-[#F0B90B] text-right break-all">{topupResult.walletAddress}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Amount</span>
+                <span className="text-muted-foreground">Amount</span>
                 <span className="font-mono font-black text-gray-200">{topupResult.amountBnb} BNB</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Network</span>
+                <span className="text-muted-foreground">Network</span>
                 <span className="font-mono font-black text-gray-200">BNB Smart Chain ({topupResult.chainId})</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Status</span>
+                <span className="text-muted-foreground">Status</span>
                 <span className="font-black text-[#F0B90B]">{topupResult.status === 'SENT' ? 'SENT (awaiting on-chain confirmation)' : 'INSTRUCTION'}</span>
               </div>
               {topupResult.txHash && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Transaction</span>
+                  <span className="text-muted-foreground">Transaction</span>
                   <span className="font-mono font-black text-[#F0B90B] text-right break-all">{topupResult.txHash.slice(0, 14)}...</span>
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-gray-500 leading-relaxed">{topupResult.note}</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">{topupResult.note}</p>
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={() => setTopupResult(null)} className="flex-1 bg-[#222] text-white text-xs font-black py-2.5 uppercase">Close</button>
+              <button type="button" onClick={() => setTopupResult(null)} className="flex-1 bg-[#222] text-foreground text-xs font-black py-2.5 uppercase">Close</button>
               {topupResult.txHash ? (
-                <button type="button" onClick={() => { window.open(`https://bscscan.com/tx/${topupResult.txHash}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-[#333] text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View Transaction</button>
+                <button type="button" onClick={() => { window.open(`https://bscscan.com/tx/${topupResult.txHash}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-border text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View Transaction</button>
               ) : (
-                <button type="button" onClick={() => { window.open(`https://bscscan.com/address/${topupResult.walletAddress}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-[#333] text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View BscScan</button>
+                <button type="button" onClick={() => { window.open(`https://bscscan.com/address/${topupResult.walletAddress}`, '_blank'); }} className="flex-1 bg-[#1A1A1A] border border-border text-gray-300 text-xs font-black py-2.5 uppercase hover:border-[#F0B90B]/50">View BscScan</button>
               )}
             </div>
           </div>

@@ -6,6 +6,7 @@ import { ThirdwebProvider } from '@/lib/thirdweb-provider'
 import { WalletProvider } from '@/lib/wallet-context'
 import { ToastProvider } from '@/components/toast-provider'
 import { WalletPromptModal } from '@/components/wallet-prompt-modal'
+import { ThemeInit } from '@/components/theme-init'
 
 export const metadata: Metadata = {
   title: 'Open Agent Network',
@@ -31,9 +32,12 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'dark',
+  // Let the active theme (dark/light) drive the browser chrome color instead of
+  // forcing dark permanently. ThemeInit sets `colorScheme` on <html> at runtime.
+  colorScheme: 'light dark',
   themeColor: [
     { media: '(prefers-color-scheme: dark)', color: '#1a1a1a' },
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
   ],
 }
 
@@ -43,7 +47,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark bg-background">
+    // ThemeInit (client) owns the active theme: it reads 'oan-theme-v1' or the
+    // system preference and applies `.light`/`.dark` to <html> on every page.
+    // Keep `dark` as the pre-hydration default so the first paint never flashes
+    // light, then ThemeInit reconciles to the persisted theme.
+    <html lang="en" className="dark bg-background" suppressHydrationWarning>
       <body className="antialiased">
         <AuthProvider>
           <ThirdwebProvider>
@@ -55,6 +63,7 @@ export default function RootLayout({
             </WalletProvider>
           </ThirdwebProvider>
         </AuthProvider>
+        <ThemeInit />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
