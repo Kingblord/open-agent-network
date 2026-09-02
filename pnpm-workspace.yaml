@@ -4,3 +4,14 @@ packages:
 
 overrides:
   jose: ^5.9.6
+
+onlyBuiltDependencies:
+  - '@firebase/util'
+  - bufferutil
+  - esbuild
+  - keccak
+  - msw
+  - protobufjs
+  - sharp
+  - unrs-resolver
+  - utf-8-validate
