@@ -22,6 +22,8 @@ import {
 } from './persistence';
 import { PerformanceCalculator, classifyExecutionMode } from '@ban/performance-engine';
 import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-signer';
+import { findActivePermissionForJob } from '@/lib/permissions/permission-repo';
+import { PermissionResolver } from '@ban/eip7702';
 
 /**
  * BAN Agent Runtime — closed-loop orchestration (Batch C).
@@ -75,6 +77,10 @@ export interface RunCycleOptions {
   execute?: (input: { proposal: ActionProposal; session: Session }) => Promise<{ transactionHash: string }>;
   /** Optional AI-decision listener — persists the brain's real reasoning before a proposal is produced (THINKING stage). */
   onDecision?: (decision: { status: string; reasoning: string; decisionId?: string }) => void;
+  /** Job this cycle belongs to (user-funds permission scoping). */
+  jobId?: string;
+  /** TRUE only for jobs that move the USER’s own funds — requires an ACTIVE EIP-7702 permission before any execution. */
+  requiresUserFunds?: boolean;
 }
 
 async function getSessionForAgent(agentId: string): Promise<Session | null> {
@@ -290,6 +296,49 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
         detail: { deniedCheck: policy.deniedCheck ?? 'unknown', reason: policy.reason },
       });
       return { ok: false, reason: policy.reason ?? 'policy_denied', code: ErrorCode.POLICY_DENIED };
+    }
+
+    // 4b) User-funds gate (update-v3 §8–§11): jobs that move the USER's own funds
+    // (`requiresUserFunds`) require an ACTIVE EIP-7702-backed permission BEFORE any
+    // execution. Operational (Altana) jobs skip this gate. Fails closed: a missing,
+    // expired, revoked, or out-of-scope permission DENIES the proposal — the agent can
+    // never spend user funds without one. No permission ⇒ no execution ⇒ no fabricate.
+    if (opts.requiresUserFunds) {
+      const permission = await findActivePermissionForJob(agent.id, opts.jobId ?? '');
+      let permissionError: unknown = null;
+      if (!permission) {
+        permissionError = new Error('No ACTIVE user-funds permission bound to this agent+job');
+      } else {
+        try {
+          new PermissionResolver().resolve(permission, {
+            protocol: proposal.protocol ?? '',
+            contract: proposal.contract ?? '',
+            functionName: proposal.function ?? '',
+            token: proposal.asset ?? '',
+            amount: proposal.amount ?? '0',
+          });
+        } catch (err) {
+          permissionError = err;
+        }
+      }
+      if (permissionError) {
+        const reason = permissionError instanceof Error ? permissionError.message : String(permissionError);
+        await persistAuditEvent({
+          type: 'AGENT_POLICY_DENIED',
+          correlationId,
+          agentId,
+          userId,
+          proposalId: proposal.proposalId,
+          sessionId: proposal.sessionId,
+          severity: 'WARN',
+          detail: { deniedCheck: 'user_funds_permission', reason },
+        });
+        return {
+          ok: false,
+          reason: `user_funds_job_no_active_permission: ${reason}`,
+          code: ErrorCode.POLICY_DENIED,
+        };
+      }
     }
 
     // 5) Execution — only when a real backend is available AND session ACTIVE.

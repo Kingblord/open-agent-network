@@ -20,6 +20,7 @@
     "@ban/agent-core": "workspace:*",
     "@ban/ai": "workspace:*",
     "@ban/blockchain": "workspace:*",
+    "@ban/eip7702": "workspace:*",
     "@ban/performance-engine": "workspace:*",
     "@ban/policy-engine": "workspace:*",
     "@ban/registry": "workspace:*",

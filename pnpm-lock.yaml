@@ -29,6 +29,9 @@ importers:
       '@ban/blockchain':
         specifier: workspace:*
         version: link:../../packages/blockchain
+      '@ban/eip7702':
+        specifier: workspace:*
+        version: link:../../packages/eip7702
       '@ban/performance-engine':
         specifier: workspace:*
         version: link:../../packages/performance-engine
@@ -218,6 +221,31 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.10.4
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.10.4)(jiti@2.6.1)(lightningcss@1.31.1)(msw@2.14.6(@types/node@24.10.4)(typescript@5.7.3))(yaml@2.9.0)
+
+  packages/eip7702:
+    dependencies:
+      '@ban/registry':
+        specifier: workspace:*
+        version: link:../registry
+      '@ban/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+      '@ban/shared':
+        specifier: workspace:*
+        version: link:../shared
+      viem:
+        specifier: ^2.55.19
+        version: 2.56.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@5.0.10)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^24

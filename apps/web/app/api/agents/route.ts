@@ -5,8 +5,10 @@ import { handleError, errorResponse } from '@/lib/core/errors';
 import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry, type AgentCreateInput } from '@/lib/agent-registry';
+import { erc8004Registry, type Erc8004AgentListing } from '@ban/registry';
 import { AgentStatusSchema } from '@ban/schemas';
 import { ErrorCode } from '@ban/shared';
+import { isErc8004LiveConfigured, syncErc8004Live } from '@/lib/erc8004-live';
 
 const logger = createStructuredLogger('api.agents');
 
@@ -29,6 +31,19 @@ const logger = createStructuredLogger('api.agents');
  *                      `?my=true`) to list THEIR OWN agents in any status —
  *                      this is what powers "My Agents" and never returns
  *                      agents owned by other developers.
+ *
+ *                      Marketplace merging: when browsing the PUBLIC marketplace
+ *                      (no owner scope), the response includes both the
+ *                      authoritative BAN agent-registry records (deduped,
+ *                      ACTIVE only) AND ERC-8004 agent listings
+ *                      (BAN-native + normalized external incl. LIVE
+ *                      8004scan.io records when ERC8004_SCAN_API_KEY is set),
+ *                      so the marketplace can show agents discovered via
+ *                      ERC-8004 too. ERC-8004 listings are flagged
+ *                      `source: BAN_NATIVE | EXTERNAL` and carry
+ *                      `verified`/reputation-neutral fields. Discovery
+ *                      does NOT grant execution authority — execution still
+ *                      requires the agent to be in the BAN agent registry.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -103,6 +118,25 @@ function dedupeMarketplaceAgents(agents: Record<string, unknown>[]) {
   return [...byKey.values()];
 }
 
+/** Map an ERC-8004 listing into the public marketplace shape (kept source-flagged). */
+function erc8004ToPublicAgent(listing: Erc8004AgentListing) {
+  return {
+    id: listing.id,
+    name: listing.name,
+    description: listing.description,
+    type: listing.type,
+    strategyId: listing.strategyId,
+    status: listing.status === 'REGISTERED' ? 'ACTIVE' : listing.status,
+    riskLevel: listing.riskLevel,
+    capabilities: listing.capabilities.map((c) => ({ id: c, name: c })),
+    protocols: listing.protocols,
+    source: listing.source, // BAN_NATIVE | EXTERNAL
+    registry: listing.registry,
+    reputation: listing.reputation,
+    createdAt: listing.createdAt,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request);
@@ -135,12 +169,46 @@ export async function GET(request: NextRequest) {
     // Public browsing (unauthenticated) shows only ACTIVE agents with public
     // fields — deduped by logical identity so legacy seed duplicates never
     // appear twice on the marketplace — and no sensitive/internal data leaks.
-    const payload = requestedOwnerId
-      ? agents
-      : dedupeMarketplaceAgents(agents.filter((a) => a.status === 'ACTIVE')).map(toPublicAgent);
+    if (requestedOwnerId) {
+      return NextResponse.json({ ok: true, agents });
+    }
 
-    logger.info('agents_listed', { correlationId: getCorrelationId(), count: payload.length });
-    return NextResponse.json({ ok: true, agents: payload });
+    // Live ERC-8004 scan (TTL-guarded, honest fail-open; only when the API key
+    // is configured). Brings external 8004scan.io agents into the marketplace.
+    const liveSync = await syncErc8004Live();
+
+    const publicAgents = dedupeMarketplaceAgents(
+      agents.filter((a) => a.status === 'ACTIVE'),
+    ).map(toPublicAgent);
+
+    // ERC-8004 merge (public marketplace only): BAN-native listings that are
+    // ALREADY in the registry are skipped (they'd double-render); external
+    // ERC-8004 agents (incl. live-scanned) are appended so the marketplace
+    // can discover them too.
+    const banIds = new Set(publicAgents.map((a) => String(a.id).toLowerCase()));
+    const erc8004Listings = erc8004Registry.listAll()
+      .filter((l) => !banIds.has(l.id.toLowerCase()))
+      .map(erc8004ToPublicAgent);
+
+    const payload = [...publicAgents, ...erc8004Listings];
+
+    logger.info('agents_listed', {
+      correlationId: getCorrelationId(),
+      count: payload.length,
+      erc8004Count: erc8004Listings.length,
+      sourceFeed: isErc8004LiveConfigured() ? 'live-8004scan' : 'registry',
+    });
+
+    return NextResponse.json({
+      ok: true,
+      agents: payload,
+      erc8004: {
+        sourceFeed: isErc8004LiveConfigured() ? 'live-8004scan' : 'registry',
+        lastSyncAt: liveSync.lastSyncAt,
+        count: erc8004Listings.length,
+        liveError: liveSync.error ?? null,
+      },
+    });
   } catch (err) {
     logger.error('agents_list_failed', {}, err);
     return handleError(err);

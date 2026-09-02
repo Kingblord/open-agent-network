@@ -8,8 +8,8 @@ import type { ExecutionEngine as ExecutionEngineInterface } from '@ban/agent-cor
  *
  * Pipeline:
  *   proposal -> persist PROPOSED -> idempotency gate -> preflight ->
- *   session ACTIVE gate -> queue/submit via session -> receipt ->
- *   reconcile -> persist CONFIRMED/FAILED
+ *   session ACTIVE gate -> EIP-7702 authorization gate (when required) ->
+ *   queue/submit via session -> receipt -> reconcile -> persist CONFIRMED/FAILED
  *
  * Safety boundaries:
  *   - The AI is never in this loop. The policy engine (M5) decides whether an
@@ -25,8 +25,14 @@ import type { ExecutionEngine as ExecutionEngineInterface } from '@ban/agent-cor
  *     from their recorded transactionHash; CONFIRMED is a no-op; PROPOSED is
  *     recovered (a not-yet-submitted execution may proceed); FAILED is refused
  *     unless an explicit retry policy authorizes a retry (not enabled by default).
- *   - `parametersHash` is deterministically derived from `proposal.params` (the
- *     canonical ActionProposal field).
+ *   - `parametersHash` is deterministically derived from
+ *     `proposal.parameters ?? proposal.params` (update-v3 §21/§29: `parameters`
+ *     is the canonical alias; `params` retained compat).
+ *   - EIP-7702 authorization gate (update-v3 §10/§12): when the job is flagged
+ *     `requiresUserFunds`, execution REQUIRES a resolved EIP7702/ACTIVE
+ *     authorization from the injected `authorization` provider. Absence of the
+ *     provider OR a non-ACTIVE resolution FAILS CLOSED (POLICY_DENIED) before
+ *     anything is submitted. Operational jobs (Altana default) bypass the gate.
  *
  * Chain: BAN execution chain is BNB Smart Chain MAINNET (chainId 56). The
  * default below is 56; a testnet override (`BAN_CHAIN_ID=97`) is only honored
@@ -37,6 +43,15 @@ export interface ExecutionContext {
     userId: string;
     correlationId: string;
     session: Session;
+    /** update-v3 §10: job context so the engine knows when EIP-7702 is required. */
+    job?: {
+        jobId: string;
+        requiresUserFunds?: boolean;
+        authorizationRef?: {
+            permissionId?: string;
+            status?: string;
+        };
+    };
 }
 /** Deterministic preflight/simulation gate (injected — lives outside M8 core). */
 export interface PreflightSimulation {
@@ -44,6 +59,20 @@ export interface PreflightSimulation {
         approved: boolean;
         reason?: string;
     }>;
+}
+/**
+ * EIP-7702 authorization seam (update-v3 §12) — structural interface only, so
+ * packages stay build-order-independent. The concrete provider is wired in
+ * apps/web (@ban/eip7702 + Firestore) and must resolve jobs that touch
+ * USER-OWNED funds to an ACTIVE EIP7702 permission.
+ */
+export interface ExecutionAuthorizationResolution {
+    mode: 'ALTANA' | 'EIP7702';
+    permissionId?: string;
+    permissionStatus?: string;
+}
+export interface ExecutionAuthorization {
+    resolve(proposal: ActionProposal, context: ExecutionContext): Promise<ExecutionAuthorizationResolution>;
 }
 export interface ExecutionEngineDependencies {
     persistExecution(execution: Execution): Promise<void>;
@@ -66,6 +95,8 @@ export interface ExecutionEngineDependencies {
     }>;
     /** Optional preflight simulation. Absence = framework-level unit path (logged, never silently claimed). */
     preflight?: PreflightSimulation;
+    /** Optional EIP-7702 authorization gate for user-funds jobs (update-v3 §12). */
+    authorization?: ExecutionAuthorization;
 }
 /** BAN execution chain = BNB Smart Chain mainnet. Override only via BAN_CHAIN_ID. */
 export declare const BAN_CHAIN_ID_DEFAULT = 56;

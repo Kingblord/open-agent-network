@@ -7,6 +7,7 @@ export declare function generateId(prefix: string): string;
 export declare function generateIdempotencyKey(scope: string, discriminator: string): string;
 export declare enum ErrorCode {
     UNAUTHENTICATED = "ERR_UNAUTHENTICATED",
+    FORBIDDEN = "ERR_FORBIDDEN",
     SESSION_EXPIRED = "ERR_SESSION_EXPIRED",
     SESSION_REVOKED = "ERR_SESSION_REVOKED",
     POLICY_DENIED = "ERR_POLICY_DENIED",

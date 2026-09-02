@@ -13,6 +13,7 @@ import { parseEther } from 'viem';
 import { getThirdwebClient } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
+import { PermissionCards } from '@/components/permission-cards';
 
 interface Session {
   sessionId: string;
@@ -1080,6 +1081,11 @@ export default function MyAgentDetailPage() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* EIP-7702 PERMISSIONS (USER FUNDS) — one-time bounded authorization records */}
+        <div className="bg-[#111] rounded-xl p-5 border border-[#222]">
+          <PermissionCards agentId={agent.id} />
         </div>
 
         {/* LIVE ACTIVITY */}

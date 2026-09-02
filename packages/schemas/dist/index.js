@@ -90,6 +90,16 @@ export const JobStatusSchema = z.enum([
     'DEAD_LETTER',
     'CANCELLED',
 ]);
+/** Lifecycle of the EIP-7702 permission bound to a job (inline duplicate of
+ *  AgentPermissionStatusSchema to avoid TDZ ordering issues at module load). */
+const JobAuthorizationStatusSchema = z.enum([
+    'PENDING',
+    'AWAITING_AUTHORIZATION',
+    'AUTHORIZED',
+    'ACTIVE',
+    'REVOKED',
+    'EXPIRED',
+]);
 export const JobSchema = z.object({
     jobId: z.string(),
     jobType: JobTypeSchema,
@@ -104,6 +114,21 @@ export const JobSchema = z.object({
     // `status` is a live snapshot maintained by the job repo (not part of the
     // initial claim), so it is optional here.
     status: JobStatusSchema.optional(),
+    /**
+     * update-v3 §10 (EIP-7702): when true, this job touches USER-OWNED funds —
+     * execution REQUIRES an ACTIVE EIP-7702 permission bound to this job
+     * (authorizationRef). Operational jobs leave this false/undefined; the
+     * Altana path remains the default.
+     */
+    requiresUserFunds: z.boolean().optional(),
+    /** Reference to the bound EIP-7702 permission (created during the hire /
+     *  authorize flow; filled in when the signature is verified). */
+    authorizationRef: z
+        .object({
+        permissionId: z.string(),
+        status: JobAuthorizationStatusSchema,
+    })
+        .optional(),
     lastError: z
         .object({ code: z.string().optional(), message: z.string().optional() })
         .optional(),
@@ -169,6 +194,13 @@ export const ActionProposalSchema = z.object({
     estimatedValue: z.string(), // wei decimal string used for spend accounting
     asset: z.string(), // symbol e.g. "BNB", "USDT"
     params: z.record(z.string(), z.unknown()).default({}),
+    /**
+     * update-v3 §21/§29: `parameters` is the canonical alias consumers SHOULD
+     * prefer when reading action payloads. `params` is retained for backward
+     * compatibility (both producers and consumers may write either; readers use
+     * `parameters ?? params`). They carry the same record payload.
+     */
+    parameters: z.record(z.string(), z.unknown()).optional(),
     idempotencyKey: z.string(),
     nonce: z.string().optional(),
     riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional(),
@@ -272,6 +304,8 @@ export const PerformanceSchema = z.object({
     maxDrawdownUsd: z.string(),
     updatedAt: ISO8601Schema,
 });
+// Legacy alias (typo was exported historically; retained so existing consumers compile).
+export const PerforanceSchema = PerformanceSchema;
 // ---------------------------------------------------------------------------
 // Audit (all milestones — structured, queryable governance records)
 // ---------------------------------------------------------------------------
@@ -379,5 +413,126 @@ export const StrategyDecisionSchema = z.object({
     observations: z.array(ObservationSchema).default([]),
     deniedReason: z.string().optional(),
     reasoning: z.string().optional(),
+    createdAt: ISO8601Schema,
+});
+// ---------------------------------------------------------------------------
+// EIP-7702 Delegation Authorization (Phase 1 — one-signature agent model)
+//
+// A user EOA delegates execution to BAN permission code via a single EIP-7702
+// authorization tuple. The user stays the protocol identity and funds stay in
+// the user's wallet; the per-agent Altana wallet is the executor that submits
+// activation + job transactions and pays gas — it NEVER owns user funds.
+//
+// A DelegationAuthorization is gasless to produce (signed once during
+// onboarding); the executor (agent wallet) submits the activation transaction.
+// The signature authorizes the EOA to delegate to `address` for `chainId` at
+// `nonce`. It is NOT an ERC-20 approval and NOT a per-action approval — the
+// permission record below is the cryptographically-bound scope the policy
+// engine enforces.
+// ---------------------------------------------------------------------------
+export const DelegationAuthorizationSchema = z.object({
+    chainId: z.union([z.bigint(), z.number(), z.string()]), // BAN_CHAIN_ID at signing
+    address: AddressSchema, // implementation contract the EOA delegates to
+    nonce: z.union([z.bigint(), z.number(), z.string()]), // EOA nonce at signing
+    yParity: z.number().int().min(0).max(1),
+    r: z.union([z.bigint(), z.string()]),
+    s: z.union([z.bigint(), z.string()]),
+});
+/**
+ * The canonical EIP-7702 authorization tuple: `[chain_id, address, nonce,
+ * y_parity, r, s]`. This is the shape viem's `prepareAuthorization` /
+ * `signAuthorization` produce and the shape `prepareTransactionRequest`
+ * / `broadcastAuthorization` consume.
+ */
+export const Eip7702AuthorizationSchema = DelegationAuthorizationSchema;
+export const Eip7702AuthorizationTupleSchema = z.tuple([
+    z.union([z.bigint(), z.number(), z.string()]), // chain_id
+    AddressSchema, // address (impl)
+    z.union([z.bigint(), z.number(), z.string()]), // nonce
+    z.number().int().min(0).max(1), // y_parity
+    z.union([z.bigint(), z.string()]), // r
+    z.union([z.bigint(), z.string()]), // s
+]);
+/** Spend bounds bound to an authorization's permission scope. */
+export const PermissionSpendSchema = z.object({
+    // Both spellings alias the SAME cumulative ceiling. `spendCap` is the
+    // canonical field used across eip7702 (authorization.ts, delegation.ts,
+    // permission-binding.ts); `spendLimit` is retained for the policy-engine /
+    // resolver surface (index.ts PermissionResolver + eip7702.test.ts). They are
+    // kept in sync by producers; both are wei decimal strings.
+    spendLimit: z.string(), // wei decimal string (cumulative ceiling)
+    spendCap: z.string().optional(), // wei decimal string (canonical alias)
+    perTransactionCap: z.string(), // wei decimal string (single-tx ceiling)
+    used: z.string().default('0'), // wei decimal string (SpendLedger consumed)
+    asset: z.string(), // symbol e.g. "BNB", "USDT"
+});
+export const AgentPermissionStatusSchema = z.enum([
+    // PENDING is the pre-authorization state: the permission config has been
+    // created but no signature has been recovered/verified yet. It is the state
+    // `assertActivatable` accepts before an activation transaction is submitted.
+    'PENDING',
+    'AWAITING_AUTHORIZATION',
+    'AUTHORIZED',
+    'ACTIVE',
+    'REVOKED',
+    'EXPIRED',
+]);
+/**
+ * The permission record binding a user's one-time EIP-7702 delegation to the
+ * exact job scope. `status` lifecycle: PENDING / AWAITING_AUTHORIZATION (job
+ * created, signature not yet recovered/verified) → AUTHORIZED (signature
+ * verified, activation tx not yet confirmed) → ACTIVE (delegation live) →
+ * REVOKED / EXPIRED. The policy engine resolves every ActionProposal to an
+ * ACTIVE permission and fails closed otherwise.
+ */
+export const AgentPermissionSchema = z.object({
+    id: z.string(),
+    agentId: z.string(),
+    userId: z.string(),
+    userAddress: AddressSchema.optional(), // user EOA recovered from the auth
+    jobId: z.string().optional(), // job (BAN task) this permission binds to
+    delegation: DelegationAuthorizationSchema.optional(), // signed once at activation; absent until PENDING
+    verifyingContract: AddressSchema.optional(), // permission-impl address if verified
+    onchainRegistryReference: z.string().nullable().optional(), // configHash alias
+    capabilities: z.array(z.string()), // capability ids granted
+    allowedProtocols: z.array(z.string()).default([]),
+    allowedContracts: z.array(AddressSchema).default([]),
+    allowedFunctions: z.array(z.string()).default([]),
+    allowedTokens: z.array(z.string()).default([]),
+    spend: PermissionSpendSchema,
+    validAfter: ISO8601Schema.optional(),
+    validUntil: ISO8601Schema.optional(),
+    nonce: z.string(), // off-chain permission nonce (revoke/rotate)
+    status: AgentPermissionStatusSchema.default('AWAITING_AUTHORIZATION'),
+    activationTxHash: z.string().nullable().default(null),
+    revokedAt: ISO8601Schema.nullable().default(null),
+    createdAt: ISO8601Schema,
+    updatedAt: ISO8601Schema,
+});
+// ---------------------------------------------------------------------------
+// EIP-7702 Delegation State (on-chain record / lifecycle)
+//
+// The `DelegationState` is the on-chain authority record that proves user +
+// agent + config are bound to an ACTIVE (or PENDING) delegation. It is built
+// deterministically off-chain and materialized by `@ban/eip7702` helpers; the
+// on-chain permission account reads `authority` to confirm the EOA delegated
+// to the exact agent + permission profile.
+// ---------------------------------------------------------------------------
+export const DelegationStateStatusSchema = z.enum([
+    'PENDING',
+    'ACTIVE',
+    'REVOKED',
+    'EXPIRED',
+]);
+export const DelegationStateSchema = z.object({
+    userAddress: AddressSchema,
+    agentId: z.string(),
+    delegateAddress: AddressSchema,
+    configHash: z.string(), // 0x…64 keccak of the canonical permission config
+    authority: z.string(), // 0x…64 keccak(user ‖ agent ‖ configHash)
+    nonce: z.string(), // off-chain permission nonce
+    status: DelegationStateStatusSchema,
+    validAfter: ISO8601Schema,
+    validUntil: ISO8601Schema,
     createdAt: ISO8601Schema,
 });

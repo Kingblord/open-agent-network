@@ -24,6 +24,7 @@ export function generateIdempotencyKey(scope: string, discriminator: string): st
 export enum ErrorCode {
   // Auth / session
   UNAUTHENTICATED = 'ERR_UNAUTHENTICATED',
+  FORBIDDEN = 'ERR_FORBIDDEN',
   SESSION_EXPIRED = 'ERR_SESSION_EXPIRED',
   SESSION_REVOKED = 'ERR_SESSION_REVOKED',
   // Policy

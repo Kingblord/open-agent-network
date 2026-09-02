@@ -40,7 +40,7 @@ export class GenericExecutionEngine {
             protocol: proposal.protocol,
             contract: proposal.contract,
             function: proposal.function,
-            parametersHash: JSON.stringify(proposal.params ?? {}),
+            parametersHash: JSON.stringify(proposal.parameters ?? proposal.params ?? {}),
             transactionHash: null,
             chainId: currentChainId(), // BNB mainnet (56) by default
             gasUsed: null,
@@ -58,6 +58,38 @@ export class GenericExecutionEngine {
             const failed = { ...execution, status: 'FAILED', errorCode: ErrorCode.SESSION_REVOKED };
             await this.deps.persistExecution(failed);
             throw new BANError(ErrorCode.SESSION_REVOKED, `Session ${context.session.sessionId} is not ACTIVE`, { correlationId: context.correlationId });
+        }
+        // ------------------------------------------------------------------
+        // 2b) EIP-7702 authorization gate — user-funds jobs ONLY (update-v3 §10/§12)
+        // ------------------------------------------------------------------
+        const requiresUserFunds = Boolean(context.job?.requiresUserFunds);
+        if (requiresUserFunds) {
+            if (!this.deps.authorization) {
+                const failed = { ...execution, status: 'FAILED', errorCode: ErrorCode.POLICY_DENIED };
+                await this.deps.persistExecution(failed);
+                throw new BANError(ErrorCode.POLICY_DENIED, 'Job requires user-funds authorization (EIP-7702) but no authorization provider is configured; failing closed', { correlationId: context.correlationId });
+            }
+            const resolution = await this.deps.authorization.resolve(proposal, context);
+            if (resolution.mode !== 'EIP7702' || resolution.permissionStatus !== 'ACTIVE') {
+                const failed = { ...execution, status: 'FAILED', errorCode: ErrorCode.POLICY_DENIED };
+                await this.deps.persistExecution(failed);
+                this.logger.error('execution_authorization_denied', {
+                    executionId,
+                    mode: resolution.mode,
+                    permissionStatus: resolution.permissionStatus ?? 'none',
+                    correlationId: context.correlationId,
+                });
+                throw new BANError(ErrorCode.POLICY_DENIED, `Job requires an ACTIVE EIP-7702 authorization (got ${resolution.mode}/${resolution.permissionStatus ?? 'none'}); failing closed`, { correlationId: context.correlationId });
+            }
+            this.logger.info('execution_authorization_ok', {
+                executionId,
+                mode: 'EIP7702',
+                permissionId: resolution.permissionId,
+                correlationId: context.correlationId,
+            });
+        }
+        else {
+            this.logger.debug('execution_authorization_not_required', { executionId, correlationId: context.correlationId });
         }
         // ------------------------------------------------------------------
         // 3) Optional preflight simulation — aborts BEFORE submit when denied

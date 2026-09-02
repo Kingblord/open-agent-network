@@ -31,11 +31,11 @@ export declare const ActionTypeSchema: z.ZodEnum<{
 }>;
 export type ActionType = z.infer<typeof ActionTypeSchema>;
 export declare const AgentStatusSchema: z.ZodEnum<{
-    DRAFT: "DRAFT";
     ACTIVE: "ACTIVE";
-    PAUSED: "PAUSED";
     REVOKED: "REVOKED";
     EXPIRED: "EXPIRED";
+    DRAFT: "DRAFT";
+    PAUSED: "PAUSED";
     ERROR: "ERROR";
 }>;
 export type AgentStatus = z.infer<typeof AgentStatusSchema>;
@@ -73,11 +73,11 @@ export declare const AgentSchema: z.ZodObject<{
     strategyId: z.ZodOptional<z.ZodString>;
     walletAddress: z.ZodOptional<z.ZodString>;
     status: z.ZodEnum<{
-        DRAFT: "DRAFT";
         ACTIVE: "ACTIVE";
-        PAUSED: "PAUSED";
         REVOKED: "REVOKED";
         EXPIRED: "EXPIRED";
+        DRAFT: "DRAFT";
+        PAUSED: "PAUSED";
         ERROR: "ERROR";
     }>;
     capabilities: z.ZodArray<z.ZodObject<{
@@ -154,6 +154,18 @@ export declare const JobSchema: z.ZodObject<{
         DEAD_LETTER: "DEAD_LETTER";
         CANCELLED: "CANCELLED";
     }>>;
+    requiresUserFunds: z.ZodOptional<z.ZodBoolean>;
+    authorizationRef: z.ZodOptional<z.ZodObject<{
+        permissionId: z.ZodString;
+        status: z.ZodEnum<{
+            PENDING: "PENDING";
+            ACTIVE: "ACTIVE";
+            REVOKED: "REVOKED";
+            EXPIRED: "EXPIRED";
+            AWAITING_AUTHORIZATION: "AWAITING_AUTHORIZATION";
+            AUTHORIZED: "AUTHORIZED";
+        }>;
+    }, z.core.$strip>>;
     lastError: z.ZodOptional<z.ZodObject<{
         code: z.ZodOptional<z.ZodString>;
         message: z.ZodOptional<z.ZodString>;
@@ -161,10 +173,10 @@ export declare const JobSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type Job = z.infer<typeof JobSchema>;
 export declare const SessionStatusSchema: z.ZodEnum<{
+    PENDING: "PENDING";
     ACTIVE: "ACTIVE";
     REVOKED: "REVOKED";
     EXPIRED: "EXPIRED";
-    PENDING: "PENDING";
     EXPIRING: "EXPIRING";
 }>;
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
@@ -180,10 +192,10 @@ export declare const SessionSchema: z.ZodObject<{
     perTransactionCap: z.ZodString;
     expiresAt: z.ZodString;
     status: z.ZodDefault<z.ZodEnum<{
+        PENDING: "PENDING";
         ACTIVE: "ACTIVE";
         REVOKED: "REVOKED";
         EXPIRED: "EXPIRED";
-        PENDING: "PENDING";
         EXPIRING: "EXPIRING";
     }>>;
     onchainRegistryReference: z.ZodDefault<z.ZodNullable<z.ZodString>>;
@@ -248,6 +260,7 @@ export declare const ActionProposalSchema: z.ZodObject<{
     estimatedValue: z.ZodString;
     asset: z.ZodString;
     params: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     idempotencyKey: z.ZodString;
     nonce: z.ZodOptional<z.ZodString>;
     riskLevel: z.ZodOptional<z.ZodEnum<{
@@ -380,6 +393,18 @@ export declare const PerformanceSchema: z.ZodObject<{
     updatedAt: z.ZodString;
 }, z.core.$strip>;
 export type Performance = z.infer<typeof PerformanceSchema>;
+export declare const PerforanceSchema: z.ZodObject<{
+    performanceId: z.ZodString;
+    agentId: z.ZodString;
+    startAt: z.ZodString;
+    realizedPnlUsd: z.ZodString;
+    unrealizedPnlUsd: z.ZodString;
+    totalTrades: z.ZodNumber;
+    winRate: z.ZodString;
+    maxDrawdownUsd: z.ZodString;
+    updatedAt: z.ZodString;
+}, z.core.$strip>;
+export type Perforance = Performance;
 export declare const AuditEventSchema: z.ZodObject<{
     eventId: z.ZodString;
     type: z.ZodString;
@@ -519,6 +544,7 @@ export declare const StrategyDecisionSchema: z.ZodObject<{
         estimatedValue: z.ZodString;
         asset: z.ZodString;
         params: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+        parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
         idempotencyKey: z.ZodString;
         nonce: z.ZodOptional<z.ZodString>;
         riskLevel: z.ZodOptional<z.ZodEnum<{
@@ -540,4 +566,126 @@ export declare const StrategyDecisionSchema: z.ZodObject<{
     createdAt: z.ZodString;
 }, z.core.$strip>;
 export type StrategyDecision = z.infer<typeof StrategyDecisionSchema>;
+export declare const DelegationAuthorizationSchema: z.ZodObject<{
+    chainId: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+    address: z.ZodString;
+    nonce: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+    yParity: z.ZodNumber;
+    r: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+    s: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+}, z.core.$strip>;
+export type DelegationAuthorization = z.infer<typeof DelegationAuthorizationSchema>;
+/**
+ * The canonical EIP-7702 authorization tuple: `[chain_id, address, nonce,
+ * y_parity, r, s]`. This is the shape viem's `prepareAuthorization` /
+ * `signAuthorization` produce and the shape `prepareTransactionRequest`
+ * / `broadcastAuthorization` consume.
+ */
+export declare const Eip7702AuthorizationSchema: z.ZodObject<{
+    chainId: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+    address: z.ZodString;
+    nonce: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+    yParity: z.ZodNumber;
+    r: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+    s: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+}, z.core.$strip>;
+export type Eip7702Authorization = DelegationAuthorization;
+export declare const Eip7702AuthorizationTupleSchema: z.ZodTuple<[z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>, z.ZodString, z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>, z.ZodNumber, z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>, z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>], null>;
+export type Eip7702AuthorizationTuple = z.infer<typeof Eip7702AuthorizationTupleSchema>;
+/** Spend bounds bound to an authorization's permission scope. */
+export declare const PermissionSpendSchema: z.ZodObject<{
+    spendLimit: z.ZodString;
+    spendCap: z.ZodOptional<z.ZodString>;
+    perTransactionCap: z.ZodString;
+    used: z.ZodDefault<z.ZodString>;
+    asset: z.ZodString;
+}, z.core.$strip>;
+export type PermissionSpend = z.infer<typeof PermissionSpendSchema>;
+export declare const AgentPermissionStatusSchema: z.ZodEnum<{
+    PENDING: "PENDING";
+    ACTIVE: "ACTIVE";
+    REVOKED: "REVOKED";
+    EXPIRED: "EXPIRED";
+    AWAITING_AUTHORIZATION: "AWAITING_AUTHORIZATION";
+    AUTHORIZED: "AUTHORIZED";
+}>;
+export type AgentPermissionStatus = z.infer<typeof AgentPermissionStatusSchema>;
+/**
+ * The permission record binding a user's one-time EIP-7702 delegation to the
+ * exact job scope. `status` lifecycle: PENDING / AWAITING_AUTHORIZATION (job
+ * created, signature not yet recovered/verified) → AUTHORIZED (signature
+ * verified, activation tx not yet confirmed) → ACTIVE (delegation live) →
+ * REVOKED / EXPIRED. The policy engine resolves every ActionProposal to an
+ * ACTIVE permission and fails closed otherwise.
+ */
+export declare const AgentPermissionSchema: z.ZodObject<{
+    id: z.ZodString;
+    agentId: z.ZodString;
+    userId: z.ZodString;
+    userAddress: z.ZodOptional<z.ZodString>;
+    jobId: z.ZodOptional<z.ZodString>;
+    delegation: z.ZodOptional<z.ZodObject<{
+        chainId: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+        address: z.ZodString;
+        nonce: z.ZodUnion<readonly [z.ZodBigInt, z.ZodNumber, z.ZodString]>;
+        yParity: z.ZodNumber;
+        r: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+        s: z.ZodUnion<readonly [z.ZodBigInt, z.ZodString]>;
+    }, z.core.$strip>>;
+    verifyingContract: z.ZodOptional<z.ZodString>;
+    onchainRegistryReference: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    capabilities: z.ZodArray<z.ZodString>;
+    allowedProtocols: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    allowedContracts: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    allowedFunctions: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    allowedTokens: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    spend: z.ZodObject<{
+        spendLimit: z.ZodString;
+        spendCap: z.ZodOptional<z.ZodString>;
+        perTransactionCap: z.ZodString;
+        used: z.ZodDefault<z.ZodString>;
+        asset: z.ZodString;
+    }, z.core.$strip>;
+    validAfter: z.ZodOptional<z.ZodString>;
+    validUntil: z.ZodOptional<z.ZodString>;
+    nonce: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<{
+        PENDING: "PENDING";
+        ACTIVE: "ACTIVE";
+        REVOKED: "REVOKED";
+        EXPIRED: "EXPIRED";
+        AWAITING_AUTHORIZATION: "AWAITING_AUTHORIZATION";
+        AUTHORIZED: "AUTHORIZED";
+    }>>;
+    activationTxHash: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    revokedAt: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+}, z.core.$strip>;
+export type AgentPermission = z.infer<typeof AgentPermissionSchema>;
+export declare const DelegationStateStatusSchema: z.ZodEnum<{
+    PENDING: "PENDING";
+    ACTIVE: "ACTIVE";
+    REVOKED: "REVOKED";
+    EXPIRED: "EXPIRED";
+}>;
+export type DelegationStateStatus = z.infer<typeof DelegationStateStatusSchema>;
+export declare const DelegationStateSchema: z.ZodObject<{
+    userAddress: z.ZodString;
+    agentId: z.ZodString;
+    delegateAddress: z.ZodString;
+    configHash: z.ZodString;
+    authority: z.ZodString;
+    nonce: z.ZodString;
+    status: z.ZodEnum<{
+        PENDING: "PENDING";
+        ACTIVE: "ACTIVE";
+        REVOKED: "REVOKED";
+        EXPIRED: "EXPIRED";
+    }>;
+    validAfter: z.ZodString;
+    validUntil: z.ZodString;
+    createdAt: z.ZodString;
+}, z.core.$strip>;
+export type DelegationState = z.infer<typeof DelegationStateSchema>;
 //# sourceMappingURL=index.d.ts.map

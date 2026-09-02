@@ -19,6 +19,7 @@ export var ErrorCode;
 (function (ErrorCode) {
     // Auth / session
     ErrorCode["UNAUTHENTICATED"] = "ERR_UNAUTHENTICATED";
+    ErrorCode["FORBIDDEN"] = "ERR_FORBIDDEN";
     ErrorCode["SESSION_EXPIRED"] = "ERR_SESSION_EXPIRED";
     ErrorCode["SESSION_REVOKED"] = "ERR_SESSION_REVOKED";
     // Policy

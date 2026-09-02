@@ -1,0 +1,1 @@
+{"version":3,"file":"permission-binding.d.ts","sourceRoot":"","sources":["../src/permission-binding.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,cAAc,CAAC;AAgCpD;;;;;;;GAOG;AACH,wBAAgB,oBAAoB,CAAC,IAAI,EAAE,eAAe,GAAG,MAAM,CAgClE;AAED;;;GAGG;AACH,wBAAgB,cAAc,CAAC,IAAI,EAAE,eAAe,GAAG,eAAe,CAMrE"}

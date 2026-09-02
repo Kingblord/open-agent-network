@@ -10,8 +10,8 @@ import { BANError, ErrorCode, createLogger } from '@ban/shared';
  *
  * Pipeline:
  *   proposal -> persist PROPOSED -> idempotency gate -> preflight ->
- *   session ACTIVE gate -> queue/submit via session -> receipt ->
- *   reconcile -> persist CONFIRMED/FAILED
+ *   session ACTIVE gate -> EIP-7702 authorization gate (when required) ->
+ *   queue/submit via session -> receipt -> reconcile -> persist CONFIRMED/FAILED
  *
  * Safety boundaries:
  *   - The AI is never in this loop. The policy engine (M5) decides whether an
@@ -27,8 +27,14 @@ import { BANError, ErrorCode, createLogger } from '@ban/shared';
  *     from their recorded transactionHash; CONFIRMED is a no-op; PROPOSED is
  *     recovered (a not-yet-submitted execution may proceed); FAILED is refused
  *     unless an explicit retry policy authorizes a retry (not enabled by default).
- *   - `parametersHash` is deterministically derived from `proposal.params` (the
- *     canonical ActionProposal field).
+ *   - `parametersHash` is deterministically derived from
+ *     `proposal.parameters ?? proposal.params` (update-v3 §21/§29: `parameters`
+ *     is the canonical alias; `params` retained compat).
+ *   - EIP-7702 authorization gate (update-v3 §10/§12): when the job is flagged
+ *     `requiresUserFunds`, execution REQUIRES a resolved EIP7702/ACTIVE
+ *     authorization from the injected `authorization` provider. Absence of the
+ *     provider OR a non-ACTIVE resolution FAILS CLOSED (POLICY_DENIED) before
+ *     anything is submitted. Operational jobs (Altana default) bypass the gate.
  *
  * Chain: BAN execution chain is BNB Smart Chain MAINNET (chainId 56). The
  * default below is 56; a testnet override (`BAN_CHAIN_ID=97`) is only honored
@@ -40,11 +46,35 @@ export interface ExecutionContext {
   userId: string;
   correlationId: string;
   session: Session;
+  /** update-v3 §10: job context so the engine knows when EIP-7702 is required. */
+  job?: {
+    jobId: string;
+    requiresUserFunds?: boolean;
+    authorizationRef?: { permissionId?: string; status?: string };
+  };
 }
 
 /** Deterministic preflight/simulation gate (injected — lives outside M8 core). */
 export interface PreflightSimulation {
   simulate(proposal: ActionProposal, context: ExecutionContext): Promise<{ approved: boolean; reason?: string }>;
+}
+
+/**
+ * EIP-7702 authorization seam (update-v3 §12) — structural interface only, so
+ * packages stay build-order-independent. The concrete provider is wired in
+ * apps/web (@ban/eip7702 + Firestore) and must resolve jobs that touch
+ * USER-OWNED funds to an ACTIVE EIP7702 permission.
+ */
+export interface ExecutionAuthorizationResolution {
+  mode: 'ALTANA' | 'EIP7702';
+  permissionId?: string;
+  permissionStatus?: string;
+}
+export interface ExecutionAuthorization {
+  resolve(
+    proposal: ActionProposal,
+    context: ExecutionContext,
+  ): Promise<ExecutionAuthorizationResolution>;
 }
 
 export interface ExecutionEngineDependencies {
@@ -59,6 +89,8 @@ export interface ExecutionEngineDependencies {
   reconcileExecution(input: { executionId: string; transactionHash: string }): Promise<{ status: Execution['status']; errorCode?: string | null }>;
   /** Optional preflight simulation. Absence = framework-level unit path (logged, never silently claimed). */
   preflight?: PreflightSimulation;
+  /** Optional EIP-7702 authorization gate for user-funds jobs (update-v3 §12). */
+  authorization?: ExecutionAuthorization;
 }
 
 function executionIdFrom(proposalId: string): string {
@@ -104,7 +136,7 @@ export class GenericExecutionEngine implements ExecutionEngineInterface {
       protocol: proposal.protocol,
       contract: proposal.contract,
       function: proposal.function,
-      parametersHash: JSON.stringify(proposal.params ?? {}),
+      parametersHash: JSON.stringify(proposal.parameters ?? proposal.params ?? {}),
       transactionHash: null,
       chainId: currentChainId(), // BNB mainnet (56) by default
       gasUsed: null,
@@ -124,6 +156,38 @@ export class GenericExecutionEngine implements ExecutionEngineInterface {
       const failed: Execution = { ...execution, status: 'FAILED', errorCode: ErrorCode.SESSION_REVOKED };
       await this.deps.persistExecution(failed);
       throw new BANError(ErrorCode.SESSION_REVOKED, `Session ${context.session.sessionId} is not ACTIVE`, { correlationId: context.correlationId });
+    }
+
+    // ------------------------------------------------------------------
+    // 2b) EIP-7702 authorization gate — user-funds jobs ONLY (update-v3 §10/§12)
+    // ------------------------------------------------------------------
+    const requiresUserFunds = Boolean(context.job?.requiresUserFunds);
+    if (requiresUserFunds) {
+      if (!this.deps.authorization) {
+        const failed: Execution = { ...execution, status: 'FAILED', errorCode: ErrorCode.POLICY_DENIED };
+        await this.deps.persistExecution(failed);
+        throw new BANError(ErrorCode.POLICY_DENIED, 'Job requires user-funds authorization (EIP-7702) but no authorization provider is configured; failing closed', { correlationId: context.correlationId });
+      }
+      const resolution = await this.deps.authorization.resolve(proposal, context);
+      if (resolution.mode !== 'EIP7702' || resolution.permissionStatus !== 'ACTIVE') {
+        const failed: Execution = { ...execution, status: 'FAILED', errorCode: ErrorCode.POLICY_DENIED };
+        await this.deps.persistExecution(failed);
+        this.logger.error('execution_authorization_denied', {
+          executionId,
+          mode: resolution.mode,
+          permissionStatus: resolution.permissionStatus ?? 'none',
+          correlationId: context.correlationId,
+        });
+        throw new BANError(ErrorCode.POLICY_DENIED, `Job requires an ACTIVE EIP-7702 authorization (got ${resolution.mode}/${resolution.permissionStatus ?? 'none'}); failing closed`, { correlationId: context.correlationId });
+      }
+      this.logger.info('execution_authorization_ok', {
+        executionId,
+        mode: 'EIP7702',
+        permissionId: resolution.permissionId,
+        correlationId: context.correlationId,
+      });
+    } else {
+      this.logger.debug('execution_authorization_not_required', { executionId, correlationId: context.correlationId });
     }
 
     // ------------------------------------------------------------------
