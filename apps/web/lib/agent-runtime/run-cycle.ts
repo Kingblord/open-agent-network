@@ -11,6 +11,7 @@ import type {
   Execution,
   Position,
   Session,
+  Observation,
 } from '@ban/schemas';
 import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import {
@@ -83,6 +84,8 @@ export interface RunCycleOptions {
   requiresUserFunds?: boolean;
   /** Task-derived strategy config (grid bounds etc.) threaded into the strategy so user params actually drive observe(). */
   strategyConfig?: Record<string, unknown>;
+  /** The USER's personal wallet address (EOA) — used to enrich observations with user's positions */
+  userWalletAddress?: string;
 }
 
 async function getSessionForAgent(agentId: string): Promise<Session | null> {
@@ -218,17 +221,25 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     const strategy: import('@ban/agent-core').StrategyEngine =
       opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig));
     const observations = await strategy.observe(agent, correlationId);
+
+    // Enrich observations with user's personal protocol positions (if provided).
+    // This is what lets the AI see the USER's wallet state — Venus deposits,
+    // Aave positions, LP positions, token balances — not just the agent's.
+    const enrichedObs = opts.userWalletAddress
+      ? await enrichObservationsWithUserPositions(observations, opts.userWalletAddress, agent)
+      : observations;
+
     await persistAuditEvent({
       type: 'AGENT_OBSERVED',
       correlationId,
       agentId,
       userId,
-      detail: { count: observations.length, strategyId: agent.strategyId },
+      detail: { count: enrichedObs.length, strategyId: agent.strategyId },
     });
 
     // 3) Decide (inside strategy, via injected brain). Re-validated downstream.
     let proposal: ActionProposal | null = null;
-    for (const obs of observations) {
+    for (const obs of enrichedObs) {
       const resolved = await strategy.decide(obs, agent, {
         onDecision: (decision) => {
           // Persist the AI's REAL reasoning before policy/proposal — this is what
@@ -472,6 +483,126 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     logger.error('agent_cycle_failed', { agentId, correlationId }, err);
     return { ok: false, reason: `cycle_error:${code}: ${sanitizeErrorMessage(message)}`, code };
   }
+}
+
+/**
+ * Enrich observations with the USER's personal wallet protocol state.
+ *
+ * Every strategy observes general market data (prices, yields, pools). This
+ * function adds the USER's personal on-chain positions as a supplemental
+ * observation so the AI can see the user's actual wallet state — Venus
+ * deposits, Aave positions, LP positions, and token balances — regardless
+ * of which strategy is running.
+ *
+ * The result is appended alongside the strategy's own observations. The AI
+ * receives BOTH its strategy-specific data AND the user's positions, so it
+ * can make informed decisions about the user's actual DeFi state.
+ */
+async function enrichObservationsWithUserPositions(
+  observations: Observation[],
+  userWalletAddress: string,
+  agent: Agent,
+): Promise<Observation[]> {
+  const enriched = [...observations];
+  const dataProvider = process.env.BAN_LIVE_DATA === '1'
+    ? LiveDataProvider.instance()
+    : DevDataProvider.instance();
+
+  // 1) Token balances (BNB + core assets)
+  const balances: Record<string, string> = {};
+  try {
+    const bnb = await dataProvider.chain.getTokenBalance({ token: 'BNB', address: userWalletAddress });
+    balances.BNB = bnb.balance;
+  } catch { /* skip */ }
+  for (const token of ['USDT', 'USDC', 'WBNB']) {
+    try {
+      const t = await dataProvider.chain.getTokenBalance({ token, address: userWalletAddress });
+      balances[token] = t.balance;
+    } catch { /* skip */ }
+  }
+
+  if (Object.keys(balances).length > 0) {
+    enriched.push({
+      id: `user_balances_${Date.now()}`,
+      type: 'user_balances',
+      agentId: agent.id,
+      data: {
+        wallet: userWalletAddress,
+        balances,
+        note: 'User wallet token balances at observation time',
+      },
+      observedAt: new Date().toISOString(),
+    } as unknown as Observation);
+  }
+
+  // 2) Venus lending positions (user's personal deposits)
+  try {
+    const venus = await dataProvider.lending.getLendingPosition(userWalletAddress, 'venus');
+    if (venus && BigInt(venus.collateral) > 0n) {
+      enriched.push({
+        id: `user_venus_${Date.now()}`,
+        type: 'user_protocol_position',
+        agentId: agent.id,
+        data: {
+          protocol: 'venus',
+          wallet: userWalletAddress,
+          collateralUsd: venus.collateral,
+          borrowedUsd: venus.borrowed,
+          healthFactor: venus.healthFactor,
+          liquidationThreshold: venus.liquidationThreshold,
+          ltv: venus.ltv,
+          note: 'User Venus lending position at observation time',
+        },
+        observedAt: new Date().toISOString(),
+      } as unknown as Observation);
+    }
+  } catch { /* skip */ }
+
+  // 3) Aave V3 positions (user's personal deposits)
+  try {
+    const aave = await dataProvider.lending.getLendingPosition(userWalletAddress, 'aave');
+    if (aave && BigInt(aave.collateral) > 0n) {
+      enriched.push({
+        id: `user_aave_${Date.now()}`,
+        type: 'user_protocol_position',
+        agentId: agent.id,
+        data: {
+          protocol: 'aave',
+          wallet: userWalletAddress,
+          collateralUsd: aave.collateral,
+          borrowedUsd: aave.borrowed,
+          healthFactor: aave.healthFactor,
+          liquidationThreshold: aave.liquidationThreshold,
+          ltv: aave.ltv,
+          note: 'User Aave V3 lending position at observation time',
+        },
+        observedAt: new Date().toISOString(),
+      } as unknown as Observation);
+    }
+  } catch { /* skip */ }
+
+  // 4) Lista positions (user's personal deposits)
+  try {
+    const lista = await dataProvider.lending.getLendingPosition(userWalletAddress, 'lista');
+    if (lista && BigInt(lista.collateral) > 0n) {
+      enriched.push({
+        id: `user_lista_${Date.now()}`,
+        type: 'user_protocol_position',
+        agentId: agent.id,
+        data: {
+          protocol: 'lista',
+          wallet: userWalletAddress,
+          collateralUsd: lista.collateral,
+          borrowedUsd: lista.borrowed,
+          healthFactor: lista.healthFactor,
+          note: 'User Lista lending position at observation time',
+        },
+        observedAt: new Date().toISOString(),
+      } as unknown as Observation);
+    }
+  } catch { /* skip */ }
+
+  return enriched;
 }
 
 // ---------------------------------------------------------------------------
