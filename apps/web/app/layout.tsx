@@ -9,7 +9,7 @@ import { WalletPromptModal } from '@/components/wallet-prompt-modal'
 import { ThemeInit } from '@/components/theme-init'
 
 export const metadata: Metadata = {
-  title: 'Open Agent Network',
+  title: 'BAN — BNB Agent Network | Smart Money Marketplace',
   description: 'Hire and deploy AI agents on the decentralized network',
   generator: 'v0.app',
   icons: {

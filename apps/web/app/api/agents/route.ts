@@ -177,6 +177,7 @@ export async function GET(request: NextRequest) {
     const pageRaw = Number(request.nextUrl.searchParams.get('page') ?? '1');
     const page =
       Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1;
+    const sourceFilter = request.nextUrl.searchParams.get('source') || undefined;
 
     const agents = await agentRegistry.list({ ownerId: requestedOwnerId, status, limit: MAX_LIMIT });
 
@@ -196,27 +197,27 @@ export async function GET(request: NextRequest) {
       agents.filter((a) => a.status === 'ACTIVE'),
     ).map(toPublicAgent);
 
-    // ERC-8004 merge (public marketplace only): BAN-native listings are the
-    // SAME four bots as the authoritative registry agents but under
-    // ERC-8004 ids (ban-* vs agent_*) — match them by strategyId (the
-    // stable bot-kind link) and skip, so we never render 8 cards for 4
-    // agents. External ERC-8004 agents (incl. live-scanned) keep their
-    // distinct identity and are appended unless they collide on exact id.
+    // ERC-8004 merge: BAN-native listings match by strategyId and are skipped
+    // to avoid duplicates. External ERC-8004 agents keep their distinct identity.
     const banIds = new Set(publicAgents.map((a) => String(a.id).toLowerCase()));
     const erc8004Listings = erc8004Registry.listAll()
       .filter((l) => {
         if (l.source === 'BAN_NATIVE') {
           return !publicAgents.some(
-            (a) =>
-              String(a.strategyId ?? '').toLowerCase() ===
-              String(l.strategyId ?? '').toLowerCase(),
+            (a) => String(a.strategyId ?? '').toLowerCase() === String(l.strategyId ?? '').toLowerCase(),
           );
         }
         return !banIds.has(l.id.toLowerCase());
       })
       .map(erc8004ToPublicAgent);
 
-    const fullPayload = [...publicAgents, ...erc8004Listings];
+    // Source filter: ?source=erc8004 returns only external agents
+    let fullPayload: Record<string, unknown>[];
+    if (sourceFilter === 'erc8004') {
+      fullPayload = erc8004Listings.filter((a) => a.source === 'EXTERNAL');
+    } else {
+      fullPayload = [...publicAgents, ...erc8004Listings];
+    }
     const total = fullPayload.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
