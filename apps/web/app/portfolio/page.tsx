@@ -161,166 +161,206 @@ export default function PortfolioPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-24">
-      <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between">
-        <h2 className="text-[22px] font-black text-[#F0B90B] tracking-wide">PORTFOLIO</h2>
-      </header>
-
-      {/* Wallet Balances */}
-      {isConnected && address && balances.length > 0 && (
-        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Wallet</span>
-            <span className="text-[10px] font-mono text-muted-foreground">{address.slice(0,6)}...{address.slice(-4)}</span>
-          </div>
-          <div className="space-y-2">
-            {balances.map(b => (
-              <div key={b.token} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-[#F0B90B]/20 flex items-center justify-center text-[10px] font-black text-[#F0B90B]">{b.token[0]}</span>
-                  <span className="text-sm font-bold text-foreground">{b.token}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-foreground">{parseFloat(b.balance).toFixed(b.token === 'BNB' ? 4 : 2)}</p>
-                  <p className="text-[10px] text-muted-foreground">${b.usdValue.toFixed(2)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Protocol Positions (Venus, Aave, PancakeSwap LP) */}
-      {isConnected && address && protocolPositions.length > 0 && (
-        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Protocol Positions</h3>
-          <div className="space-y-2">
-            {protocolPositions.map((p, i) => (
-              <div key={i} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border">
-                <div>
-                  <p className="text-sm font-bold text-foreground uppercase">{p.protocol}</p>
-                  <p className="text-[10px] text-muted-foreground">{'token' in p ? p.token : ''} {p.protocol === 'aave' ? `HF: ${(p as any).healthFactor.toFixed(2)}` : ''}</p>
-                </div>
-                <div className="text-right">
-                  {p.protocol === 'venus' && <p className="text-sm font-black text-emerald-400">{(p as any).supplied} {(p as any).token}</p>}
-                  {p.protocol === 'aave' && <><p className="text-sm font-black text-emerald-400">${parseFloat((p as any).collateral).toFixed(2)}</p><p className="text-[10px] text-red-400">Debt: ${parseFloat((p as any).debt).toFixed(2)}</p></>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* PancakeSwap LP Positions */}
-      {isConnected && address && lpCount > 0 && (
-        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">PancakeSwap LP Positions</h3>
-          <p className="text-sm font-black text-[#F0B90B]">{lpCount} active position{lpCount > 1 ? 's' : ''}</p>
-        </div>
-      )}
-
-      {/* Total Value */}
-      <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-        <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Total Value</span>
-        <p className="text-[40px] font-black leading-none text-foreground mt-2">
-          {totalUsd > 0
-            ? `$${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : '—'}
-        </p>
-      </div>
-
-      {/* Agent Allocations */}
-      {allocations.length > 0 && (
-        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-1">Active Allocations</h3>
-          <p className="text-[10px] text-muted-foreground mb-4">Set amounts to deposit BNB into each agent&apos;s wallet</p>
-          <div className="space-y-3">
-            {allocations.map((a, i) => {
-              const permAgentId = a.agentId;
-              return (
-                <div key={`${permAgentId}-${i}`} className="bg-muted/50 rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="text-sm font-bold text-foreground">{permAgentId.slice(0, 20)}...</p>
-                      <p className="text-[10px] text-muted-foreground">{a.spend.asset} &middot; {a.status} &middot; {parseFloat(a.spend.used || '0').toFixed(2)} used</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-[#F0B90B]">{parseFloat(a.spend.spendLimit).toFixed(2)} {a.spend.asset}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={allocationAmounts[permAgentId] || ''}
-                        onChange={(e) => setAllocationAmounts(prev => ({ ...prev, [permAgentId]: e.target.value }))}
-                        placeholder="Amount in BNB"
-                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-[#F0B90B] outline-none"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const amt = allocationAmounts[permAgentId];
-                        if (!amt || Number(amt) <= 0) return;
-                        // Navigate to the agent detail page with deposit pre-filled
-                        router.push(`/my-agents/${permAgentId}?deposit=${amt}`);
-                      }}
-                      disabled={!allocationAmounts[permAgentId] || Number(allocationAmounts[permAgentId]) <= 0}
-                      className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase rounded tracking-wider hover:bg-yellow-400 transition disabled:opacity-50 shrink-0"
-                    >
-                      DEPOSIT
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Positions */}
-      <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-        <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Positions</h3>
-        {loading ? <p className="text-xs text-muted-foreground">Loading...</p> : positions.length === 0 ? (
-          <div className="text-center py-4">
-            <p className="text-sm font-black text-muted-foreground mb-1">No positions</p>
-            <p className="text-xs text-muted-foreground">On-chain positions appear after BAN records them.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {positions.map(p => (
-              <button key={p.agentId} onClick={() => router.push(`/my-agents/${p.agentId}`)}
-                className="w-full flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border hover:border-[#F0B90B]/50 transition">
-                <div>
-                  <p className="text-sm font-bold text-foreground">{p.name}</p>
-                  <p className="text-[10px] text-muted-foreground font-mono">{p.agentId.slice(0,12)}...</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-[#F0B90B]">${p.capitalUsd.toFixed(2)}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Performance */}
-      <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-        <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Performance</h3>
-        {loading ? <p className="text-xs text-muted-foreground">Loading...</p> : (
-          <>
-            <div className="flex justify-between mb-3">
-              <div className="text-center flex-1"><p className="text-xs text-muted-foreground font-bold mb-1">Confirmed</p><p className="text-lg font-black text-foreground">{confirmed}</p></div>
-              <div className="text-center flex-1"><p className="text-xs text-muted-foreground font-bold mb-1">Failed</p><p className="text-lg font-black text-red-400">{failed}</p></div>
-              <div className="text-center flex-1"><p className="text-xs text-muted-foreground font-bold mb-1">Success</p><p className="text-lg font-black text-[#F0B90B]">{successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}</p></div>
-              <div className="text-center flex-1"><p className="text-xs text-muted-foreground font-bold mb-1">Gas</p><p className="text-lg font-black text-foreground font-mono">{feesBnb ?? '—'}</p></div>
+    <div className="min-h-screen dark:bg-background dark:text-foreground bg-white text-black font-sans antialiased transition-colors duration-200">
+      <div className="pb-24">
+        <header className="dark:bg-background bg-white px-5 pt-6 pb-4 flex items-center justify-between border-b dark:border-[#1A1A1A] border-gray-200">
+          <div>
+            <h1 className="text-[28px] font-black leading-none tracking-tight text-[#F0B90B]">PORTFOLIO</h1>
+            <div className="text-[10px] font-bold leading-tight text-[#F0B90B] tracking-wider mt-0.5">
+              <span>CAPITAL</span><br /><span>OVERVIEW</span>
             </div>
-            {positions.length > 0 && <div className="pt-3 border-t border-border"><p className="text-[10px] font-black text-muted-foreground tracking-widest uppercase mb-2">P&amp;L</p>{positions.map(p => <p key={p.agentId} className="text-xs text-foreground mb-1">{p.name}: ${p.capitalUsd.toFixed(2)} managed</p>)}</div>}
-          </>
+          </div>
+          {isConnected && address && (
+            <span className="text-[10px] font-mono dark:text-muted-foreground text-muted-foreground">{address.slice(0,6)}...{address.slice(-4)}</span>
+          )}
+        </header>
+
+        {/* Total Value — yellow hero card */}
+        <section className="bg-[#F0B90B] px-5 pt-5 pb-6 w-full">
+          <div className="flex items-start justify-between mb-2">
+            <span className="text-[10px] font-black text-black tracking-widest uppercase">Total Value</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="black">
+              <rect x="2" y="2" width="5" height="5" /><rect x="9.5" y="2" width="5" height="5" /><rect x="17" y="2" width="5" height="5" />
+              <rect x="2" y="9.5" width="5" height="5" /><rect x="9.5" y="9.5" width="5" height="5" /><rect x="17" y="9.5" width="5" height="5" />
+            </svg>
+          </div>
+          <p className="text-[80px] font-black leading-[0.85] text-black">
+            {totalUsd > 0
+              ? `$${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '—'}
+          </p>
+          <p className="text-sm font-black text-black mt-2">
+            {totalUsd > 0 ? 'Assets under management' : 'No assets tracked yet'}
+          </p>
+
+          {/* Wallet Balances grid */}
+          {isConnected && address && balances.length > 0 && (
+            <div className="grid grid-cols-3 gap-3 border-t border-black/30 pt-4 mt-4">
+              {balances.map(b => (
+                <div key={b.token}>
+                  <p className="text-[10px] font-black text-black/70 tracking-widest uppercase mb-1">{b.token}</p>
+                  <p className="text-lg font-black leading-none text-black">{parseFloat(b.balance).toFixed(b.token === 'BNB' ? 4 : 2)}</p>
+                  <p className="text-[10px] font-bold text-black/60 mt-0.5">${b.usdValue.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Protocol Positions */}
+        {isConnected && address && protocolPositions.length > 0 && (
+          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Protocol Positions</span>
+              {lpCount > 0 && <span className="text-[10px] font-black text-[#F0B90B]">{lpCount} LP</span>}
+            </div>
+            <div className="space-y-3">
+              {protocolPositions.map((p, i) => (
+                <div key={i} className="flex items-center justify-between dark:bg-background/40 bg-white/60 rounded-lg p-3 border dark:border-border border-gray-200">
+                  <div>
+                    <p className="text-sm font-bold dark:text-foreground text-black uppercase">{p.protocol}</p>
+                    <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">
+                      {'token' in p && p.token ? p.token : ''}
+                      {'healthFactor' in p && typeof p.healthFactor === 'number' ? ` HF: ${p.healthFactor.toFixed(2)}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    {'supplied' in p && typeof p.supplied === 'string' && (
+                      <p className="text-sm font-black text-emerald-400">{p.supplied} {p.token}</p>
+                    )}
+                    {'collateral' in p && typeof p.collateral === 'string' && (
+                      <>
+                        <p className="text-sm font-black text-emerald-600">${parseFloat(p.collateral).toFixed(2)}</p>
+                        {'debt' in p && typeof p.debt === 'string' && parseFloat(p.debt) > 0 && (
+                          <p className="text-[10px] text-red-400">Debt: ${parseFloat(p.debt).toFixed(2)}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
+
+        {/* Agent Allocations */}
+        {allocations.length > 0 && (
+          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Active Allocations</span>
+              <span className="text-[10px] font-black text-[#F0B90B]">{allocations.length} active</span>
+            </div>
+            <div className="space-y-3">
+              {allocations.map((a, i) => {
+                const permAgentId = a.agentId;
+                return (
+                  <div key={`${permAgentId}-${i}`} className="dark:bg-background/40 bg-white/60 rounded-lg border dark:border-border border-gray-200 p-3">
+                    <button onClick={() => router.push(`/my-agents/${permAgentId}`)} className="w-full flex items-center justify-between mb-2">
+                      <div className="text-left">
+                        <p className="text-sm font-bold dark:text-foreground text-black">{permAgentId.slice(0, 20)}...</p>
+                        <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">{a.spend.asset} &middot; {a.status} &middot; {parseFloat(a.spend.used || '0').toFixed(2)} used</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-[#F0B90B]">{parseFloat(a.spend.spendLimit).toFixed(2)} {a.spend.asset}</p>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-2 border-t dark:border-border border-gray-200 pt-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={allocationAmounts[permAgentId] || ''}
+                          onChange={(e) => setAllocationAmounts(prev => ({ ...prev, [permAgentId]: e.target.value }))}
+                          placeholder="Amount BNB"
+                          className="w-full dark:bg-background bg-white border dark:border-border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono dark:text-foreground text-black focus:border-[#F0B90B] outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const amt = allocationAmounts[permAgentId];
+                          if (amt && Number(amt) > 0) router.push(`/my-agents/${permAgentId}?deposit=${amt}`);
+                        }}
+                        disabled={!allocationAmounts[permAgentId] || Number(allocationAmounts[permAgentId]) <= 0}
+                        className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase rounded tracking-wider hover:bg-yellow-400 transition disabled:opacity-50 shrink-0"
+                      >
+                        DEPOSIT
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Positions */}
+        <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Positions</span>
+          </div>
+          {loading ? (
+            <p className="text-xs text-muted-foreground py-2">Loading...</p>
+          ) : positions.length === 0 ? (
+            <div className="py-2">
+              <p className="text-sm font-black text-muted-foreground mb-1">No positions</p>
+              <p className="text-xs dark:text-muted-foreground text-muted-foreground">On-chain positions appear after BAN agents execute.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {positions.map(p => (
+                <button key={p.agentId} onClick={() => router.push(`/my-agents/${p.agentId}`)}
+                  className="w-full flex items-center justify-between dark:bg-background/40 bg-white/60 rounded-lg p-3 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 transition">
+                  <div className="text-left">
+                    <p className="text-sm font-bold dark:text-foreground text-black">{p.name}</p>
+                    <p className="text-[10px] dark:text-muted-foreground text-muted-foreground font-mono">{p.agentId.slice(0,12)}...</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-[#F0B90B]">${p.capitalUsd.toFixed(2)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Performance */}
+        <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
+          <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase block mb-4">Performance</span>
+          {loading ? (
+            <p className="text-xs text-muted-foreground">Loading...</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Confirmed</p>
+                  <p className="text-xl font-black leading-none dark:text-foreground text-black">{confirmed}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Failed</p>
+                  <p className="text-xl font-black leading-none text-red-400">{failed}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Success</p>
+                  <p className="text-xl font-black leading-none text-[#F0B90B]">{successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Gas</p>
+                  <p className="text-xl font-black leading-none dark:text-foreground text-black font-mono">{feesBnb ?? '—'}</p>
+                </div>
+              </div>
+              {positions.length > 0 && (
+                <div className="mt-4 pt-3 border-t dark:border-border border-gray-200">
+                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-2">P&L</p>
+                  {positions.map(p => (
+                    <p key={p.agentId} className="text-xs dark:text-foreground text-black mb-1">{p.name}: ${p.capitalUsd.toFixed(2)} managed</p>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <MobileBottomNav />
