@@ -60,7 +60,7 @@ export default function AgentsMarketplacePage() {
   const loadExternalAgents = useCallback(async (pageToLoad: number) => {
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ page: String(pageToLoad), limit: String(PAGE_SIZE) });
+      const qs = new URLSearchParams({ page: String(pageToLoad), limit: String(PAGE_SIZE), source: 'erc8004' });
       const res = await fetch(`/api/agents?${qs.toString()}`);
       if (res.ok) {
         const data = (await res.json()) as AgentsResponse;
