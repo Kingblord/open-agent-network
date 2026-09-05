@@ -21,6 +21,9 @@ const BSC_CHAIN = {
   },
 } as const;
 
+/** Minimum BNB balance the agent must retain for gas ($0.50 worth). */
+const MIN_GAS_USD = 0.50;
+
 // Minimal ERC-20 ABI for transfer
 const ERC20_ABI = [
   {
@@ -151,12 +154,21 @@ export async function POST(
       // Simple BNB transfer
       const value = parseEther(rawAmount as `${number}`);
 
-      // Check agent wallet has enough BNB (balance + gas)
+      // Check agent wallet has enough BNB (balance + gas reserve)
       const balance = await publicClient.getBalance({ address: account.address });
-      const estimatedGas = 21000n;
-      const totalCost = value + estimatedGas * 3_000_000_000n; // 3 gwei
+      // Fetch BNB price to enforce $0.50 minimum gas reserve
+      let bnbPriceUsd = 600;
+      try {
+        const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd');
+        const priceJson = await priceRes.json() as { binancecoin?: { usd?: number } };
+        if (priceJson?.binancecoin?.usd) bnbPriceUsd = priceJson.binancecoin.usd;
+      } catch { /* use fallback price */ }
+      const minReserveWei = BigInt(Math.floor((MIN_GAS_USD / bnbPriceUsd) * 1e18));
+      const estimatedGas = 21000n * 3_000_000_000n; // 3 gwei
+      const totalCost = value + estimatedGas + minReserveWei;
       if (balance < totalCost) {
-        return errorResponse(409, `Agent wallet only has ${Number(balance) / 1e18} BNB — insufficient for ${rawAmount} BNB + gas. Top up the agent wallet first.`, {
+        const available = Number(balance - estimatedGas - minReserveWei) / 1e18;
+        return errorResponse(409, `Agent wallet must keep ~$${MIN_GAS_USD.toFixed(2)} BNB reserve for gas. Only ${available > 0 ? available.toFixed(6) : '0'} BNB withdrawable.`, {
           code: ErrorCode.POLICY_DENIED,
           correlationId: getCorrelationId(),
         });
@@ -173,12 +185,19 @@ export async function POST(
       const decimals = 18;
       const amountWei = parseUnits(rawAmount as `${number}`, decimals);
 
-      // Check agent wallet has enough BNB for gas
+      // Check agent wallet has enough BNB for gas + reserve
       const bnbBalance = await publicClient.getBalance({ address: account.address });
-      const estimatedGas = 60000n;
-      const gasCost = estimatedGas * 3_000_000_000n;
+      let bnbPriceUsd = 600;
+      try {
+        const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd');
+        const priceJson = await priceRes.json() as { binancecoin?: { usd?: number } };
+        if (priceJson?.binancecoin?.usd) bnbPriceUsd = priceJson.binancecoin.usd;
+      } catch { /* use fallback price */ }
+      const minReserveWei = BigInt(Math.floor((MIN_GAS_USD / bnbPriceUsd) * 1e18));
+      const estimatedGas = 60000n * 3_000_000_000n;
+      const gasCost = estimatedGas + minReserveWei;
       if (bnbBalance < gasCost) {
-        return errorResponse(409, `Agent wallet only has ${Number(bnbBalance) / 1e18} BNB — insufficient for gas. Top up the agent wallet with BNB first.`, {
+        return errorResponse(409, `Agent wallet only has ${Number(bnbBalance) / 1e18} BNB — must keep ~$${MIN_GAS_USD.toFixed(2)} reserve for gas.`, {
           code: ErrorCode.PROVIDER_UNAVAILABLE,
           correlationId: getCorrelationId(),
         });

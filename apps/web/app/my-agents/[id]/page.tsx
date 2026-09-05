@@ -1046,7 +1046,9 @@ export default function MyAgentDetailPage() {
               </div>
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                The agent can only use funds in this dedicated wallet. Top up BNB here so it can pay gas and execute within its session limits.
+                Minimum <strong className="text-foreground">$0.50 BNB reserve</strong> kept for gas. {balanceBnb != null && bnbUsdPrice != null
+                  ? `Available: ${Math.max(0, balanceBnb - (0.5 / bnbUsdPrice)).toFixed(6)} BNB (${((balanceBnb - (0.5 / bnbUsdPrice)) * (bnbUsdPrice ?? 0)).toFixed(2)} USD)`
+                  : ''} Top up BNB here so it can pay gas and execute within its session limits.
               </p>
             </>
           ) : (
