@@ -593,12 +593,6 @@ export default function MyAgentDetailPage() {
     setShowTaskConfirm(false);
     setTaskLoading(true);
     try {
-      if (!activeAccount?.address) {
-        setTaskError('Connect your wallet.');
-        setTaskLoading(false);
-        return;
-      }
-
       if (taskConfirmData.depositToken === 'BNB') {
         // Send BNB to agent wallet
         let value: bigint;
@@ -843,12 +837,6 @@ export default function MyAgentDetailPage() {
         setTopupLoading(false);
         return;
       }
-      if (!activeAccount?.address) {
-        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet first — the Thirdweb popup will open.' });
-        setTopupLoading(false);
-        return;
-      }
-
       // 1) Server-side validation + honest deposit instruction (intent record).
       const response = await fetch('/api/developers/topup', {
         method: 'POST',
