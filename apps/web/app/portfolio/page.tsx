@@ -58,12 +58,16 @@ interface Permission {
   status: string;
 }
 
-interface AgentBasic {
-  id: string;
+interface AgentAllocation {
+  agentId: string;
   name: string;
-  status: string;
-  strategyId?: string;
-  walletAddress?: string;
+  walletAddress: string;
+  bnbBalance: number;
+  bnbUsd: number;
+  usdtBalance: number;
+  usdcBalance: number;
+  totalUsd: number;
+  hasWallet: boolean;
 }
 
 export default function PortfolioPage() {
@@ -76,7 +80,7 @@ export default function PortfolioPage() {
   const [bnbPrice, setBnbPrice] = useState(600);
   const [totalUsd, setTotalUsd] = useState(0);
   const [positions, setPositions] = useState<{ agentId: string; name: string; capitalUsd: number }[]>([]);
-  const [allocations, setAllocations] = useState<Permission[]>([]);
+  const [allocations, setAllocations] = useState<AgentAllocation[]>([]);
   const [allocationAmounts, setAllocationAmounts] = useState<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(0);
   const [failed, setFailed] = useState(0);
@@ -122,12 +126,13 @@ export default function PortfolioPage() {
         const mine: Agent[] = res.ok ? (await res.json()).agents || [] : [];
         let conf = 0, fail = 0, srSum = 0, srCnt = 0, fees = 0n;
         const posList: { agentId: string; name: string; capitalUsd: number }[] = [];
-        const allocList: Permission[] = [];
+        const allocList: AgentAllocation[] = [];
 
         for (const a of mine.slice(0, 20)) {
-          const [perf, perm] = await Promise.all([
+          const [perf, perm, balanceRes] = await Promise.all([
             fetch(`/api/agents/${a.id}/performance`).then(r => r.ok ? r.json() : null).catch(() => null),
             fetch(`/api/permissions?agentId=${encodeURIComponent(a.id)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(`/api/agents/${a.id}/balance`).then(r => r.ok ? r.json() : null).catch(() => null),
           ]);
           const pd = perf?.performance as PerformanceData | undefined;
           if (pd) {
@@ -136,16 +141,28 @@ export default function PortfolioPage() {
             if (pd.confirmedCount > 0) { srSum += parseFloat(pd.successRate); srCnt++; }
             if (pd.hasPositions && parseFloat(pd.capitalManagedUsd) > 0) posList.push({ agentId: a.id, name: a.name, capitalUsd: parseFloat(pd.capitalManagedUsd) });
           }
-          if (perm?.permissions) {
-            for (const p of perm.permissions) { if (p.status === 'ACTIVE') allocList.push(p); }
-          }
+
+          // Real agent wallet allocation
+          const bnbBal = balanceRes?.balanceBnb ? Number(balanceRes.balanceBnb) : 0;
+          const bnbUsdVal = bnbBal * (balanceRes?.usdPrice ?? bnbPrice);
+          allocList.push({
+            agentId: a.id,
+            name: a.name,
+            walletAddress: a.walletAddress ?? '',
+            bnbBalance: bnbBal,
+            bnbUsd: bnbUsdVal,
+            usdtBalance: 0,
+            usdcBalance: 0,
+            totalUsd: bnbUsdVal,
+            hasWallet: Boolean(a.walletAddress),
+          });
         }
         setConfirmed(conf); setFailed(fail);
         setSuccessRate(srCnt > 0 ? srSum / srCnt : null);
         setFeesBnb(fees > 0n ? (Number(fees) / 1e18).toFixed(4) : null);
         setPositions(posList);
         setAllocations(allocList);
-        setTotalUsd(prev => prev + posList.reduce((s, p) => s + p.capitalUsd, 0));
+        setTotalUsd(prev => prev + posList.reduce((s, p) => s + p.capitalUsd, 0) + allocList.reduce((s, a) => s + a.totalUsd, 0));
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
@@ -243,54 +260,58 @@ export default function PortfolioPage() {
           </div>
         )}
 
-        {/* Agent Allocations */}
+        {/* Agent Allocations — real wallet balances */}
         {allocations.length > 0 && (
           <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Active Allocations</span>
-              <span className="text-[10px] font-black text-[#F0B90B]">{allocations.length} active</span>
+              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Agent Allocations</span>
+              <span className="text-[10px] font-black text-[#F0B90B]">{allocations.filter(a => a.totalUsd > 0).length} funded</span>
             </div>
             <div className="space-y-3">
-              {allocations.map((a, i) => {
-                const permAgentId = a.agentId;
-                return (
-                  <div key={`${permAgentId}-${i}`} className="dark:bg-background/40 bg-white/60 rounded-lg border dark:border-border border-gray-200 p-3">
-                    <button onClick={() => router.push(`/my-agents/${permAgentId}`)} className="w-full flex items-center justify-between mb-2">
-                      <div className="text-left">
-                        <p className="text-sm font-bold dark:text-foreground text-black">{permAgentId.slice(0, 20)}...</p>
-                        <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">{a.spend.asset} &middot; {a.status} &middot; {parseFloat(a.spend.used || '0').toFixed(2)} used</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-black text-[#F0B90B]">{parseFloat(a.spend.spendLimit).toFixed(2)} {a.spend.asset}</p>
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-2 border-t dark:border-border border-gray-200 pt-2">
-                      <div className="relative flex-1">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={allocationAmounts[permAgentId] || ''}
-                          onChange={(e) => setAllocationAmounts(prev => ({ ...prev, [permAgentId]: e.target.value }))}
-                          placeholder="Amount BNB"
-                          className="w-full dark:bg-background bg-white border dark:border-border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono dark:text-foreground text-black focus:border-[#F0B90B] outline-none"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const amt = allocationAmounts[permAgentId];
-                          if (amt && Number(amt) > 0) router.push(`/my-agents/${permAgentId}?deposit=${amt}`);
-                        }}
-                        disabled={!allocationAmounts[permAgentId] || Number(allocationAmounts[permAgentId]) <= 0}
-                        className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase rounded tracking-wider hover:bg-yellow-400 transition disabled:opacity-50 shrink-0"
-                      >
-                        DEPOSIT
-                      </button>
+              {allocations.map((a) => (
+                <div key={a.agentId} className="dark:bg-background/40 bg-white/60 rounded-lg border dark:border-border border-gray-200 p-3">
+                  <button onClick={() => router.push(`/my-agents/${a.agentId}`)} className="w-full flex items-center justify-between mb-2">
+                    <div className="text-left">
+                      <p className="text-sm font-bold dark:text-foreground text-black">{a.name || a.agentId.slice(0, 20)}</p>
+                      <p className="text-[10px] dark:text-muted-foreground text-muted-foreground font-mono">{a.walletAddress ? `${a.walletAddress.slice(0,6)}...${a.walletAddress.slice(-4)}` : 'No wallet'}</p>
                     </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-[#F0B90B]">${a.totalUsd.toFixed(2)}</p>
+                      <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">{a.bnbBalance.toFixed(4)} BNB</p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 border-t dark:border-border border-gray-200 pt-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={allocationAmounts[a.agentId] || ''}
+                        onChange={(e) => setAllocationAmounts(prev => ({ ...prev, [a.agentId]: e.target.value }))}
+                        placeholder="Amount BNB"
+                        className="w-full dark:bg-background bg-white border dark:border-border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono dark:text-foreground text-black focus:border-[#F0B90B] outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = allocationAmounts[a.agentId];
+                        if (amt && Number(amt) > 0) router.push(`/my-agents/${a.agentId}?deposit=${amt}`);
+                      }}
+                      disabled={!allocationAmounts[a.agentId] || Number(allocationAmounts[a.agentId]) <= 0}
+                      className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase rounded tracking-wider hover:bg-yellow-400 transition disabled:opacity-50 shrink-0"
+                    >
+                      DEPOSIT
+                    </button>
                   </div>
-                );
-              })}
+                  {a.totalUsd > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                      <span className="text-[9px] text-muted-foreground">Funded · {a.bnbBalance.toFixed(4)} BNB (${a.bnbUsd.toFixed(2)})</span>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

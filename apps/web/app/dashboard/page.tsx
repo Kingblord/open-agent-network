@@ -113,6 +113,26 @@ export default function DashboardPage() {
       }
       events.sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime());
       setActivity(events.slice(0, 10));
+
+      // Fetch agent wallet balances for allocation display
+      const allocEntries: { agentId: string; name: string; totalUsd: number }[] = [];
+      let allocTotal = 0;
+      for (const a of mine.slice(0, 20)) {
+        try {
+          const r = await fetch(`/api/agents/${a.id}/balance`);
+          if (r.ok) {
+            const bd = await r.json();
+            const bnbBal = Number(bd.balanceBnb || 0);
+            const usdVal = bnbBal * (bd.usdPrice || 600);
+            if (usdVal > 0) {
+              allocEntries.push({ agentId: a.id, name: a.name, totalUsd: usdVal });
+              allocTotal += usdVal;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+      setAgentAllocations(allocEntries);
+      setAllocationTotalUsd(allocTotal);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
       setDataError('Failed to load your dashboard data.');
@@ -135,9 +155,11 @@ export default function DashboardPage() {
   const feesPresent = totalFeesWei > 0;
   const feesDisplay = feesPresent ? `${(totalFeesWei / 1e18).toFixed(4)} BNB` : '—';
 
-  // Portfolio value only when an agent has real positions. Otherwise honest empty.
+  // Portfolio value: agent-managed positions + agent wallet balances
   const anyRealPositions = agents.some((a) => performanceMap[a.id]?.hasPositions);
   const portfolioValueUsd = agents.reduce((sum, a) => sum + (Number(performanceMap[a.id]?.capitalManagedUsd || '0') || 0), 0);
+  const [agentAllocations, setAgentAllocations] = useState<{ agentId: string; name: string; totalUsd: number }[]>([]);
+  const [allocationTotalUsd, setAllocationTotalUsd] = useState(0);
 
   const timeAgo = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
@@ -256,13 +278,15 @@ export default function DashboardPage() {
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 4l2 2 2-2" /></svg>
             </button>
           </div>
-          {anyRealPositions ? (
+          {anyRealPositions || agentAllocations.length > 0 ? (
             <div className="flex items-end justify-between">
               <div>
                 <p className="text-[32px] font-black leading-none dark:text-foreground text-black">
-                  ${portfolioValueUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(portfolioValueUsd + allocationTotalUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-                <p className="text-sm font-bold text-[#F0B90B] mt-1">Active positions</p>
+                <p className="text-sm font-bold text-[#F0B90B] mt-1">
+                  {anyRealPositions ? `${agentAllocations.length} agents funded` : 'Active positions'}
+                </p>
               </div>
             </div>
           ) : (
