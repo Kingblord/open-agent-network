@@ -80,7 +80,7 @@ export function TransactionConfirmModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-[#F0B90B]/15 border border-[#F0B90B]/40 flex items-center justify-center shrink-0">
