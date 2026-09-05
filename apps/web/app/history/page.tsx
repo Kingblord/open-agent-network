@@ -274,35 +274,3 @@ export default function HistoryPage() {
     </div>
   );
 }
-                </div>
-              </div>
-            ))}
-
-          {!dataLoading && !loadError && filteredEvents.length === 0 && (
-            <div className="text-center py-12 bg-card rounded-xl border border-border">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-[#F0B90B] flex items-center justify-center">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="4" y="8" width="16" height="12" rx="2" />
-                  <circle cx="9" cy="13" r="1.5" fill="black" />
-                  <circle cx="15" cy="13" r="1.5" fill="black" />
-                  <path d="M10 17h4" />
-                  <line x1="12" y1="4" x2="12" y2="8" />
-                </svg>
-              </div>
-              <div className="text-foreground font-bold text-base mb-1">No activity found</div>
-              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                {activeFilter === 'TRANSACTIONS'
-                  ? 'No on-chain transaction events recorded yet. Transactions will appear once BAN submits executions for your agents.'
-                  : activeFilter === 'AGENTS'
-                  ? 'No agent action events recorded yet.'
-                  : 'Your agent activity and transactions will appear here.'}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <MobileBottomNav />
-    </div>
-  );
-}
