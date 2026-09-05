@@ -308,6 +308,12 @@ export default function MyAgentDetailPage() {
     status?: string;
     txHash?: string | null;
   } | null>(null);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawToken, setWithdrawToken] = useState<'BNB' | 'USDT' | 'USDC'>('BNB');
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawResult, setWithdrawResult] = useState<{ txHash: string; amount: string; token: string; to: string } | null>(null);
   const [balance, setBalance] = useState<{
     ok: boolean;
     address: string | null;
@@ -996,9 +1002,17 @@ export default function MyAgentDetailPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => { setWithdrawAmount(''); setWithdrawResult(null); setWithdrawError(null); setWithdrawOpen(true); }}
+                  disabled={!balanceBnb || balanceBnb <= 0}
+                  className="w-full bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-40"
+                >
+                  WITHDRAW
+                </button>
+                <button
+                  type="button"
                   onClick={() => fetchBalance(true)}
                   disabled={balanceLoading}
-                  className="w-full bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-[#F0B90B]/50 transition disabled:opacity-60"
+                  className="w-full col-span-2 bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-[#F0B90B]/50 transition disabled:opacity-60"
                 >
                   REFRESH
                 </button>
@@ -1612,6 +1626,145 @@ export default function MyAgentDetailPage() {
         onConfirm={handleTopupConfirm}
         onClose={() => setTopupOpen(false)}
       />
+
+      {/* WITHDRAW MODAL — withdraw funds from agent wallet to user */}
+      {withdrawOpen && (
+        <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-foreground uppercase tracking-wider">Withdraw Funds</h3>
+              <button type="button" onClick={() => setWithdrawOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Token</label>
+                <div className="flex gap-2">
+                  {(['BNB', 'USDT', 'USDC'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setWithdrawToken(t)}
+                      className={`px-4 py-2 text-xs font-black rounded border transition ${withdrawToken === t ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Amount</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-3 text-lg font-black text-foreground font-mono focus:border-[#F0B90B] outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">{withdrawToken}</span>
+                </div>
+              </div>
+
+              <div className="bg-background/40 border border-border rounded-lg p-3 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">From</span>
+                  <span className="font-mono text-[#F0B90B] font-black truncate ml-2 max-w-[200px]">{agent.walletAddress ?? '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">To (your wallet)</span>
+                  <span className="font-mono text-gray-200 font-black truncate ml-2 max-w-[200px]">{wallet.activeAddress ?? wallet.linkedAddress ?? '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Network</span>
+                  <span className="font-mono text-gray-200 font-black">BNB Smart Chain (56)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gas paid by</span>
+                  <span className="font-mono text-gray-200 font-black">Agent wallet (BNB)</span>
+                </div>
+              </div>
+
+              {withdrawError && (
+                <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3 py-2 text-xs text-red-300 leading-relaxed">
+                  {withdrawError}
+                </div>
+              )}
+
+              {withdrawResult ? (
+                <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+                    <span className="text-sm font-black text-emerald-400">Withdrawal Sent</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>{withdrawResult.amount} {withdrawResult.token} → {withdrawResult.to.slice(0, 6)}...{withdrawResult.to.slice(-4)}</p>
+                    <p className="font-mono text-[#F0B90B] break-all">{withdrawResult.txHash}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open(`https://bscscan.com/tx/${withdrawResult.txHash}`, '_blank')}
+                    className="w-full bg-[#1A1A1A] border border-border text-gray-300 text-xs font-black py-2.5 uppercase tracking-wider hover:border-[#F0B90B]/50"
+                  >
+                    View on BscScan
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawOpen(false)}
+                    disabled={withdrawLoading}
+                    className="flex-1 bg-[#222] text-foreground text-xs font-black py-3 uppercase tracking-wider disabled:opacity-60"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setWithdrawError(null);
+                      setWithdrawResult(null);
+                      const to = wallet.activeAddress ?? wallet.linkedAddress;
+                      if (!to) { setWithdrawError('Connect your wallet first'); return; }
+                      const amount = withdrawAmount.trim();
+                      if (!amount || Number(amount) <= 0) { setWithdrawError('Enter a valid amount'); return; }
+                      setWithdrawLoading(true);
+                      try {
+                        const res = await fetch(`/api/agents/${agent.id}/withdraw`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ to, amount, token: withdrawToken }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data?.ok) {
+                          setWithdrawError(data?.error || data?.message || 'Withdrawal failed');
+                          return;
+                        }
+                        setWithdrawResult({ txHash: data.txHash, amount: data.amount, token: data.token, to: data.to });
+                        fetchBalance(true);
+                        toast.success({ title: 'Withdrawal sent', description: `${amount} ${withdrawToken} withdrawn to your wallet.` });
+                      } catch (err) {
+                        setWithdrawError(err instanceof Error ? err.message : 'Withdrawal failed');
+                      } finally {
+                        setWithdrawLoading(false);
+                      }
+                    }}
+                    disabled={withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || (!wallet.activeAddress && !wallet.linkedAddress)}
+                    className="flex-1 bg-[#F0B90B] text-black text-xs font-black py-3 uppercase tracking-wider disabled:opacity-50"
+                  >
+                    {withdrawLoading ? 'SENDING...' : `WITHDRAW ${withdrawToken}`}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top-up instruction result */}
       {topupResult && (

@@ -53,8 +53,17 @@ interface PerformanceData {
 
 interface Permission {
   agentId: string;
+  id: string;
   spend: { spendLimit: string; used: string; asset: string };
   status: string;
+}
+
+interface AgentBasic {
+  id: string;
+  name: string;
+  status: string;
+  strategyId?: string;
+  walletAddress?: string;
 }
 
 export default function PortfolioPage() {
@@ -68,6 +77,7 @@ export default function PortfolioPage() {
   const [totalUsd, setTotalUsd] = useState(0);
   const [positions, setPositions] = useState<{ agentId: string; name: string; capitalUsd: number }[]>([]);
   const [allocations, setAllocations] = useState<Permission[]>([]);
+  const [allocationAmounts, setAllocationAmounts] = useState<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(0);
   const [failed, setFailed] = useState(0);
   const [successRate, setSuccessRate] = useState<number | null>(null);
@@ -222,21 +232,51 @@ export default function PortfolioPage() {
       {/* Agent Allocations */}
       {allocations.length > 0 && (
         <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
-          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Active Allocations</h3>
-          <div className="space-y-2">
-            {allocations.map((a, i) => (
-              <button key={`${a.agentId}-${i}`} onClick={() => router.push(`/my-agents/${a.agentId}`)}
-                className="w-full flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border hover:border-[#F0B90B]/50 transition">
-                <div>
-                  <p className="text-sm font-bold text-foreground">{a.agentId.slice(0, 20)}...</p>
-                  <p className="text-[10px] text-muted-foreground">{a.spend.asset} &middot; {a.status}</p>
+          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-1">Active Allocations</h3>
+          <p className="text-[10px] text-muted-foreground mb-4">Set amounts to deposit BNB into each agent&apos;s wallet</p>
+          <div className="space-y-3">
+            {allocations.map((a, i) => {
+              const permAgentId = a.agentId;
+              return (
+                <div key={`${permAgentId}-${i}`} className="bg-muted/50 rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-bold text-foreground">{permAgentId.slice(0, 20)}...</p>
+                      <p className="text-[10px] text-muted-foreground">{a.spend.asset} &middot; {a.status} &middot; {parseFloat(a.spend.used || '0').toFixed(2)} used</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-[#F0B90B]">{parseFloat(a.spend.spendLimit).toFixed(2)} {a.spend.asset}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={allocationAmounts[permAgentId] || ''}
+                        onChange={(e) => setAllocationAmounts(prev => ({ ...prev, [permAgentId]: e.target.value }))}
+                        placeholder="Amount in BNB"
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-[#F0B90B] outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const amt = allocationAmounts[permAgentId];
+                        if (!amt || Number(amt) <= 0) return;
+                        // Navigate to the agent detail page with deposit pre-filled
+                        router.push(`/my-agents/${permAgentId}?deposit=${amt}`);
+                      }}
+                      disabled={!allocationAmounts[permAgentId] || Number(allocationAmounts[permAgentId]) <= 0}
+                      className="bg-[#F0B90B] text-black text-xs font-black px-4 py-2 uppercase rounded tracking-wider hover:bg-yellow-400 transition disabled:opacity-50 shrink-0"
+                    >
+                      DEPOSIT
+                    </button>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-[#F0B90B]">{parseFloat(a.spend.spendLimit).toFixed(2)} {a.spend.asset}</p>
-                  <p className="text-[10px] text-muted-foreground">{parseFloat(a.spend.used || '0').toFixed(2)} used</p>
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
