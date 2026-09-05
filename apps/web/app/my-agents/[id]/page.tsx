@@ -9,7 +9,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { LoadingButton } from '@/components/ui/loading-button';
 import { TransactionConfirmModal } from '@/components/ui/transaction-confirm-modal';
 import { useSendTransaction, useActiveAccount } from 'thirdweb/react';
-import { parseEther } from 'viem';
+import { parseEther, encodeFunctionData, parseUnits } from 'viem';
 import { getThirdwebClient, bnbChainDef } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
@@ -298,6 +298,13 @@ export default function MyAgentDetailPage() {
   const [taskError, setTaskError] = useState<string | null>(null);
   const [gasUsd, setGasUsd] = useState('0.50');
   const [showGasEdit, setShowGasEdit] = useState(false);
+  const [showTaskConfirm, setShowTaskConfirm] = useState(false);
+  const [taskConfirmData, setTaskConfirmData] = useState<{
+    walletAddress: string;
+    amountBnb: string;
+    depositToken: string;
+    depositUsd: string;
+  } | null>(null);
   const [topupOpen, setTopupOpen] = useState(false);
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupAmount, setTopupAmount] = useState('0.01');
@@ -542,104 +549,153 @@ export default function MyAgentDetailPage() {
       setTaskError('Select at least one allowed token or protocol so the agent has bounded authority to act.');
       return;
     }
+
+    const depositUsd = sessionForm.depositUsd;
+    const depositToken = sessionForm.depositToken;
+    const hasDeposit = depositUsd && Number(depositUsd) > 0 && bnbUsdPrice != null;
+
+    if (hasDeposit) {
+      // Get topup instruction first to validate
+      const gasBnb = Number(gasUsd) / bnbUsdPrice;
+      const totalBnb = depositToken === 'BNB'
+        ? ((Number(depositUsd) / bnbUsdPrice) + gasBnb)
+        : gasBnb;
+
+      const topupRes = await fetch('/api/developers/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agent!.id, amountBnb: totalBnb }),
+      });
+      const topupData = await topupRes.json().catch(() => null);
+      if (!(topupRes.ok && topupData?.ok)) {
+        setTaskError(topupData?.error || 'Top-up failed');
+        return;
+      }
+
+      // Show confirmation modal before sending
+      setTaskConfirmData({
+        walletAddress: topupData.walletAddress,
+        amountBnb: totalBnb.toFixed(6),
+        depositToken,
+        depositUsd,
+      });
+      setShowTaskConfirm(true);
+      return;
+    }
+
+    // No deposit — create task directly
+    await executeCreateTask();
+  };
+
+  /** Execute deposit + create task after user confirms in modal */
+  const handleTaskConfirm = async () => {
+    if (!taskConfirmData) return;
+    setShowTaskConfirm(false);
     setTaskLoading(true);
     try {
-      // Step 1: If deposit is set, do the allocation FIRST before creating the task
-      const depositUsd = sessionForm.depositUsd;
-      const depositToken = sessionForm.depositToken;
-      const hasDeposit = depositUsd && Number(depositUsd) > 0 && bnbUsdPrice != null;
+      if (!activeAccount?.address) {
+        setTaskError('Connect your wallet.');
+        setTaskLoading(false);
+        return;
+      }
 
-      if (hasDeposit && depositToken === 'BNB') {
-        // Deposit BNB first — user must confirm in wallet before task is created
-        const gasBnb = Number(gasUsd) / bnbUsdPrice;
-        const totalBnb = ((Number(depositUsd) / bnbUsdPrice) + gasBnb);
-
-        // Get topup instruction
-        const topupRes = await fetch('/api/developers/topup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId: agent!.id, amountBnb: totalBnb }),
-        });
-        const topupData = await topupRes.json().catch(() => null);
-        if (!(topupRes.ok && topupData?.ok)) {
-          const msg = topupData?.error || 'Top-up failed';
-          setTaskError(msg);
-          setTaskLoading(false);
-          return;
-        }
-
-        // Send BNB from user's connected wallet
-        if (!activeAccount?.address) {
-          setTaskError('Connect your wallet first to fund the agent. The Thirdweb popup will open.');
-          setTaskLoading(false);
-          return;
-        }
+      if (taskConfirmData.depositToken === 'BNB') {
+        // Send BNB to agent wallet
         let value: bigint;
-        try { value = parseEther(totalBnb.toFixed(6) as `${number}`); }
+        try { value = parseEther(taskConfirmData.amountBnb as `${number}`); }
         catch { setTaskError('Invalid BNB amount'); setTaskLoading(false); return; }
 
         const txResult = await sendTransactionTx({
-          to: topupData.walletAddress,
+          to: taskConfirmData.walletAddress as `0x${string}`,
           value,
           chain: wallet.chain,
           client: thirdwebClient,
         });
         const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
         if (!txHash) {
-          setTaskError('Deposit was not confirmed on-chain. Task creation cancelled.');
+          setTaskError('Deposit was not confirmed. Task creation cancelled.');
           setTaskLoading(false);
           return;
         }
+      } else {
+        // USDT/USDC: send BNB gas first, then send token transfer
+        const gasBnb = (Number(gasUsd) / (bnbUsdPrice ?? 600)).toFixed(6);
+        if (Number(gasBnb) > 0) {
+          let gasValue: bigint;
+          try { gasValue = parseEther(gasBnb as `${number}`); }
+          catch { setTaskError('Invalid gas amount'); setTaskLoading(false); return; }
 
-        toast.success({
-          title: 'Agent funded',
-          description: `${totalBnb.toFixed(6)} BNB sent to agent wallet. Creating task now...`,
+          const gasResult = await sendTransactionTx({
+            to: taskConfirmData.walletAddress as `0x${string}`,
+            value: gasValue,
+            chain: wallet.chain,
+            client: thirdwebClient,
+          });
+          const gasHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
+          if (!gasHash) {
+            setTaskError('Gas deposit cancelled.');
+            setTaskLoading(false);
+            return;
+          }
+        }
+
+        // Send the token (USDT/USDC) via ERC-20 transfer
+        const token = taskConfirmData.depositToken;
+        const tokenAddr = token === 'USDT'
+          ? '0x55d398326f99059fF775485246999027B3197955'
+          : '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
+        const amountWei = parseUnits(taskConfirmData.depositUsd as `${number}`, 18);
+
+        // Encode ERC-20 transfer(to, amount)
+        const transferData = encodeFunctionData({
+          abi: [{
+            name: 'transfer',
+            type: 'function',
+            inputs: [
+              { name: 'to', type: 'address' },
+              { name: 'amount', type: 'uint256' },
+            ],
+            outputs: [{ name: '', type: 'bool' }],
+          }],
+          functionName: 'transfer',
+          args: [taskConfirmData.walletAddress as `0x${string}`, amountWei],
         });
-      } else if (hasDeposit && depositToken !== 'BNB') {
-        // For USDT/USDC: need BNB gas topup first, then user must send tokens separately
-        const gasBnb = (Number(gasUsd) / bnbUsdPrice).toFixed(6);
-        const topupRes = await fetch('/api/developers/topup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId: agent!.id, amountBnb: Number(gasBnb) }),
-        });
-        const topupData = await topupRes.json().catch(() => null);
-        if (!(topupRes.ok && topupData?.ok)) {
-          const msg = topupData?.error || 'Gas top-up failed';
-          setTaskError(msg);
-          setTaskLoading(false);
-          return;
-        }
 
-        if (!activeAccount?.address) {
-          setTaskError('Connect your wallet first to fund gas.');
-          setTaskLoading(false);
-          return;
-        }
-        let value: bigint;
-        try { value = parseEther(gasBnb as `${number}`); }
-        catch { setTaskError('Invalid gas amount'); setTaskLoading(false); return; }
-
-        const txResult = await sendTransactionTx({
-          to: topupData.walletAddress,
-          value,
+        const tokenResult = await sendTransactionTx({
+          to: tokenAddr as `0x${string}`,
+          data: transferData,
+          value: 0n,
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
-        if (!txHash) {
-          setTaskError('Gas deposit was not confirmed. Task creation cancelled.');
+        const tokenHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
+        if (!tokenHash) {
+          setTaskError(`${token} transfer was not confirmed. Task creation cancelled.`);
           setTaskLoading(false);
           return;
         }
-
-        toast.success({
-          title: 'Gas funded',
-          description: `${gasBnb} BNB sent for gas. Now send ${depositToken} to the agent wallet separately. Creating task...`,
-        });
       }
 
-      // Step 2: Create the task (only reaches here if deposit succeeded or no deposit needed)
+      toast.success({
+        title: 'Agent funded',
+        description: `${taskConfirmData.depositUsd} ${taskConfirmData.depositToken} sent. Creating task now...`,
+      });
+
+      // Now create the task
+      await executeCreateTask();
+    } catch (error) {
+      console.error('Task deposit error:', error);
+      setTaskError(error instanceof Error ? error.message : 'Deposit failed');
+      setTaskLoading(false);
+    }
+  };
+
+  /** Create the task on the server (no deposit) */
+  const executeCreateTask = async () => {
+    setTaskError(null);
+    if (!bnbUsdPrice) return;
+    setTaskLoading(true);
+    try {
       const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
       const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
 
@@ -683,6 +739,7 @@ export default function MyAgentDetailPage() {
           : `Task ${data.task?.taskId ?? ''} created and is running.`,
       });
       setShowTaskModal(false);
+      setTaskConfirmData(null);
       await fetchTasks();
       await fetchSessions();
       await fetchActivity();
@@ -1784,6 +1841,27 @@ export default function MyAgentDetailPage() {
           </div>
         </div>
       )}
+
+      {/* TASK CONFIRMATION — shown before any wallet top-up during task creation */}
+      <TransactionConfirmModal
+        open={showTaskConfirm}
+        title="Confirm Deposit"
+        subtitle={`Fund the agent wallet on BNB Smart Chain (chain 56)`}
+        lines={[
+          { label: 'Agent', value: agent?.name ?? '—', tone: 'gold' },
+          { label: 'Recipient', value: taskConfirmData?.walletAddress ?? '—', mono: true },
+          { label: 'Amount', value: taskConfirmData?.depositToken === 'BNB' ? `${taskConfirmData?.amountBnb ?? '0'} BNB` : `${taskConfirmData?.depositUsd ?? '0'} ${taskConfirmData?.depositToken}`, tone: 'gold', mono: true },
+          ...(taskConfirmData?.depositToken !== 'BNB' ? [{ label: 'Gas (BNB)', value: `${taskConfirmData?.amountBnb ?? '0'} BNB`, tone: 'default' as const, mono: true as const }] : []),
+          { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
+          { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
+        ]}
+        warning={taskConfirmData?.depositToken === 'BNB' ? "Sending BNB to the agent's dedicated wallet. The task will be created AFTER the deposit is confirmed on-chain." : `Sending ${taskConfirmData?.depositToken} + BNB gas to the agent's wallet. Your wallet will prompt twice. The task will be created AFTER both are confirmed.`}
+        confirmLabel="Confirm & Create Task"
+        confirmLoadingLabel="Sending..."
+        confirmLoading={taskLoading}
+        onConfirm={handleTaskConfirm}
+        onClose={() => { setShowTaskConfirm(false); setTaskConfirmData(null); }}
+      />
 
       {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
       <TransactionConfirmModal
