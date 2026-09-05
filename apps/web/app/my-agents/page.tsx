@@ -245,7 +245,7 @@ export default function MyAgentsPage() {
             )}
 
             {!loading && agents.length === 0 && (
-              <div className="text-center bg-card border border-border rounded-2xl p-6 py-10">
+              <div className="dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200 text-center py-10">
                 <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-[#F0B90B] flex items-center justify-center">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="black" /><circle cx="15" cy="13" r="1.5" fill="black" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" />
@@ -280,7 +280,7 @@ export default function MyAgentsPage() {
                   <Link
                     key={agent.id}
                     href={`/my-agents/${agent.id}`}
-                    className="block bg-card hover:bg-card border border-border hover:border-[#F0B90B]/50 rounded-2xl p-4 transition-all relative overflow-hidden group"
+                    className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 rounded-xl p-4 transition-all relative overflow-hidden group"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -362,7 +362,7 @@ export default function MyAgentsPage() {
         {activeTab === 'CREATE' && (
           <form
             onSubmit={handleCreateAgent}
-            className="bg-card border border-border rounded-2xl p-4 space-y-4"
+            className="dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200 space-y-4"
           >
             <div>
               <label className="block text-[10px] font-black text-foreground tracking-widest uppercase mb-1.5">Agent Name</label>

@@ -120,7 +120,7 @@ export default function AgentsMarketplacePage() {
 
       <div className="p-4 space-y-4 max-w-md mx-auto w-full flex-1">
         {/* Tabs */}
-        <div className="flex gap-1 bg-card border border-border rounded-xl p-1">
+        <div className="flex gap-1 dark:bg-card bg-gray-50 rounded-xl p-1 border dark:border-border border-gray-200">
           <button onClick={() => { setTab('ban'); setSearch(''); setSelectedCategory('ALL'); }} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-colors ${tab === 'ban' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
             BAN Smart Money
           </button>
@@ -132,7 +132,7 @@ export default function AgentsMarketplacePage() {
 
         {/* Search */}
         <div className="relative">
-          <input type="text" placeholder="Search agents, strategies, protocols..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-colors" />
+          <input type="text" placeholder="Search agents, strategies, protocols..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full dark:bg-card bg-gray-50 border dark:border-border border-gray-200 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-colors" />
           {search && <button onClick={() => setSearch('')} className="absolute right-3 top-3 text-muted-foreground hover:text-foreground text-xs"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
         </div>
 
@@ -158,7 +158,7 @@ export default function AgentsMarketplacePage() {
             </div>
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-xl p-3 flex items-center justify-between text-xs">
+          <div className="dark:bg-card bg-gray-50 rounded-xl p-3 flex items-center justify-between text-xs border dark:border-border border-gray-200">
             <div className="text-muted-foreground">Available: <span className="text-accent font-bold">{total}</span> external agents</div>
             <div className="text-muted-foreground">Network: <span className="text-foreground font-bold">BNB Chain</span></div>
           </div>
@@ -174,7 +174,7 @@ export default function AgentsMarketplacePage() {
 
         {/* Empty */}
         {!loading && activeAgents.length === 0 && (
-          <div className="py-12 text-center bg-card border border-border rounded-2xl p-6">
+          <div className="text-center dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200 py-12">
             <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-accent flex items-center justify-center">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="currentColor" /><circle cx="15" cy="13" r="1.5" fill="currentColor" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" /></svg>
             </div>
@@ -190,7 +190,7 @@ export default function AgentsMarketplacePage() {
               const risk = (agent.riskLevel || 'LOW').toUpperCase();
               const riskColor = risk === 'LOW' ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : risk === 'MEDIUM' ? 'text-amber-400 border-amber-500/30 bg-amber-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10';
               return (
-                <Link key={agent.id} href={`/agents/${agent.id}`} className="block bg-card hover:bg-card/80 border border-border hover:border-accent/50 rounded-2xl p-4 transition-all relative overflow-hidden group">
+                <Link key={agent.id} href={`/agents/${agent.id}`} className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-accent/50 rounded-xl p-4 transition-all relative overflow-hidden group">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="currentColor" /><circle cx="15" cy="13" r="1.5" fill="currentColor" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" /></svg></div>

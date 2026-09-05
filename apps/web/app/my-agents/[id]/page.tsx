@@ -1081,7 +1081,7 @@ export default function MyAgentDetailPage() {
           ) : (
             <div className="space-y-3">
               {tasks.slice(0, 5).map((task) => (
-                <div key={task.taskId} className="bg-card border border-[#262626] rounded-lg p-3.5 space-y-2">
+                <div key={task.taskId} className="dark:bg-background/40 bg-white/60 rounded-lg p-3.5 border dark:border-border border-gray-200 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-black text-[#F0B90B] font-mono">{task.taskId.slice(0, 14)}</span>
                     <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${task.status === 'COMPLETED' ? 'text-green-400 border-green-500/40 bg-green-500/10' : task.status === 'FAILED' ? 'text-red-400 border-red-500/40 bg-red-500/10' : 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10'}`}>
