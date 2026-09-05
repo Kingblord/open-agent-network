@@ -12,6 +12,28 @@ interface TokenBalance {
   usdValue: number;
 }
 
+interface ProtocolPosition {
+  protocol: string;
+  token?: string;
+  supplied?: string;
+  borrowed?: string;
+  collateral?: string;
+  debt?: string;
+  healthFactor?: number;
+}
+
+interface WalletBalanceResponse {
+  ok: boolean;
+  bnb: string;
+  usdt: string;
+  usdc: string;
+  bnbPrice: number;
+  usdTotal: number;
+  venus: { protocol: string; token: string; supplied: string; borrowed: string }[] | null;
+  aave: { protocol: string; collateral: string; debt: string; healthFactor: number } | null;
+  pancakeswapLpCount: number;
+}
+
 interface Agent {
   id: string;
   name: string;
@@ -38,8 +60,10 @@ interface Permission {
 export default function PortfolioPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { activeAddress, isConnected } = useWallet();
+  const { linkedAddress, isConnected } = useWallet();
   const [balances, setBalances] = useState<TokenBalance[]>([]);
+  const [protocolPositions, setProtocolPositions] = useState<ProtocolPosition[]>([]);
+  const [lpCount, setLpCount] = useState(0);
   const [bnbPrice, setBnbPrice] = useState(600);
   const [totalUsd, setTotalUsd] = useState(0);
   const [positions, setPositions] = useState<{ agentId: string; name: string; capitalUsd: number }[]>([]);
@@ -50,11 +74,13 @@ export default function PortfolioPage() {
   const [feesBnb, setFeesBnb] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchBalances = useCallback(async (address: string) => {
+  const address = linkedAddress; // Use Firestore-persisted address
+
+  const fetchBalances = useCallback(async (addr: string) => {
     try {
-      const res = await fetch(`/api/developers/wallet/balance?address=${encodeURIComponent(address)}`);
+      const res = await fetch(`/api/developers/wallet/balance?address=${encodeURIComponent(addr)}`);
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as WalletBalanceResponse;
         const list: TokenBalance[] = [];
         let total = 0;
         list.push({ token: 'BNB', balance: data.bnb, usdValue: parseFloat(data.bnb) * data.bnbPrice });
@@ -64,11 +90,18 @@ export default function PortfolioPage() {
         setBalances(list);
         setBnbPrice(data.bnbPrice);
         setTotalUsd(prev => prev + total);
+
+        // Protocol positions
+        const protos: ProtocolPosition[] = [];
+        if (data.venus) { for (const v of data.venus) protos.push(v); }
+        if (data.aave) protos.push(data.aave);
+        setProtocolPositions(protos);
+        setLpCount(data.pancakeswapLpCount || 0);
       }
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { if (activeAddress) fetchBalances(activeAddress); }, [activeAddress, fetchBalances]);
+  useEffect(() => { if (address) fetchBalances(address); }, [address, fetchBalances]);
 
   useEffect(() => {
     if (!user) return;
@@ -124,11 +157,11 @@ export default function PortfolioPage() {
       </header>
 
       {/* Wallet Balances */}
-      {isConnected && activeAddress && balances.length > 0 && (
+      {isConnected && address && balances.length > 0 && (
         <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Wallet</span>
-            <span className="text-[10px] font-mono text-muted-foreground">{activeAddress.slice(0,6)}...{activeAddress.slice(-4)}</span>
+            <span className="text-[10px] font-mono text-muted-foreground">{address.slice(0,6)}...{address.slice(-4)}</span>
           </div>
           <div className="space-y-2">
             {balances.map(b => (
@@ -144,6 +177,35 @@ export default function PortfolioPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Protocol Positions (Venus, Aave, PancakeSwap LP) */}
+      {isConnected && address && protocolPositions.length > 0 && (
+        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
+          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Protocol Positions</h3>
+          <div className="space-y-2">
+            {protocolPositions.map((p, i) => (
+              <div key={i} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border">
+                <div>
+                  <p className="text-sm font-bold text-foreground uppercase">{p.protocol}</p>
+                  <p className="text-[10px] text-muted-foreground">{'token' in p ? p.token : ''} {p.protocol === 'aave' ? `HF: ${(p as any).healthFactor.toFixed(2)}` : ''}</p>
+                </div>
+                <div className="text-right">
+                  {p.protocol === 'venus' && <p className="text-sm font-black text-emerald-400">{(p as any).supplied} {(p as any).token}</p>}
+                  {p.protocol === 'aave' && <><p className="text-sm font-black text-emerald-400">${parseFloat((p as any).collateral).toFixed(2)}</p><p className="text-[10px] text-red-400">Debt: ${parseFloat((p as any).debt).toFixed(2)}</p></>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* PancakeSwap LP Positions */}
+      {isConnected && address && lpCount > 0 && (
+        <div className="mx-5 mb-4 bg-card rounded-xl p-5 border border-border">
+          <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">PancakeSwap LP Positions</h3>
+          <p className="text-sm font-black text-[#F0B90B]">{lpCount} active position{lpCount > 1 ? 's' : ''}</p>
         </div>
       )}
 

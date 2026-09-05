@@ -15,19 +15,18 @@ import { getThirdwebClient, bnbChainDef } from './thirdweb'
 const STORAGE_KEY = 'ban.linkedWallet'
 
 interface WalletContextValue {
-  /** Configured chain (BNB Smart Chain, chainId 56). */
   chain: typeof bnbChainDef
-  /** Always the active connected account address (from Thirdweb), or null. */
+  /** Active connected account address (from Thirdweb live connection), or null. */
   activeAddress: string | null
-  /** Whether a wallet is actively connected right now. */
+  /** Whether a wallet is actively connected right now (live OR server-persisted). */
   isConnected: boolean
-  /** Address persisted locally for the session/user (survives refresh). */
+  /** Address persisted to Firestore via the server, survives across devices. */
   linkedAddress: string | null
-  /** Whether we're still rehydrating the persisted link on mount. */
+  /** Whether we're still loading the persisted server link. */
   hydrating: boolean
-  /** Persist a connected address for the account (idempotent). */
+  /** Persist a connected address to Firestore + local. */
   setLinkedAddress: (address: string | null) => void
-  /** Disconnect both the active ThirdWeb session and the persisted link. */
+  /** Disconnect both the active ThirdWeb session and the persisted server link. */
   disconnect: () => Promise<void>
 }
 
@@ -63,135 +62,114 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { disconnect: thirdwebDisconnect } = useDisconnect()
   const { user, updateUserWallet } = useAuth()
 
-  // Persistent link rehydrated from localStorage (survives refresh so the user
-  // doesn't need to reconnect all the time).
+  // Start with localStorage for instant render, then overwrite from server.
   const [linkedAddress, setLinkedAddressState] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : readStoredWallet(),
   )
   const [hydrating, setHydrating] = useState(true)
 
   const chain = useMemo(() => bnbChainDef, [])
-  // Keep a client reference so consumers that only reach the hook can connect
-  // without re-instantiating; unused in the default flow but stable.
   const client = useMemo(() => {
-    try {
-      return getThirdwebClient()
-    } catch {
-      return null
-    }
+    try { return getThirdwebClient() } catch { return null }
   }, [])
 
   const activeAddress = activeAccount?.address ?? null
-  const isConnected = Boolean(activeAddress)
 
-  // Mark hydration complete on mount (after the first paint).
+  // On mount, fetch the server-persisted wallet (Firestore-backed).
+  // This is the AUTHORITATIVE source — localStorage is a fast local cache.
   useEffect(() => {
-    setHydrating(false)
-  }, [])
+    let cancelled = false
+    setHydrating(true)
 
-  // Keep localStorage + state consistent with the actively connected account,
-  // and reflect the connection on the auth user immediately.
+    if (user?.walletAddress) {
+      // Auth user already has a wallet — use it immediately.
+      setLinkedAddressState(user.walletAddress)
+      writeStoredWallet(user.walletAddress)
+      setHydrating(false)
+      return
+    }
+
+    // No wallet on the auth user yet — ask the server.
+    fetch('/api/developers/wallet', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const serverWallet = data?.walletAddress ?? null
+        if (serverWallet) {
+          setLinkedAddressState(serverWallet)
+          writeStoredWallet(serverWallet)
+          updateUserWallet(serverWallet)
+        } else {
+          // Server has no wallet either — use local cache as fallback.
+          const local = readStoredWallet()
+          if (local) {
+            // Local cache exists — sync it to the server.
+            setLinkedAddressState(local)
+            updateUserWallet(local)
+            fetch('/api/developers/wallet', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ walletAddress: local }),
+            }).catch(() => { /* non-fatal */ })
+          }
+        }
+      })
+      .catch(() => {
+        // Server unreachable — localStorage is the fallback.
+        if (!cancelled) setLinkedAddressState(readStoredWallet())
+      })
+      .finally(() => {
+        if (!cancelled) setHydrating(false)
+      })
+
+    return () => { cancelled = true }
+  }, [user?.id, updateUserWallet]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // isConnected: true if the wallet is live-connected OR server-persisted.
+  // This makes the wallet "stay connected" across devices.
+  const isConnected = Boolean(activeAddress || linkedAddress)
+
+  // When a live connection is made, immediately persist to server.
   useEffect(() => {
-    if (activeAddress) {
+    if (activeAddress && activeAddress !== linkedAddress) {
       setLinkedAddressState(activeAddress)
       writeStoredWallet(activeAddress)
       updateUserWallet(activeAddress)
+      // Fire-and-forget: persist to Firestore via server.
+      fetch('/api/developers/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: activeAddress }),
+      }).catch(() => { /* non-fatal */ })
     }
-  }, [activeAddress, updateUserWallet])
+  }, [activeAddress, linkedAddress, updateUserWallet])
 
   const setLinkedAddress = useCallback(
     (address: string | null) => {
       setLinkedAddressState(address)
       writeStoredWallet(address)
       updateUserWallet(address)
+      // Persist to Firestore.
+      fetch('/api/developers/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: address }),
+      }).catch(() => { /* non-fatal */ })
     },
     [updateUserWallet],
   )
 
-  // Rehydrate the persisted wallet from the SERVER when the auth user loads.
-  // This is the missing persistence fix: connecting on one browser (which POSTs
-  // to /api/developers/wallet) must appear on any other browser/device even when
-  // localStorage is empty there. We also mirror the server value into AuthUser
-  // so profile headers reflect the connection without a full refresh.
-  useEffect(() => {
-    if (!user) {
-      // When signed out, don't claim a wallet on a fresh profile.
-      return
-    }
-    let cancelled = false
-
-    // If the auth user already knows a wallet (post-login/profile), make sure
-    // the linked state agrees with it.
-    if (user.walletAddress) {
-      setLinkedAddressState((prev) => prev ?? user.walletAddress!)
-      writeStoredWallet(user.walletAddress)
-    }
-
-    // If we have no local link yet, ask the server for the persisted one.
-    if (!user.walletAddress) {
-      void fetch('/api/developers/wallet', { cache: 'no-store' })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (cancelled) return
-          const serverWallet = data?.walletAddress ?? null
-          if (serverWallet) {
-            setLinkedAddressState(serverWallet)
-            writeStoredWallet(serverWallet)
-            updateUserWallet(serverWallet)
-          }
-        })
-        .catch(() => {
-          // Non-fatal — localStorage link (if any) remains authoritative.
-        })
-    }
-
-    return () => {
-      cancelled = true
-    }
-  }, [user, updateUserWallet])
-
-  // Best-effort sync of the linked wallet to the authenticated account so it
-  // survives across sessions (not just the browser tab).
-  useEffect(() => {
-    if (!linkedAddress || !user) return
-    void fetch('/api/developers/wallet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress: linkedAddress }),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        // Mirror the server-confirmed value (if any) into AuthUser so the
-        // profile reflects the connection as soon as the POST settles.
-        if (data?.walletAddress) {
-          updateUserWallet(data.walletAddress)
-        }
-      })
-      .catch(() => {
-        // Non-fatal — wallet link stays in localStorage; server sync is best-effort.
-      })
-  }, [linkedAddress, user, updateUserWallet])
-
   const disconnect = useCallback(async () => {
-    // Disconnect the active Thirdweb wallet session (if any).
     if (activeWallet) {
-      try {
-        await thirdwebDisconnect(activeWallet)
-      } catch {
-        // Ignore — we still clear the persisted link locally.
-      }
+      try { await thirdwebDisconnect(activeWallet) } catch { /* ignore */ }
     }
-    // Forget any persisted link for this session/user.
     setLinkedAddress(null)
-    // Also clear the server-side link so the profile stops showing it.
     if (user) {
-      void fetch('/api/developers/wallet', {
+      await fetch('/api/developers/wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: null }),
-      }).catch(() => {
-        // Non-fatal.
-      })
+      }).catch(() => { /* non-fatal */ })
       updateUserWallet(null)
     }
   }, [activeWallet, thirdwebDisconnect, setLinkedAddress, user, updateUserWallet])
@@ -207,14 +185,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+    <WalletContext.Provider value={value}>
+      {children}
+    </WalletContext.Provider>
   )
 }
 
-export function useWallet() {
-  const context = useContext(WalletContext)
-  if (!context) {
-    throw new Error('useWallet must be used within a WalletProvider')
-  }
-  return context
+export function useWallet(): WalletContextValue {
+  const ctx = useContext(WalletContext)
+  if (!ctx) throw new Error('useWallet must be used within a WalletProvider')
+  return ctx
 }
