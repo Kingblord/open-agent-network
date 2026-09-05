@@ -295,6 +295,8 @@ export default function MyAgentDetailPage() {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [gasUsd, setGasUsd] = useState('0.50');
+  const [showGasEdit, setShowGasEdit] = useState(false);
   const [topupOpen, setTopupOpen] = useState(false);
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupAmount, setTopupAmount] = useState('0.01');
@@ -579,18 +581,24 @@ export default function MyAgentDetailPage() {
         // Auto-open topup modal with the deposit amount converted from USD
         const depositUsd = sessionForm.depositUsd;
         const depositToken = sessionForm.depositToken;
-        if (depositUsd && Number(depositUsd) > 0) {
-          if (depositToken === 'BNB' && bnbUsdPrice != null) {
-            const bnbAmount = (Number(depositUsd) / bnbUsdPrice).toFixed(6);
-            setTopupAmount(bnbAmount);
+        if (depositUsd && Number(depositUsd) > 0 && bnbUsdPrice != null) {
+          // Always fund BNB for gas (gas is always BNB)
+          const gasBnb = Number(gasUsd) / bnbUsdPrice;
+          if (depositToken === 'BNB') {
+            const totalBnb = ((Number(depositUsd) / bnbUsdPrice) + gasBnb).toFixed(6);
+            setTopupAmount(totalBnb);
             setTopupResult(null);
             setTopupOpen(true);
           } else {
-            // For USDT/USDC, the user needs to send ERC-20 tokens — redirect to agent page
+            // For USDT/USDC: topup BNB for gas only, deposit token must be sent separately
+            const gasBnbAmt = gasBnb.toFixed(6);
             toast.success({
               title: 'Deposit needed',
-              description: `${depositToken} deposit requires a token transfer. Head to the agent page to send ${depositToken} directly.`,
+              description: `Sending ${depositToken} requires BNB for gas. Topup of ${gasBnbAmt} BNB for gas + send ${depositToken} to the agent wallet.`,
             });
+            setTopupAmount(gasBnbAmt);
+            setTopupResult(null);
+            setTopupOpen(true);
           }
         }
       } else {
@@ -1518,10 +1526,49 @@ export default function MyAgentDetailPage() {
                   <option value="USDC">USDC</option>
                 </select>
               </div>
+
+              {/* Gas funding — auto-added when depositing non-BNB tokens */}
+              {sessionForm.depositToken !== 'BNB' && (
+                <div className="mt-2 flex items-center gap-2 bg-background/40 border border-border rounded-lg px-3 py-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                  </svg>
+                  <span className="text-[10px] text-muted-foreground flex-1">Gas funding (BNB)</span>
+                  {showGasEdit ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] text-muted-foreground">$</span>
+                      <input
+                        type="number"
+                        min="0.50"
+                        step="0.10"
+                        value={gasUsd}
+                        onChange={(e) => setGasUsd(e.target.value)}
+                        onBlur={() => { if (Number(gasUsd) < 0.50) setGasUsd('0.50'); setShowGasEdit(false); }}
+                        className="w-16 bg-background border border-border rounded px-1.5 py-0.5 text-[10px] font-mono text-foreground text-right"
+                        autoFocus
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowGasEdit(true)}
+                      className="flex items-center gap-1 text-[10px] font-mono text-foreground font-black hover:text-[#F0B90B] transition"
+                    >
+                      ${Number(gasUsd).toFixed(2)}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+
               <p className="text-[10px] text-muted-foreground mt-1">
-                {bnbUsdPrice != null
-                  ? `~$${Number(sessionForm.depositUsd).toFixed(2)} USD → ${sessionForm.depositToken === 'BNB' ? (Number(sessionForm.depositUsd) / bnbUsdPrice).toFixed(4) + ' BNB' : '$' + Number(sessionForm.depositUsd).toFixed(2) + ' ' + sessionForm.depositToken}`
-                  : 'Enter USD amount — BNB price needed for conversion'}
+                {bnbUsdPrice != null ? (
+                  sessionForm.depositToken === 'BNB'
+                    ? `~$${Number(sessionForm.depositUsd).toFixed(2)} USD → ${(Number(sessionForm.depositUsd) / bnbUsdPrice).toFixed(4)} BNB`
+                    : `~$${Number(sessionForm.depositUsd).toFixed(2)} ${sessionForm.depositToken} + $${Number(gasUsd).toFixed(2)} BNB gas = ~${(Number(sessionForm.depositUsd) + Number(gasUsd)).toFixed(2)} USD total`
+                ) : 'Enter USD amount — BNB price needed for conversion'}
                 . Confirm in your wallet after creating the task.
               </p>
             </div>
