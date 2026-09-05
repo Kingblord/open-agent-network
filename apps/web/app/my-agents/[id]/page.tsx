@@ -8,9 +8,9 @@ import { useToast } from '@/components/toast-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { LoadingButton } from '@/components/ui/loading-button';
 import { TransactionConfirmModal } from '@/components/ui/transaction-confirm-modal';
-import { useSendTransaction } from 'thirdweb/react';
+import { useSendTransaction, useActiveAccount } from 'thirdweb/react';
 import { parseEther } from 'viem';
-import { getThirdwebClient } from '@/lib/thirdweb';
+import { getThirdwebClient, bnbChainDef } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
 import { PermissionCards } from '@/components/permission-cards';
@@ -277,6 +277,7 @@ export default function MyAgentDetailPage() {
   const params = useParams<{ id: string }>();
   const toast = useToast();
   const wallet = useWallet();
+  const activeAccount = useActiveAccount();
   const thirdwebClient = useMemo(() => getThirdwebClient(), []);
   const { mutateAsync: sendTransactionTx } = useSendTransaction();
   const [mounted, setMounted] = useState(false);
@@ -568,8 +569,8 @@ export default function MyAgentDetailPage() {
         }
 
         // Send BNB from user's connected wallet
-        if (!wallet.activeAddress) {
-          setTaskError('Connect your wallet first to fund the agent.');
+        if (!activeAccount?.address) {
+          setTaskError('Connect your wallet first to fund the agent. The Thirdweb popup will open.');
           setTaskLoading(false);
           return;
         }
@@ -610,7 +611,7 @@ export default function MyAgentDetailPage() {
           return;
         }
 
-        if (!wallet.activeAddress) {
+        if (!activeAccount?.address) {
           setTaskError('Connect your wallet first to fund gas.');
           setTaskLoading(false);
           return;
@@ -785,8 +786,8 @@ export default function MyAgentDetailPage() {
         setTopupLoading(false);
         return;
       }
-      if (!wallet.activeAddress) {
-        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet first — click the wallet icon in the top bar.' });
+      if (!activeAccount?.address) {
+        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet first — the Thirdweb popup will open.' });
         setTopupLoading(false);
         return;
       }
@@ -1778,7 +1779,7 @@ export default function MyAgentDetailPage() {
 
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#1A1A1A] border border-border text-gray-300 text-sm font-black py-3 uppercase tracking-wider disabled:opacity-60">Cancel</button>
-              <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice} className="text-sm">Create Task</LoadingButton>
+              <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice}>Create Task</LoadingButton>
             </div>
           </div>
         </div>
