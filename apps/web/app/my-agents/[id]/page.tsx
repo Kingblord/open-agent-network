@@ -327,6 +327,7 @@ export default function MyAgentDetailPage() {
     network: 'BNB Smart Chain (56)',
     maxTxUsd: '100',
     dailyLimitUsd: '500',
+    depositBnb: '0.01',
     allowedTokens: [] as string[],
     allowedProtocols: [] as string[],
     allowedFunctions: 'deposit, withdraw, swap',
@@ -574,6 +575,13 @@ export default function MyAgentDetailPage() {
         await fetchTasks();
         await fetchSessions();
         await fetchActivity();
+        // Auto-open topup modal with the deposit amount if set
+        const depositAmt = sessionForm.depositBnb;
+        if (depositAmt && Number(depositAmt) > 0) {
+          setTopupAmount(depositAmt);
+          setTopupResult(null);
+          setTopupOpen(true);
+        }
       } else {
         const data = await response.json().catch(() => null);
         const code = typeof data?.code === 'string' ? data.code : undefined;
@@ -1473,9 +1481,29 @@ export default function MyAgentDetailPage() {
               </div>
             </div>
 
-            {/* Live USD →’ BNB rate */}
+            {/* Initial deposit */}
+            <div>
+              <label className="block text-xs font-black text-muted-foreground mb-1">Initial deposit (BNB)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={sessionForm.depositBnb}
+                  onChange={(e) => setSessionForm({ ...sessionForm, depositBnb: e.target.value })}
+                  placeholder="0.01"
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-black">BNB</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Fund the agent wallet so it can pay gas. You&apos;ll confirm the transaction in your wallet after creating the task.
+              </p>
+            </div>
+
+            {/* Live USD → BNB rate */}
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>USD →’ BNB conversion</span>
+              <span>USD → BNB conversion</span>
               <span className="font-mono text-gray-300">
                 {bnbUsdPrice != null ? `1 BNB = $${bnbUsdPrice.toFixed(2)}` : 'Price unavailable'}
               </span>
