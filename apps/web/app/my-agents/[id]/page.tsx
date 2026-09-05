@@ -543,7 +543,102 @@ export default function MyAgentDetailPage() {
     }
     setTaskLoading(true);
     try {
-      // mustflow §6 USD-denominated limits →’ wei (native BNB, 18 decimals).
+      // Step 1: If deposit is set, do the allocation FIRST before creating the task
+      const depositUsd = sessionForm.depositUsd;
+      const depositToken = sessionForm.depositToken;
+      const hasDeposit = depositUsd && Number(depositUsd) > 0 && bnbUsdPrice != null;
+
+      if (hasDeposit && depositToken === 'BNB') {
+        // Deposit BNB first — user must confirm in wallet before task is created
+        const gasBnb = Number(gasUsd) / bnbUsdPrice;
+        const totalBnb = ((Number(depositUsd) / bnbUsdPrice) + gasBnb);
+
+        // Get topup instruction
+        const topupRes = await fetch('/api/developers/topup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId: agent!.id, amountBnb: totalBnb }),
+        });
+        const topupData = await topupRes.json().catch(() => null);
+        if (!(topupRes.ok && topupData?.ok)) {
+          const msg = topupData?.error || 'Top-up failed';
+          setTaskError(msg);
+          setTaskLoading(false);
+          return;
+        }
+
+        // Send BNB from user's connected wallet
+        if (!wallet.activeAddress) {
+          setTaskError('Connect your wallet first to fund the agent.');
+          setTaskLoading(false);
+          return;
+        }
+        let value: bigint;
+        try { value = parseEther(totalBnb.toFixed(6) as `${number}`); }
+        catch { setTaskError('Invalid BNB amount'); setTaskLoading(false); return; }
+
+        const txResult = await sendTransactionTx({
+          to: topupData.walletAddress,
+          value,
+          chain: wallet.chain,
+          client: thirdwebClient,
+        });
+        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+        if (!txHash) {
+          setTaskError('Deposit was not confirmed on-chain. Task creation cancelled.');
+          setTaskLoading(false);
+          return;
+        }
+
+        toast.success({
+          title: 'Agent funded',
+          description: `${totalBnb.toFixed(6)} BNB sent to agent wallet. Creating task now...`,
+        });
+      } else if (hasDeposit && depositToken !== 'BNB') {
+        // For USDT/USDC: need BNB gas topup first, then user must send tokens separately
+        const gasBnb = (Number(gasUsd) / bnbUsdPrice).toFixed(6);
+        const topupRes = await fetch('/api/developers/topup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId: agent!.id, amountBnb: Number(gasBnb) }),
+        });
+        const topupData = await topupRes.json().catch(() => null);
+        if (!(topupRes.ok && topupData?.ok)) {
+          const msg = topupData?.error || 'Gas top-up failed';
+          setTaskError(msg);
+          setTaskLoading(false);
+          return;
+        }
+
+        if (!wallet.activeAddress) {
+          setTaskError('Connect your wallet first to fund gas.');
+          setTaskLoading(false);
+          return;
+        }
+        let value: bigint;
+        try { value = parseEther(gasBnb as `${number}`); }
+        catch { setTaskError('Invalid gas amount'); setTaskLoading(false); return; }
+
+        const txResult = await sendTransactionTx({
+          to: topupData.walletAddress,
+          value,
+          chain: wallet.chain,
+          client: thirdwebClient,
+        });
+        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+        if (!txHash) {
+          setTaskError('Gas deposit was not confirmed. Task creation cancelled.');
+          setTaskLoading(false);
+          return;
+        }
+
+        toast.success({
+          title: 'Gas funded',
+          description: `${gasBnb} BNB sent for gas. Now send ${depositToken} to the agent wallet separately. Creating task...`,
+        });
+      }
+
+      // Step 2: Create the task (only reaches here if deposit succeeded or no deposit needed)
       const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
       const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
 
@@ -566,54 +661,34 @@ export default function MyAgentDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (response.ok) {
-        const data = await response.json();
-        toast.success({
-          title: 'Task created',
-          description: data.task?.sessionId
-            ? `Task ${data.task.taskId.slice(0, 12)} is running with session ${data.task.sessionId.slice(0, 12)}.`
-            : `Task ${data.task?.taskId ?? ''} created and is running.`,
-        });
-        setShowTaskModal(false);
-        await fetchTasks();
-        await fetchSessions();
-        await fetchActivity();
-        // Auto-open topup modal with the deposit amount converted from USD
-        const depositUsd = sessionForm.depositUsd;
-        const depositToken = sessionForm.depositToken;
-        if (depositUsd && Number(depositUsd) > 0 && bnbUsdPrice != null) {
-          // Always fund BNB for gas (gas is always BNB)
-          const gasBnb = Number(gasUsd) / bnbUsdPrice;
-          if (depositToken === 'BNB') {
-            const totalBnb = ((Number(depositUsd) / bnbUsdPrice) + gasBnb).toFixed(6);
-            setTopupAmount(totalBnb);
-            setTopupResult(null);
-            setTopupOpen(true);
-          } else {
-            // For USDT/USDC: topup BNB for gas only, deposit token must be sent separately
-            const gasBnbAmt = gasBnb.toFixed(6);
-            toast.success({
-              title: 'Deposit needed',
-              description: `Sending ${depositToken} requires BNB for gas. Topup of ${gasBnbAmt} BNB for gas + send ${depositToken} to the agent wallet.`,
-            });
-            setTopupAmount(gasBnbAmt);
-            setTopupResult(null);
-            setTopupOpen(true);
-          }
-        }
-      } else {
+      if (!response.ok) {
         const data = await response.json().catch(() => null);
         const code = typeof data?.code === 'string' ? data.code : undefined;
-        const message = typeof data?.error === 'string' ? data.error : 'An unexpected error occurred.';
+        const message = typeof data?.error === 'string' ? data.error : 'Task creation failed';
         if (code && REGISTRY_ERROR_CODES.has(code)) {
           setTaskError(message);
         } else {
           toast.error({ title: 'Task failed', description: message });
         }
+        setTaskLoading(false);
+        return;
       }
+
+      const data = await response.json();
+      toast.success({
+        title: 'Task created',
+        description: data.task?.sessionId
+          ? `Task ${data.task.taskId.slice(0, 12)} is running with session ${data.task.sessionId.slice(0, 12)}.`
+          : `Task ${data.task?.taskId ?? ''} created and is running.`,
+      });
+      setShowTaskModal(false);
+      await fetchTasks();
+      await fetchSessions();
+      await fetchActivity();
+      fetchBalance(true);
     } catch (error) {
       console.error('Task creation error:', error);
-      toast.error({ title: 'Task failed', description: 'An unexpected error occurred.' });
+      toast.error({ title: 'Task failed', description: error instanceof Error ? error.message : 'An unexpected error occurred.' });
     } finally {
       setTaskLoading(false);
     }
@@ -710,8 +785,8 @@ export default function MyAgentDetailPage() {
         setTopupLoading(false);
         return;
       }
-      if (!wallet.isConnected || !wallet.activeAddress) {
-        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet before topping up.' });
+      if (!wallet.activeAddress) {
+        toast.error({ title: 'Wallet not connected', description: 'Connect your wallet first — click the wallet icon in the top bar.' });
         setTopupLoading(false);
         return;
       }
@@ -1463,10 +1538,10 @@ export default function MyAgentDetailPage() {
 
       {/* TASK CONFIG MODAL — captures every config the backend consumes */}
       {showTaskModal && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-black text-[#F0B90B] uppercase">Create Task</h3>
-            <p className="text-[11px] text-muted-foreground -mt-2">
+        <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-lg space-y-5 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-black text-[#F0B90B] uppercase">Create Task</h3>
+            <p className="text-xs text-muted-foreground -mt-2">
               Configure the agent&apos;s bounded authority. A scoped session is created with these exact limits, the agent is activated, and the closed loop runs immediately.
             </p>
 
@@ -1481,30 +1556,30 @@ export default function MyAgentDetailPage() {
             {/* USD limits */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-black text-muted-foreground mb-1">Max transaction (USD)</label>
+                <label className="block text-xs font-black text-muted-foreground mb-1.5">Max transaction (USD)</label>
                 <input
                   type="number"
                   min="1"
                   value={sessionForm.maxTxUsd}
                   onChange={(e) => setSessionForm({ ...sessionForm, maxTxUsd: e.target.value })}
-                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                  className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
                 />
               </div>
               <div>
-                <label className="block text-xs font-black text-muted-foreground mb-1">Daily limit (USD)</label>
+                <label className="block text-xs font-black text-muted-foreground mb-1.5">Daily limit (USD)</label>
                 <input
                   type="number"
                   min="1"
                   value={sessionForm.dailyLimitUsd}
                   onChange={(e) => setSessionForm({ ...sessionForm, dailyLimitUsd: e.target.value })}
-                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                  className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
                 />
               </div>
             </div>
 
             {/* Initial deposit — USD input, converts to token */}
             <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1">Initial deposit</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Initial deposit</label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
@@ -1514,14 +1589,14 @@ export default function MyAgentDetailPage() {
                     value={sessionForm.depositUsd}
                     onChange={(e) => setSessionForm({ ...sessionForm, depositUsd: e.target.value })}
                     placeholder="10.00"
-                    className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                    className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-black">$ USD</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-black">$ USD</span>
                 </div>
                 <select
                   value={sessionForm.depositToken}
                   onChange={(e) => setSessionForm({ ...sessionForm, depositToken: e.target.value as 'BNB' | 'USDT' | 'USDC' })}
-                  className="bg-background border border-border rounded px-2 py-2 text-xs font-black text-foreground font-mono"
+                  className="bg-background border border-border rounded-lg px-3 py-3 text-sm font-black text-foreground font-mono"
                 >
                   <option value="BNB">BNB</option>
                   <option value="USDT">USDT</option>
@@ -1604,7 +1679,7 @@ export default function MyAgentDetailPage() {
                       key={t.symbol}
                       type="button"
                       onClick={() => toggleToken(t.symbol)}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
+                      className={`text-xs font-black px-3 py-1.5 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {t.label}
                     </button>
@@ -1652,13 +1727,13 @@ export default function MyAgentDetailPage() {
 
             {/* Allowed functions */}
             <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1">Allowed functions</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed functions</label>
               <input
                 type="text"
                 value={sessionForm.allowedFunctions}
                 onChange={(e) => setSessionForm({ ...sessionForm, allowedFunctions: e.target.value })}
                 placeholder="e.g. swap, deposit, withdraw"
-                className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
               />
             </div>
 
@@ -1684,13 +1759,13 @@ export default function MyAgentDetailPage() {
 
             {/* Duration */}
             <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1">Session duration (days)</label>
+              <label className="block text-xs font-black text-muted-foreground mb-1.5">Session duration (days)</label>
               <input
                 type="number"
                 min="1"
                 value={sessionForm.expiresAtDays}
                 onChange={(e) => setSessionForm({ ...sessionForm, expiresAtDays: Number(e.target.value) })}
-                className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
               />
             </div>
 
@@ -1702,8 +1777,8 @@ export default function MyAgentDetailPage() {
             )}
 
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#222] text-foreground text-xs font-black py-2.5 uppercase disabled:opacity-60">Cancel</button>
-              <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice}>Create Task</LoadingButton>
+              <button type="button" onClick={() => setShowTaskModal(false)} disabled={taskLoading} className="flex-1 bg-[#1A1A1A] border border-border text-gray-300 text-sm font-black py-3 uppercase tracking-wider disabled:opacity-60">Cancel</button>
+              <LoadingButton onClick={handleCreateTask} loading={taskLoading} loadingLabel="Creating..." variant="primary" disabled={!bnbUsdPrice} className="text-sm">Create Task</LoadingButton>
             </div>
           </div>
         </div>
