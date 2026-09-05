@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useWallet } from '@/lib/wallet-context';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
-import { WalletConnectCard } from '@/components/wallet-connect-card';
 
 interface TokenBalance {
   token: string;
@@ -123,8 +122,6 @@ export default function PortfolioPage() {
       <header className="bg-background px-5 pt-6 pb-4 flex items-center justify-between">
         <h2 className="text-[22px] font-black text-[#F0B90B] tracking-wide">PORTFOLIO</h2>
       </header>
-
-      <div className="mx-5 mb-4"><WalletConnectCard /></div>
 
       {/* Wallet Balances */}
       {isConnected && activeAddress && balances.length > 0 && (
