@@ -4,34 +4,18 @@ import { inngest } from './client';
 import { createStructuredLogger } from '@/lib/core/logger';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
 import { agentRegistry } from '@/lib/agent-registry';
-import { provisionAgentWallet } from '@/lib/altana-signer';
-import { writeAuditEvent } from '@/lib/jobs/job-repo';
 
 const logger = createStructuredLogger('inngest.reconcile');
 
 /**
- * Reconciliation systems for the BAN control plane.
+ * Reconciliation — only runs Inngest when monitoring is actively needed.
  *
- * 1. banTaskReconcile — "active tasks keep running":
- *    Every 2 minutes, for each ACTIVE agent that still has an ACTIVE task
- *    (status !== 'FAILED' and expiresAtMs in the future), send a
- *    ban/agent.tick-loop event so the self-sustaining closed loop keeps
- *    ticking for THAT task's agent — even if the original kick was lost
- *    during a redeploy or the cloud cron backstop is not registered.
- *
- * 2. banWalletProvisionSweep — "no deployed agent left without a wallet":
- *    Every minute, find deployed (non-REVOKED) agents that were not
- *    provisioned a wallet (missing walletAddress / walletStatus !=
- *    'provisioned') and provision one idempotently via the Firestore-backed,
- *    encrypted per-agent keystore. The derived address (never the key) is
- *    bound to the agent + an audit event is written.
- *
- * Both are idempotent and Admin-SDK-only (never touch the client surface).
+ * 1. banTaskReconcile:
+ *    Every 2 minutes, checks for ACTIVE agents that have BOTH an active task
+ *    AND an active session. Only then kicks the agent loop. This prevents
+ *    unnecessary tick-loop events when no session exists (user hasn't hired
+ *    the agent yet, or session is expired/revoked).
  */
-
-// ---------------------------------------------------------------------------
-// 1) Active-task loop trigger
-// ---------------------------------------------------------------------------
 
 interface TaskLike {
   taskId?: string;
@@ -58,6 +42,17 @@ async function hasActiveTask(agentId: string): Promise<boolean> {
   return active;
 }
 
+async function hasActiveSession(agentId: string): Promise<boolean> {
+  const db = getAdminDb();
+  const snap = await db
+    .collection(collections.agentSessions ?? 'agent_sessions')
+    .where('agentId', '==', agentId)
+    .where('status', '==', 'ACTIVE')
+    .limit(5)
+    .get();
+  return !snap.empty;
+}
+
 export const banTaskReconcile = inngest.createFunction(
   {
     id: 'ban-task-reconcile',
@@ -74,9 +69,16 @@ export const banTaskReconcile = inngest.createFunction(
 
     for (const agent of agents) {
       await step.run(`kick-${agent.id}`, async () => {
-        const active = await hasActiveTask(agent.id);
-        if (!active) {
+        // Only kick if BOTH an active task AND an active session exist
+        const [activeTask, activeSession] = await Promise.all([
+          hasActiveTask(agent.id),
+          hasActiveSession(agent.id),
+        ]);
+        if (!activeTask) {
           return { agentId: agent.id, kicked: false, reason: 'no_active_task' };
+        }
+        if (!activeSession) {
+          return { agentId: agent.id, kicked: false, reason: 'no_active_session' };
         }
         await inngest.send({
           name: 'ban/agent.tick-loop',
@@ -97,79 +99,4 @@ export const banTaskReconcile = inngest.createFunction(
   }
 );
 
-// ---------------------------------------------------------------------------
-// 2) Wallet provisioning sweep
-// ---------------------------------------------------------------------------
-
-export const banWalletProvisionSweep = inngest.createFunction(
-  {
-    id: 'ban-wallet-provision-sweep',
-    retries: 1,
-    triggers: [{ cron: '*/2 * * * *' }],
-    concurrency: 1,
-  },
-  async ({ step }) => {
-    const correlationId = `reconcile_wallets_${Date.now()}`;
-    logger.info('wallet_sweep_started', { correlationId });
-
-    // Pull a bounded set (newest first); filter REVOKED + already-provisioned
-    // in memory so we never accidentally touch a terminal or healthy agent.
-    const agents = await agentRegistry.list({ limit: 100 });
-    const candidates = agents.filter((a) => {
-      if (a.status === 'REVOKED') return false;
-      const hasWallet = Boolean(a.walletAddress);
-      const provisioned = (a as { walletStatus?: string }).walletStatus === 'provisioned';
-      return !hasWallet || !provisioned;
-    });
-
-    let provisioned = 0;
-    let failed = 0;
-
-    for (const agent of candidates) {
-      await step.run(`provision-${agent.id}`, async () => {
-        try {
-          const result = await provisionAgentWallet(agent.id);
-          const db = getAdminDb();
-          await db
-            .collection(collections.agents)
-            .doc(agent.id)
-            .update({
-              walletAddress: result.walletAddress,
-              walletStatus: 'provisioned',
-              walletProvisionedAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            });
-          await writeAuditEvent({
-            eventType: 'AGENT_WALLET_PROVISIONED',
-            correlationId,
-            jobId: `sweep_${agent.id}`,
-            agentId: agent.id,
-            payload: { walletAddress: result.walletAddress, source: 'reconcile-sweep', generatedKey: result.generatedKey },
-          });
-          logger.info('wallet_sweep_provisioned', {
-            agentId: agent.id,
-            address: result.walletAddress,
-            correlationId,
-          });
-          return { agentId: agent.id, ok: true, walletAddress: result.walletAddress };
-        } catch (err) {
-          failed += 1;
-          const message = err instanceof Error ? err.message : String(err);
-          logger.error('wallet_sweep_provision_failed', { agentId: agent.id, correlationId, message });
-          return { agentId: agent.id, ok: false, reason: message };
-        }
-      });
-      provisioned += 1;
-    }
-
-    logger.info('wallet_sweep_finished', {
-      correlationId,
-      candidates: candidates.length,
-      provisioned,
-      failed,
-    });
-    return { ok: true, candidates: candidates.length, provisioned, failed };
-  }
-);
-
-export const reconcileFunctions = [banTaskReconcile, banWalletProvisionSweep];
+export const reconcileFunctions = [banTaskReconcile];
