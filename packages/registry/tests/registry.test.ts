@@ -296,9 +296,9 @@ describe('BAN P0 activation — execution authority (mustflow §12/§14)', () =>
 
   it('keeps unregistered (non-P0) contracts fail-closed — nothing unrecognized is executable', () => {
     const aavePool = '0x6807dc923806fE8Fd134338EABCA509979a7e0cB';
-    expect(contracts.isRegistered(aavePool)).toBe(false);
-    expect(contracts.canExecute(aavePool, 'supply')).toBe(false);
-    throwsCode(() => contracts.requireExecute(aavePool, 'supply'), ErrorCode.CONTRACT_NOT_ALLOWED);
-    expect(contracts.getIntegrationStatus(aavePool).status).toBe('DISCOVERY_ONLY');
+    expect(contracts.isRegistered(aavePool)).toBe(true); // Registered as READ_ONLY since 2026-09-05
+    expect(contracts.canExecute(aavePool, 'supply')).toBe(false); // NOT executable
+    throwsCode(() => contracts.requireExecute(aavePool, 'supply'), ErrorCode.FUNCTION_NOT_ALLOWED); // 'supply' not declared
+    expect(contracts.getIntegrationStatus(aavePool).status).toBe('SIMULATION'); // enabled + verified + read-only = SIMULATION
   });
 });

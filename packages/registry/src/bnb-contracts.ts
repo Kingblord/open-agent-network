@@ -146,6 +146,26 @@ export const VTOKEN_EXECUTE_FUNCTIONS: ContractRecord['functions'] = [
 ];
 
 /**
+ * Aave V3 Pool on BNB mainnet — lending position + health factor reads.
+ * getUserAccountData is the canonical health-factor read.
+ */
+const AAVE_V3_POOL = '0x6807dc923806fE8Fd134338EABCA509979a7e0cB';
+
+/** Aave V3 Pool read functions (READ_ONLY only — no autonomous write). */
+const AAVE_POOL_READ_FUNCTIONS: ContractRecord['functions'] = [
+  {
+    signature: 'getUserAccountData(address)',
+    name: 'getUserAccountData',
+    capability: 'READ_ONLY',
+  },
+  {
+    signature: 'getReserveData(address)',
+    name: 'getReserveData',
+    capability: 'READ_ONLY',
+  },
+];
+
+/**
  * Registered contract records for the BAN chain. P0 records below are
  * `verified: true` (on-chain confirmed 2026-08-28) and `enabled: true`
  * (deliberate activation 2026-08-28, ops step #1 — autonomous execution is
@@ -204,6 +224,19 @@ export const BNB_MAINNET_CONTRACTS: ContractRecord[] = [
     abiVersion: 'vtoken-v2',
     source: ['venus-protocol/deployments/bscmainnet'],
   })) as ContractRecord[],
+  {
+    id: 'aave-v3-pool',
+    chainId: 56,
+    address: AAVE_V3_POOL,
+    protocolId: 'aave',
+    name: 'Aave V3 Pool (BNB Mainnet)',
+    verified: true,
+    enabled: true,
+    functions: AAVE_POOL_READ_FUNCTIONS,
+    capabilities: ['LENDING', 'YIELD'],
+    abiVersion: 'aave-v3',
+    source: ['bgd-labs/aave-address-book'],
+  },
 ];
 
 /**
@@ -301,4 +334,45 @@ export const BNB_MAINNET_ABI_SEEDS: ContractAbiRecord[] = [
       },
     ] as ContractAbiRecord['functions'],
   })) as ContractAbiRecord[],
+  {
+    address: AAVE_V3_POOL,
+    chainId: 56,
+    functions: [
+      {
+        type: 'function',
+        name: 'getUserAccountData',
+        stateMutability: 'view',
+        inputs: [{ name: 'user', type: 'address' }],
+        outputs: [
+          { name: 'totalCollateralBase', type: 'uint256' },
+          { name: 'totalDebtBase', type: 'uint256' },
+          { name: 'availableBorrowsBase', type: 'uint256' },
+          { name: 'currentLiquidationThreshold', type: 'uint256' },
+          { name: 'ltv', type: 'uint256' },
+          { name: 'healthFactor', type: 'uint256' },
+        ],
+      },
+      {
+        type: 'function',
+        name: 'getReserveData',
+        stateMutability: 'view',
+        inputs: [{ name: 'asset', type: 'address' }],
+        outputs: [
+          { name: 'configuration', type: 'tuple' },
+          { name: 'liquidityIndex', type: 'uint256' },
+          { name: 'variableBorrowIndex', type: 'uint256' },
+          { name: 'currentLiquidityRate', type: 'uint256' },
+          { name: 'currentVariableBorrowRate', type: 'uint256' },
+          { name: 'currentStableBorrowRate', type: 'uint256' },
+          { name: 'lastUpdateTimestamp', type: 'uint40' },
+          { name: 'id', type: 'uint16' },
+          { name: 'aTokenAddress', type: 'address' },
+          { name: 'stableDebtTokenAddress', type: 'address' },
+          { name: 'variableDebtTokenAddress', type: 'address' },
+          { name: 'interestRateStrategyAddress', type: 'address' },
+          { name: 'accruedToTreasury', type: 'uint128' },
+        ],
+      },
+    ] as ContractAbiRecord['functions'],
+  },
 ];
