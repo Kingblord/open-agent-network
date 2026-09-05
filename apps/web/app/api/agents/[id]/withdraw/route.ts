@@ -117,8 +117,8 @@ export async function POST(
       });
     }
 
-    const token = typeof body.token === 'string' ? body.token.toUpperCase() : 'BNB';
-    if (token !== 'BNB' && token !== 'USDT' && token !== 'USDC') {
+    const withdrawToken = typeof body.token === 'string' ? body.token.toUpperCase() : 'BNB';
+    if (withdrawToken !== 'BNB' && withdrawToken !== 'USDT' && withdrawToken !== 'USDC') {
       return errorResponse(422, 'token must be BNB, USDT, or USDC', {
         code: ErrorCode.VALIDATION_FAILED,
         correlationId: getCorrelationId(),
@@ -147,7 +147,7 @@ export async function POST(
     });
     let txHash: string;
 
-    if (token === 'BNB') {
+    if (withdrawToken === 'BNB') {
       // Simple BNB transfer
       const value = parseEther(rawAmount as `${number}`);
 
@@ -169,8 +169,8 @@ export async function POST(
       });
     } else {
       // ERC-20 transfer (USDT/USDC)
-      const tokenAddr = TOKEN_ADDRESSES[token];
-      const decimals = token === 'USDT' || token === 'USDC' ? 18 : 18;
+      const tokenAddr = TOKEN_ADDRESSES[withdrawToken];
+      const decimals = 18;
       const amountWei = parseUnits(rawAmount as `${number}`, decimals);
 
       // Check agent wallet has enough BNB for gas
@@ -197,7 +197,7 @@ export async function POST(
       agentId,
       to,
       amount: rawAmount,
-      token,
+      token: withdrawToken,
       txHash,
       correlationId: getCorrelationId(),
     });
@@ -208,9 +208,9 @@ export async function POST(
       agentId,
       to,
       amount: rawAmount,
-      token,
+      token: withdrawToken,
       chainId: 56,
-      note: `Withdrawal of ${rawAmount} ${token} submitted. Check BscScan for confirmation.`,
+      note: `Withdrawal of ${rawAmount} ${withdrawToken} submitted. Check BscScan for confirmation.`,
     });
   } catch (err) {
     logger.error('withdraw_failed', {}, err);
