@@ -8,6 +8,8 @@ import {
   getPermission,
   revokePermission,
 } from '@/lib/permissions/permission-repo';
+import { contractRevoke } from '@/lib/eip7702-contract-client';
+import { computeAuthority, permissionConfigHash } from '@ban/eip7702';
 import { persistAuditEvent } from '@/lib/agent-runtime/persistence';
 import { ErrorCode } from '@ban/shared';
 
@@ -65,6 +67,22 @@ export async function POST(
       });
     }
 
+    // Best-effort on-chain revocation call. Firestore is the source of
+    // truth; on-chain is an additional guard.
+    const configHash = permissionConfigHash(permission);
+    const authority = computeAuthority({
+      userAddress: permission.userAddress ?? '',
+      agentId: permission.agentId,
+      configHash,
+    });
+    const onchainResult = await contractRevoke(authority as `0x${string}`).catch((err) => {
+      logger.warn('contract_revoke_best_effort_failed', {
+        permissionId: permission.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    });
+
     await persistAuditEvent({
       type: 'PERMISSION_REVOKED',
       correlationId: getCorrelationId(),
@@ -75,6 +93,7 @@ export async function POST(
         userAddress: permission.userAddress,
         jobId: permission.jobId,
         status: 'REVOKED',
+        onchainTxHash: onchainResult?.txHash ?? null,
       },
     });
 
@@ -82,10 +101,11 @@ export async function POST(
       permissionId: permission.id,
       agentId: permission.agentId,
       jobId: permission.jobId,
+      onchainTxHash: onchainResult?.txHash ?? null,
       correlationId: getCorrelationId(),
     });
 
-    return NextResponse.json({ ok: true, permission: revoked });
+    return NextResponse.json({ ok: true, permission: revoked, onchainTxHash: onchainResult?.txHash ?? null });
   } catch (err) {
     logger.error('permission_revoke_failed', {}, err);
     return handleError(err);
