@@ -327,7 +327,8 @@ export default function MyAgentDetailPage() {
     network: 'BNB Smart Chain (56)',
     maxTxUsd: '100',
     dailyLimitUsd: '500',
-    depositBnb: '0.01',
+    depositUsd: '10',
+    depositToken: 'BNB' as 'BNB' | 'USDT' | 'USDC',
     allowedTokens: [] as string[],
     allowedProtocols: [] as string[],
     allowedFunctions: 'deposit, withdraw, swap',
@@ -575,12 +576,22 @@ export default function MyAgentDetailPage() {
         await fetchTasks();
         await fetchSessions();
         await fetchActivity();
-        // Auto-open topup modal with the deposit amount if set
-        const depositAmt = sessionForm.depositBnb;
-        if (depositAmt && Number(depositAmt) > 0) {
-          setTopupAmount(depositAmt);
-          setTopupResult(null);
-          setTopupOpen(true);
+        // Auto-open topup modal with the deposit amount converted from USD
+        const depositUsd = sessionForm.depositUsd;
+        const depositToken = sessionForm.depositToken;
+        if (depositUsd && Number(depositUsd) > 0) {
+          if (depositToken === 'BNB' && bnbUsdPrice != null) {
+            const bnbAmount = (Number(depositUsd) / bnbUsdPrice).toFixed(6);
+            setTopupAmount(bnbAmount);
+            setTopupResult(null);
+            setTopupOpen(true);
+          } else {
+            // For USDT/USDC, the user needs to send ERC-20 tokens — redirect to agent page
+            toast.success({
+              title: 'Deposit needed',
+              description: `${depositToken} deposit requires a token transfer. Head to the agent page to send ${depositToken} directly.`,
+            });
+          }
         }
       } else {
         const data = await response.json().catch(() => null);
@@ -1481,23 +1492,37 @@ export default function MyAgentDetailPage() {
               </div>
             </div>
 
-            {/* Initial deposit */}
+            {/* Initial deposit — USD input, converts to token */}
             <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1">Initial deposit (BNB)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={sessionForm.depositBnb}
-                  onChange={(e) => setSessionForm({ ...sessionForm, depositBnb: e.target.value })}
-                  placeholder="0.01"
-                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-black">BNB</span>
+              <label className="block text-xs font-black text-muted-foreground mb-1">Initial deposit</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={sessionForm.depositUsd}
+                    onChange={(e) => setSessionForm({ ...sessionForm, depositUsd: e.target.value })}
+                    placeholder="10.00"
+                    className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground rounded"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-black">$ USD</span>
+                </div>
+                <select
+                  value={sessionForm.depositToken}
+                  onChange={(e) => setSessionForm({ ...sessionForm, depositToken: e.target.value as 'BNB' | 'USDT' | 'USDC' })}
+                  className="bg-background border border-border rounded px-2 py-2 text-xs font-black text-foreground font-mono"
+                >
+                  <option value="BNB">BNB</option>
+                  <option value="USDT">USDT</option>
+                  <option value="USDC">USDC</option>
+                </select>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Fund the agent wallet so it can pay gas. You&apos;ll confirm the transaction in your wallet after creating the task.
+                {bnbUsdPrice != null
+                  ? `~$${Number(sessionForm.depositUsd).toFixed(2)} USD → ${sessionForm.depositToken === 'BNB' ? (Number(sessionForm.depositUsd) / bnbUsdPrice).toFixed(4) + ' BNB' : '$' + Number(sessionForm.depositUsd).toFixed(2) + ' ' + sessionForm.depositToken}`
+                  : 'Enter USD amount — BNB price needed for conversion'}
+                . Confirm in your wallet after creating the task.
               </p>
             </div>
 
