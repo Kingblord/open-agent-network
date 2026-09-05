@@ -20,7 +20,8 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import * as dotenv from 'dotenv';
-import { privateKeyToAccount, parseEther, formatEther } from 'viem/accounts';
+import { privateKeyToAccount } from 'viem/accounts';
+import { parseEther, formatEther } from 'viem';
 import { createPublicClient, createWalletClient, http, formatEther as fmtEther } from 'viem';
 import { bsc } from 'viem/chains';
 

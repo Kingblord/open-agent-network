@@ -114,7 +114,7 @@ async function provisionKeystore(agentId: string, privateKey: string) {
   const existing = await loadAgentKeystore(agentId);
   if (existing) return { agentId, walletAddress: existing.walletAddress, reused: true };
   const walletAddress = privateKeyToAccount(privateKey as `0x${string}`).address;
-  await saveAgentKeystore({ agentId, privateKey, walletAddress, createdAt: new Date().toISOString() });
+  await saveAgentKeystore({ agentId, privateKey: privateKey as `0x${string}`, walletAddress, createdAt: new Date().toISOString() });
   return { agentId, walletAddress, reused: false };
 }
 
