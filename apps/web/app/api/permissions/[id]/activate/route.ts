@@ -8,8 +8,7 @@ import {
   getPermission,
   activatePermission,
 } from '@/lib/permissions/permission-repo';
-import { verifyAuthorizationForPermission, computeAuthority, permissionConfigHash } from '@ban/eip7702';
-import { contractActivate } from '@/lib/eip7702-contract-client';
+import { verifyAuthorizationForPermission } from '@ban/eip7702';
 import { persistAuditEvent } from '@/lib/agent-runtime/persistence';
 import { ErrorCode } from '@ban/shared';
 
@@ -97,50 +96,6 @@ export async function POST(
       });
     }
 
-    // Best-effort on-chain activation call. The Firestore record is the
-    // source of truth; the on-chain permission is an additional guard that
-    // works when BSC activates EIP-7702 delegation. A non-critical failure
-    // here does NOT roll back the Firestore activation.
-    const configHash = permissionConfigHash(permission);
-    const authority = computeAuthority({
-      userAddress: permission.userAddress ?? '',
-      agentId: permission.agentId,
-      configHash,
-    });
-    const validAfter = permission.validAfter
-      ? Math.floor(new Date(permission.validAfter).getTime() / 1000)
-      : 0;
-    const validUntil = permission.validUntil
-      ? Math.floor(new Date(permission.validUntil).getTime() / 1000)
-      : 0;
-    const spendLimit = BigInt(permission.spend?.spendLimit ?? '0');
-    const perTxCap = BigInt(permission.spend?.perTransactionCap ?? '0');
-    const agentExecutor = process.env.NEXT_PUBLIC_BAN_EXECUTOR_ADDRESS?.trim() as `0x${string}` | undefined;
-    const calls = (permission.allowedContracts ?? []).length > 0
-      ? permission.allowedContracts.map((c) => ({ target: c as `0x${string}`, selector: '0x00000000' as `0x${string}` }))
-      : [];
-    const tokens = (permission.allowedTokens ?? []).length > 0
-      ? permission.allowedTokens.map((t) => ({ token: t as `0x${string}` }))
-      : [];
-
-    const onchainResult = await contractActivate({
-      authority: authority as `0x${string}`,
-      user: (permission.userAddress ?? '') as `0x${string}`,
-      agentExecutor: agentExecutor ?? (permission.userAddress as `0x${string}`),
-      spendLimit,
-      perTxCap,
-      validAfter,
-      validUntil,
-      calls,
-      tokens,
-    }).catch((err) => {
-      logger.warn('contract_activate_best_effort_failed', {
-        permissionId: permission.id,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    });
-
     await persistAuditEvent({
       type: 'PERMISSION_ACTIVATED',
       correlationId: getCorrelationId(),
@@ -151,7 +106,6 @@ export async function POST(
         userAddress: permission.userAddress,
         jobId: permission.jobId,
         status: 'ACTIVE',
-        onchainTxHash: onchainResult?.txHash ?? null,
       },
     });
 
@@ -159,11 +113,10 @@ export async function POST(
       permissionId: permission.id,
       agentId: permission.agentId,
       jobId: permission.jobId,
-      onchainTxHash: onchainResult?.txHash ?? null,
       correlationId: getCorrelationId(),
     });
 
-    return NextResponse.json({ ok: true, permission: activated, onchainTxHash: onchainResult?.txHash ?? null });
+    return NextResponse.json({ ok: true, permission: activated });
   } catch (err) {
     logger.error('permission_activate_failed', {}, err);
     return handleError(err);
