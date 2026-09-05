@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState<FieldState>({ value: '', touched: false });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const { login } = useAuth();
   const toast = useToast();
   const router = useRouter();
@@ -50,6 +51,16 @@ export default function LoginPage() {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);
       toast.error({ title: 'Sign in failed', description: msg });
+      // Cooldown on quota exceeded
+      if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        setCooldown(30);
+        const interval = setInterval(() => {
+          setCooldown((prev) => {
+            if (prev <= 1) { clearInterval(interval); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -120,10 +131,10 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || cooldown > 0}
                   className="brutal-button w-full"
                 >
-                  {isLoading ? 'Signing in...' : 'Sign In'}
+                  {isLoading ? 'Signing in...' : cooldown > 0 ? `Wait ${cooldown}s` : 'Sign In'}
                 </button>
               </form>
 
