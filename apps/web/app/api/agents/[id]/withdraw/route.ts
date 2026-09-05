@@ -6,7 +6,7 @@ import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { loadAgentKeystore } from '@/lib/altana/keystore';
-import { createWalletClient, http, parseEther, parseUnits, type Hex, type Address } from 'viem';
+import { createWalletClient, createPublicClient, http, parseEther, parseUnits, type Hex, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { ErrorCode } from '@ban/shared';
 
@@ -134,15 +134,17 @@ export async function POST(
       });
     }
 
-    // Create viem wallet client from agent's private key
+    // Create viem clients from agent's private key
     const account = privateKeyToAccount(keystore.privateKey);
     const walletClient = createWalletClient({
       chain: BSC_CHAIN,
       transport: http(BSC_CHAIN.rpcUrls.default.http[0]),
       account,
     });
-    const rpc = process.env.BAN_RPC_URL ?? 'https://bsc-dataseed.binance.org/';
-
+    const publicClient = createPublicClient({
+      chain: BSC_CHAIN,
+      transport: http(BSC_CHAIN.rpcUrls.default.http[0]),
+    });
     let txHash: string;
 
     if (token === 'BNB') {
@@ -150,7 +152,7 @@ export async function POST(
       const value = parseEther(rawAmount as `${number}`);
 
       // Check agent wallet has enough BNB (balance + gas)
-      const balance = await walletClient.getBalance({ address: account.address });
+      const balance = await publicClient.getBalance({ address: account.address });
       const estimatedGas = 21000n;
       const totalCost = value + estimatedGas * 3_000_000_000n; // 3 gwei
       if (balance < totalCost) {
@@ -172,7 +174,7 @@ export async function POST(
       const amountWei = parseUnits(rawAmount as `${number}`, decimals);
 
       // Check agent wallet has enough BNB for gas
-      const bnbBalance = await walletClient.getBalance({ address: account.address });
+      const bnbBalance = await publicClient.getBalance({ address: account.address });
       const estimatedGas = 60000n;
       const gasCost = estimatedGas * 3_000_000_000n;
       if (bnbBalance < gasCost) {
