@@ -36,7 +36,7 @@ interface BalanceData {
   usdPrice?: number | null;
 }
 
-/** On-chain agent wallet balance â€” value is null until the chain read succeeds. */
+/** On-chain agent wallet balance — value is null until the chain read succeeds. */
 function AgentBalance({ agentId, walletAddress }: { agentId: string; walletAddress?: string }) {
   const toast = useToast();
   const [balance, setBalance] = useState<BalanceData | null>(null);
@@ -58,7 +58,7 @@ function AgentBalance({ agentId, walletAddress }: { agentId: string; walletAddre
     load();
   }, [load]);
 
-  // No wallet provisioned yet â†’ show nothing beside the address (no fabricated zero).
+  // No wallet provisioned yet →’ show nothing beside the address (no fabricated zero).
   if (!walletAddress || (!balance?.balanceBnb && !balance?.balanceUsd)) {
     return null;
   }
@@ -74,12 +74,12 @@ function AgentBalance({ agentId, walletAddress }: { agentId: string; walletAddre
       className="inline-flex items-center gap-2 rounded border border-border bg-background/40 px-2 py-1 font-mono hover:border-[#F0B90B]/60 transition"
     >
       <span className="text-[#F0B90B] font-bold">
-        {balance.balanceBnb ? `${balance.balanceBnb} BNB` : 'â€” BNB'}
+        {balance.balanceBnb ? `${balance.balanceBnb} BNB` : '— BNB'}
       </span>
       {balance.balanceUsd ? (
-        <span className="text-muted-foreground">Â· ${balance.balanceUsd}</span>
+        <span className="text-muted-foreground">· ${balance.balanceUsd}</span>
       ) : (
-        <span className="text-gray-600" title="USD price unavailable">Â· â€”</span>
+        <span className="text-gray-600" title="USD price unavailable">· —</span>
       )}
     </button>
   );
@@ -108,7 +108,7 @@ export default function MyAgentsPage() {
         setModeMap((prev) => ({ ...prev, [agentId]: pd?.mode || '' }));
       }
     } catch {
-      // leave mode unset â†’ NO DATA badge
+      // leave mode unset →’ NO DATA badge
     }
   }
 
@@ -167,7 +167,7 @@ export default function MyAgentsPage() {
           const err = await res.json();
           message = err?.error ?? err?.message ?? message;
         } catch {
-          // body was not JSON â€” keep the fallback message
+          // body was not JSON — keep the fallback message
         }
         throw new Error(message);
       }

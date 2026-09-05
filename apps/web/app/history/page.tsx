@@ -100,7 +100,7 @@ export default function HistoryPage() {
   const formatPayload = (payload: Record<string, unknown>) => {
     const entries = Object.entries(payload);
     if (entries.length === 0) return 'Agent event recorded';
-    return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' Â· ');
+    return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' · ');
   };
 
   const isTransaction = (type: string) => TRANSACTION_TYPES.has(type);

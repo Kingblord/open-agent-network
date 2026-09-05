@@ -3,9 +3,11 @@ import 'server-only';
 /**
  * M4 - SessionManager factory.
  *
- * Selects the Altana provider based on env. In production/real deployments the
- * real Altana adapter is used; for local dev / hermetic tests
- * `ALTANA_PROVIDER=dev` selects the deterministic DEV adapter.
+ * Selects the Altana provider based on env:
+ *   - ALTANA_PROVIDER=altana → RealAltanaAdapter (on-chain session grant/revoke)
+ *   - ALTANA_PROVIDER=dev (default) → DevAltanaAdapter (deterministic fakes)
+ *
+ * The real adapter is lazy-loaded to avoid pulling the SDK into every request.
  */
 import { SessionManager } from './session-manager';
 import { DevAltanaAdapter } from './altana/dev-adapter';
@@ -13,9 +15,11 @@ import { DevAltanaAdapter } from './altana/dev-adapter';
 export function sessionManagerFactory(): SessionManager {
   const provider = process.env.ALTANA_PROVIDER ?? 'dev';
   if (provider === 'altana') {
-    // Real provider is a network/deployment concern; the sandbox defaults to
-    // the DEV adapter so the control-plane + tests are runnable offline.
-    // Import lazily to avoid pulling the SDK into every request if unused.
+    // Lazy-load the real adapter to avoid pulling the SDK into every request.
+    // The real adapter uses @altananetwork/sdk for on-chain session grant/revoke.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { RealAltanaAdapter } = require('./altana/real-adapter') as typeof import('./altana/real-adapter');
+    return new SessionManager(new RealAltanaAdapter());
   }
   return new SessionManager(new DevAltanaAdapter());
 }

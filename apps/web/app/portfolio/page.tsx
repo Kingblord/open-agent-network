@@ -189,12 +189,12 @@ export default function PortfolioPage() {
             <div className="text-center flex-1">
               <p className="text-xs text-muted-foreground font-bold mb-1">Success rate</p>
               <p className="text-lg font-black text-[#F0B90B]">
-                {successRate != null ? `${(successRate * 100).toFixed(0)}%` : 'â€”'}
+                {successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}
               </p>
             </div>
             <div className="text-center flex-1">
               <p className="text-xs text-muted-foreground font-bold mb-1">Gas used</p>
-              <p className="text-lg font-black text-foreground font-mono">{feesBnb ?? 'â€”'}</p>
+              <p className="text-lg font-black text-foreground font-mono">{feesBnb ?? '—'}</p>
             </div>
           </div>
         )}

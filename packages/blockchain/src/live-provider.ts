@@ -43,6 +43,8 @@
 import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import {
   BNB_MAINNET_CONTRACTS,
+  VENUS_VTOKENS,
+  isValidAddress,
   ContractRegistry,
   TokenRegistry,
   DeploymentRegistry,
@@ -123,14 +125,30 @@ const COINGECKO_IDS: Record<string, string> = {
   USDC: 'usd-coin',
 };
 
+/**
+ * BAN P0 token addresses (lowercase) → CoinGecko id. The live pool reader
+ * prices tokens BY ADDRESS (LiquidityAdapter.getPoolState returns token0/token1
+ * as addresses), so a pool of any P0 asset resolves a real USD price. Anything
+ * outside the verified P0 set fails closed (PROVIDER_UNAVAILABLE) — never a
+ * fabricated rate.
+ */
+const COINGECKO_BY_ADDRESS: Record<string, string> = {
+  '0x0000000000000000000000000000000000000000': 'binancecoin', // BNB (native)
+  '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c': 'binancecoin', // WBNB
+  '0x55d398326f99059ff775485246999027b3197955': 'tether', // BSC-USD
+  '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d': 'usd-coin', // BSC-USDC
+};
+
 /** A real, cached CoinGecko price adapter (BNB/WBNB/USDT/USDC), fail-closed. */
 class CoinGeckoBnbPrice implements PriceDataAdapter {
   private readonly cache = new Map<string, { priceUsd: string; at: number }>();
   private readonly ttlMs = 60_000;
 
   async getTokenPrice(token: string): Promise<{ asset: string; priceUsd: string; timestamp: string }> {
-    const key = token.toUpperCase();
-    const coinId = COINGECKO_IDS[key];
+    const raw = token.trim();
+    const isAddress = raw.toLowerCase().startsWith('0x');
+    const key = isAddress ? raw.toLowerCase() : raw.toUpperCase();
+    const coinId = isAddress ? COINGECKO_BY_ADDRESS[key] : COINGECKO_IDS[key];
     if (!coinId) {
       throw new BANError(
         ErrorCode.PROVIDER_UNAVAILABLE,
@@ -688,15 +706,36 @@ export class LiveDataProvider implements ToolAdapters {
    * enabled; this helper only derives the read surface (never authority).
    */
   private venusVTokens(): Array<{ address: string; symbol: string; decimals: number }> {
-    const dep = this.deployments.get('venus');
-    if (!dep || !dep.verified) return [];
     const out: Array<{ address: string; symbol: string; decimals: number }> = [];
-    for (const [role, addr] of Object.entries(dep.contracts)) {
-      const base = role.startsWith('vToken.') ? role.slice('vToken.'.length) : role;
-      // Only vToken roles (vBNB / vUSDT / vUSDC / vETH / vBTC …) are pooled
-      // for Venus reads; roles like `comptroller` / `oracle` are excluded.
-      if (!/^v[A-Z][A-Z0-9]*$/.test(base)) continue;
-      out.push({ address: addr, symbol: base.replace(/^v/, ''), decimals: 18 });
+    const seen = new Set<string>();
+    const dep = this.deployments.get('venus');
+    // 1) Registered deployment roles (vBNB / vUSDT / …). Any structurally
+    //    invalid or empty role address is SKIPPED (never read as garbage) —
+    //    this is what previously produced "Address \"\" is invalid".
+    if (dep && dep.verified) {
+      for (const [role, addr] of Object.entries(dep.contracts)) {
+        const base = role.startsWith('vToken.') ? role.slice('vToken.'.length) : role;
+        // Only vToken roles (vBNB / vUSDT / vUSDC / vETH / vBTC …) are pooled
+        // for Venus reads; roles like `comptroller` / `oracle` are excluded.
+        if (!/^v[A-Z][A-Z0-9]*$/.test(base)) continue;
+        if (!isValidAddress(addr)) continue; // empty/placeholder → never read
+        const key = addr.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ address: addr, symbol: base.replace(/^v/, ''), decimals: 18 });
+      }
+    }
+    // 2) Fallback to the verified VENUS_VTOKENS seed set whenever a market
+    //    isn't already covered — so live reads ALWAYS resolve to the real,
+    //    verified vToken addresses even when the control-plane deployment
+    //    registry carries only a subset or placeholder roles.
+    for (const [symbol, addr] of Object.entries(VENUS_VTOKENS)) {
+      const vSymbol = symbol.replace(/^v/, '');
+      if (out.some((o) => o.symbol === vSymbol)) continue;
+      const key = addr.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ address: addr, symbol: vSymbol, decimals: 18 });
     }
     return out;
   }

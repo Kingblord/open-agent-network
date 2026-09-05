@@ -8,12 +8,17 @@
 //   3. probe eth_supportedEntryTypes for 0x4 (EIP-7702 type-4 tx support)
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createPublicClient, http } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
+
+// viem is a workspace dependency of apps/web, not of the repo root. Node ESM
+// resolves bare specifiers relative to THIS script's directory, so resolve
+// viem through apps/web's package context via createRequire (honors pnpm's
+// .pnpm layout) and import it by file URL.
+const requireFromWeb = createRequire(join(repoRoot, 'apps/web/package.json'));
 
 // Tiny .env parser — no dotenv dependency needed at repo root.
 function loadEnv(file) {
@@ -37,20 +42,29 @@ function loadEnv(file) {
   return out;
 }
 
+// Normalize a private key to 0x-prefixed 64-hex. Accepts both prefixed and
+// raw 64-char hex (DEV_PRIVATE_KEY may be stored without the 0x prefix).
+// Strict: 64 hex chars exactly; anything else is rejected (never a partial).
+function normalizePrivateKey(raw) {
+  let v = (raw || '').trim().toLowerCase();
+  if (v.startsWith('0x')) v = v.slice(2);
+  if (!/^[0-9a-f]{64}$/.test(v)) return null;
+  return '0x' + v;
+}
+
 const env = loadEnv(join(repoRoot, 'apps/web/.env.local'));
 
-const KEY = (env.DEV_PRIVATE_KEY || '').trim();
 const RPC = (env.BAN_RPC_URL || '').trim();
 const CHAIN_ID = Number(env.BAN_CHAIN_ID ?? 56);
+const KEY = normalizePrivateKey(env.DEV_PRIVATE_KEY);
 
 if (!KEY || !RPC) {
   console.error('Missing DEV_PRIVATE_KEY and/or BAN_RPC_URL in apps/web/.env.local');
   process.exit(1);
 }
-if (!/^0x[a-fA-F0-9]{64}$/.test(KEY)) {
-  console.error('DEV_PRIVATE_KEY does not look like a 64-hex private key.');
-  process.exit(1);
-}
+
+const { createPublicClient, http } = await import(pathToFileURL(requireFromWeb.resolve('viem')).href);
+const { privateKeyToAccount } = await import(pathToFileURL(requireFromWeb.resolve('viem/accounts')).href);
 
 const account = privateKeyToAccount(KEY);
 console.log('derived account:', account.address);

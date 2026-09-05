@@ -111,16 +111,16 @@ export default function AgentsMarketplacePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const pageNumbers: (number | 'â€¦')[] = [];
+  const pageNumbers: (number | '"¦')[] = [];
   if (totalPages <= 7) {
     for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
   } else {
     pageNumbers.push(1);
-    if (page > 3) pageNumbers.push('â€¦');
+    if (page > 3) pageNumbers.push('"¦');
     for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
       pageNumbers.push(i);
     }
-    if (page < totalPages - 2) pageNumbers.push('â€¦');
+    if (page < totalPages - 2) pageNumbers.push('"¦');
     pageNumbers.push(totalPages);
   }
 
@@ -145,7 +145,7 @@ export default function AgentsMarketplacePage() {
           href="/my-agents"
           className="px-3 py-1.5 bg-card border border-border hover:border-accent text-xs font-bold text-accent rounded"
         >
-          MY AGENTS â†’
+          MY AGENTS →’
         </Link>
       </div>
 
@@ -191,7 +191,7 @@ export default function AgentsMarketplacePage() {
             <div>
               <p className="text-[10px] font-black text-accent-foreground tracking-widest uppercase mb-1">BNB AGENT NETWORK</p>
               <p className="text-sm font-black text-accent-foreground">Autonomous Agents Working For You</p>
-              <p className="text-xs text-accent-foreground/70 mt-1">Yield â€¢ Trading â€¢ Rebalance â€¢ Safety</p>
+              <p className="text-xs text-accent-foreground/70 mt-1">Yield "¢ Trading "¢ Rebalance "¢ Safety</p>
             </div>
             <div className="w-10 h-10 bg-card rounded-lg flex items-center justify-center">
               <span className="text-accent text-lg font-black">{deployedCount}</span>
@@ -309,16 +309,16 @@ export default function AgentsMarketplacePage() {
                   <div className="grid grid-cols-3 gap-2 bg-muted/50 rounded-xl p-2.5 border border-border text-center mb-3">
                     <div>
                       <div className="text-[10px] text-muted-foreground uppercase">Type</div>
-                      <div className="text-xs font-bold text-foreground">{(agent.type || 'â€”').toUpperCase()}</div>
+                      <div className="text-xs font-bold text-foreground">{(agent.type || '—').toUpperCase()}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-muted-foreground uppercase">Strategy</div>
-                      <div className="text-xs font-bold text-accent">{(agent.strategyId || 'â€”').toUpperCase()}</div>
+                      <div className="text-xs font-bold text-accent">{(agent.strategyId || '—').toUpperCase()}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-muted-foreground uppercase">Cost</div>
                       <div className="text-xs font-bold text-foreground">
-                        {agent.costPerExecution != null ? `${agent.costPerExecution}` : 'â€”'}
+                        {agent.costPerExecution != null ? `${agent.costPerExecution}` : '—'}
                       </div>
                     </div>
                   </div>
@@ -347,11 +347,11 @@ export default function AgentsMarketplacePage() {
                 className="px-2.5 py-1.5 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:pointer-events-none text-xs font-bold"
                 aria-label="Previous page"
               >
-                â€¹
+                "¹
               </button>
               {pageNumbers.map((p, idx) =>
-                p === 'â€¦' ? (
-                  <span key={`e-${idx}`} className="px-1.5 text-muted-foreground text-xs">â€¦</span>
+                p === '"¦' ? (
+                  <span key={`e-${idx}`} className="px-1.5 text-muted-foreground text-xs">"¦</span>
                 ) : (
                   <button
                     key={p}
@@ -372,11 +372,11 @@ export default function AgentsMarketplacePage() {
                 className="px-2.5 py-1.5 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:pointer-events-none text-xs font-bold"
                 aria-label="Next page"
               >
-                â€º
+                "º
               </button>
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Page {page} of {totalPages} Â· Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}â€“{Math.min(page * PAGE_SIZE, total)} of {total}
+              Page {page} of {totalPages} · Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}"“{Math.min(page * PAGE_SIZE, total)} of {total}
             </div>
           </div>
         )}

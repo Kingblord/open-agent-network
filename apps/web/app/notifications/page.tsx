@@ -50,7 +50,7 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
 function summarizePayload(payload: Record<string, unknown>): string {
   const entries = Object.entries(payload);
   if (entries.length === 0) return 'Agent event recorded.';
-  return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' Â· ');
+  return entries.slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' · ');
 }
 
 function eventToNotification(event: ActivityEvent): Notification {

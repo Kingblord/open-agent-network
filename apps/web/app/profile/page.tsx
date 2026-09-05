@@ -28,7 +28,7 @@ export default function ProfilePage() {
   const [credits, setCredits] = useState<number | null>(null);
   const [serverWallet, setServerWallet] = useState<string | null>(null);
 
-  // Manage Agents â€” owned deployed agents (not the canonical template pool).
+  // Manage Agents — owned deployed agents (not the canonical template pool).
   const [myAgents, setMyAgents] = useState<ProfileAgent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentDeleteOpen, setAgentDeleteOpen] = useState<ProfileAgent | null>(null);
@@ -85,7 +85,7 @@ export default function ProfilePage() {
         if (data?.walletAddress) setServerWallet(data.walletAddress);
       })
       .catch(() => {
-        // Non-fatal â€” fall back to active/linked address below.
+        // Non-fatal — fall back to active/linked address below.
       });
     return () => {
       cancelled = true;
@@ -138,7 +138,7 @@ export default function ProfilePage() {
 
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
-    : 'â€”';
+    : '—';
 
   const walletAddress = activeAddress ?? user?.walletAddress ?? linkedAddress ?? serverWallet ?? null;
   const walletConnected = Boolean(walletAddress);
@@ -203,8 +203,8 @@ export default function ProfilePage() {
           </div>
           <div className="flex justify-between">
             {[
-              { label: 'AGENTS', value: agentCount != null ? `${agentCount}` : 'â€”' },
-              { label: 'CREDITS', value: credits != null ? `${credits}` : 'â€”' },
+              { label: 'AGENTS', value: agentCount != null ? `${agentCount}` : '—' },
+              { label: 'CREDITS', value: credits != null ? `${credits}` : '—' },
               { label: 'MEMBER SINCE', value: memberSince },
             ].map((stat) => (
               <div key={stat.label} className="text-center flex-1">
@@ -283,7 +283,7 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* MANAGE AGENTS â€” list owned deployed agents with delete */}
+        {/* MANAGE AGENTS — list owned deployed agents with delete */}
         <div className="mx-5 mt-4 dark:bg-card bg-gray-50 rounded-xl p-5 border dark:border-border border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Manage Agents</h3>
@@ -308,7 +308,7 @@ export default function ProfilePage() {
                 onClick={() => router.push('/agents')}
                 className="text-[#F0B90B] font-black uppercase"
               >
-                Browse marketplace â†’
+                Browse marketplace →’
               </button>
             </p>
           ) : (
@@ -399,7 +399,7 @@ export default function ProfilePage() {
         title="Delete agent?"
         description={
           agentDeleteOpen
-            ? `"${agentDeleteOpen.name}" will be revoked and permanently removed from your profile. Its dedicated signing key will be destroyed â€” this cannot be undone.`
+            ? `"${agentDeleteOpen.name}" will be revoked and permanently removed from your profile. Its dedicated signing key will be destroyed — this cannot be undone.`
             : undefined
         }
         confirmLabel="Delete"

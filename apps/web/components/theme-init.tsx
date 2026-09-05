@@ -3,23 +3,22 @@
 import { useEffect } from 'react';
 
 /**
- * App-wide theme bootstrap.
+ * App-wide theme bootstrap (app pages only).
  *
  * Reads the saved theme ('oan-theme-v1') or falls back to the system
- * preference and applies it to <html> BEFORE paint (called in root layout,
- * which wraps every page — including the landing page). The landing page
- * (app/page.tsx) keeps its own in-page ThemeToggle UI, but the persisted
- * class on <html> is shared so the toggle works consistently app-wide.
+ * preference and applies it to <html> BEFORE paint.
  *
- * Landing page exception: the landing hero uses a fixed brutalist design and
- * reads `--background` directly; it is still covered here so a user who toggled
- * light on /settings and then visits / sees the same light palette. The
- * dedicated landing toggle simply writes the same localStorage key — one source
- * of truth ('oan-theme-v1'), one <html> class, every page.
+ * Landing-page exception: the landing page (app/page.tsx) has its own
+ * dedicated toggle + scoped palette via [data-landing] on its <main>. When
+ * this component sees that marker it does nothing, so the landing page's
+ * theme behavior is fully self-owned and never fought by this bootstrap.
  */
 export function ThemeInit() {
   useEffect(() => {
     try {
+      if (document.querySelector('[data-landing]')) {
+        return; // Landing page owns its own theme — do not touch.
+      }
       const saved = window.localStorage.getItem('oan-theme-v1');
       const systemPrefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
       const nextTheme: 'dark' | 'light' =

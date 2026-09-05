@@ -54,10 +54,10 @@
   --sidebar-border: oklch(0.96 0.015 95 / 22%);
 }
 
-/* Light theme: proper neutral palette. The BNB brand yellow (#F0B90B) is
-   reserved for the accent (buttons, badges, highlights) — it is NOT the page
-   background/card color in light mode (that was the old bug where the whole
-   app turned into a yellow wall when toggled to light). */
+/* Light theme — app pages (dashboard, agents, my-agents, …): proper neutral
+   palette. The BNB brand yellow (#F0B90B) is reserved for the accent (buttons,
+   badges, highlights), NOT the page background/card color in light mode (that
+   was the old bug where the whole app turned into a yellow wall). */
 html.light {
   color-scheme: light;
   --background: oklch(0.985 0.002 260);
@@ -81,6 +81,35 @@ html.light {
   --sidebar: oklch(0.93 0.01 260);
   --sidebar-foreground: oklch(0.22 0.02 260);
   --sidebar-border: oklch(0.2 0.015 260 / 18%);
+}
+
+/* Landing page (scoped via [data-landing] on the landing <main>): light mode
+   keeps the ORIGINAL BAN brutalist palette — white surfaces stay white, all
+   black surfaces flip to Brand Yellow (#F0B90B), text goes dark. This restores
+   "white stays white, black becomes yellow" exactly as the old landing logic
+   did, without leaking into the app pages above. */
+html.light [data-landing] {
+  --background: #F0B90B;
+  --foreground: #0B0B0F;
+  --card: #F0B90B;
+  --card-foreground: #0B0B0F;
+  --popover: #F0B90B;
+  --popover-foreground: #0B0B0F;
+  --primary: #0B0B0F;
+  --primary-foreground: #F0B90B;
+  --secondary: #F0B90B;
+  --secondary-foreground: #0B0B0F;
+  --muted: #F0B90B;
+  --muted-foreground: #0B0B0F;
+  --accent: #FFFFFF;
+  --accent-foreground: #0B0B0F;
+  --destructive: #C73E2B;
+  --border: rgba(11, 11, 15, 0.4);
+  --input: rgba(11, 11, 15, 0.4);
+  --ring: #0B0B0F;
+  --sidebar: #F0B90B;
+  --sidebar-foreground: #0B0B0F;
+  --sidebar-border: rgba(11, 11, 15, 0.4);
 }
 
 @layer base {

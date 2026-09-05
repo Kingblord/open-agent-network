@@ -64,8 +64,8 @@ interface ActivityEvent {
   createdAt: string;
 }
 
-// Shape of GET /api/protocols â†’ { ok, snapshot } (derived from the fail-closed
-// @ban/registry registries via buildBnbRegistrySnapshot â€” never fabricated).
+// Shape of GET /api/protocols →’ { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
 interface RegistryContractEntry {
   id: string;
   address: string;
@@ -236,7 +236,7 @@ export default function AgentDetailPage() {
     }
   };
 
-  // Real protocol registry snapshot (GET /api/protocols â†’ buildBnbRegistrySnapshot).
+  // Real protocol registry snapshot (GET /api/protocols →’ buildBnbRegistrySnapshot).
   const fetchProtocolSnapshot = async () => {
     try {
       const response = await fetch('/api/protocols');
@@ -317,10 +317,10 @@ export default function AgentDetailPage() {
   const capitalUsd = Number(performance?.capitalManagedUsd || '0');
   const tvlValue = hasRealPositions && capitalUsd > 0
     ? `$${capitalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : 'â€”';
+    : '—';
   const successRate = confirmedCount > 0 && performance
     ? `${(parseFloat(performance.successRate) * 100).toFixed(0)}%`
-    : 'â€”';
+    : '—';
   const confirmedDisplay = confirmedCount > 0 ? String(confirmedCount) : 'None yet';
   const capLabel = (c: Capability) => c.name || c.id;
 
@@ -335,7 +335,7 @@ export default function AgentDetailPage() {
   //
   // Match by registry **id OR display name**, case-insensitive. The snapshot
   // uses ids (`pancakeswap`, `venus`) while agent templates may store display
-  // names (`PancakeSwap`, `Venus`) â€” a strict id-only match made verified
+  // names (`PancakeSwap`, `Venus`) — a strict id-only match made verified
   // protocols render as greyed-out "UNRECOGNIZED" despite being verified.
   const norm = (s: string) => s.toLowerCase().trim();
   const snapshotProtocols = protocolSnapshot?.protocols ?? [];
@@ -435,7 +435,7 @@ export default function AgentDetailPage() {
                   </div>
                   <div className="bg-card rounded-lg p-3">
                     <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Avg execution</p>
-                    <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : 'â€”'}</p>
+                    <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
                   </div>
                 </div>
               )}
@@ -443,7 +443,7 @@ export default function AgentDetailPage() {
               {performance && (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
                   <span>Mode</span>
-                  <span className="font-black text-[#F0B90B] uppercase">{performance.mode} â€” {performance.modeReason}</span>
+                  <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
                 </div>
               )}
             </div>
@@ -483,13 +483,13 @@ export default function AgentDetailPage() {
               )}
             </div>
 
-            {/* PROTOCOL STATE â€” real registry snapshot per agent skill (never fabricated). */}
+            {/* PROTOCOL STATE — real registry snapshot per agent skill (never fabricated). */}
             <div className="bg-card rounded-xl p-5 border border-border space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PROTOCOL STATE</span>
                 {protocolSnapshot && (
                   <span className="text-[9px] font-mono text-muted-foreground">
-                    BNB {protocolSnapshot.chainId} Â· registry-derived
+                    BNB {protocolSnapshot.chainId} · registry-derived
                   </span>
                 )}
               </div>
@@ -558,7 +558,7 @@ export default function AgentDetailPage() {
                                           key={f.name}
                                           className={`text-[9px] font-mono px-1.5 py-0.5 border ${f.capability === 'EXECUTE' ? 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/5'}`}
                                         >
-                                          {f.name} Â· {f.capability}
+                                          {f.name} · {f.capability}
                                         </span>
                                       ))}
                                     </div>
@@ -595,19 +595,19 @@ export default function AgentDetailPage() {
               <div className="space-y-2.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Strategy ID</span>
-                  <span className="font-mono text-gray-200">{agent.strategyId ?? 'â€”'}</span>
+                  <span className="font-mono text-gray-200">{agent.strategyId ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Type</span>
-                  <span className="text-gray-200 capitalize">{agent.type ?? 'â€”'}</span>
+                  <span className="text-gray-200 capitalize">{agent.type ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Risk</span>
-                  <span className="text-gray-200">{agent.riskLevel ?? 'â€”'}</span>
+                  <span className="text-gray-200">{agent.riskLevel ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Cost / Run</span>
-                  <span className="text-gray-200 font-mono">{agent.costPerExecution != null ? `${agent.costPerExecution} credits` : 'â€”'}</span>
+                  <span className="text-gray-200 font-mono">{agent.costPerExecution != null ? `${agent.costPerExecution} credits` : '—'}</span>
                 </div>
               </div>
             </div>

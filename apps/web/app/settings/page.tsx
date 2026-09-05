@@ -134,7 +134,7 @@ export default function SettingsPage() {
         setNewKeyName('');
         setShowCreateKey(false);
         await loadApiKeys();
-        toast.success({ title: 'API key created', description: 'Copy it now â€” it will not be shown again.' });
+        toast.success({ title: 'API key created', description: 'Copy it now — it will not be shown again.' });
       } else {
         const err = await res.json();
         const msg = err.error || 'Failed to create API key.';
@@ -246,7 +246,7 @@ export default function SettingsPage() {
 
         {activeTab === 'GENERAL' && (
           <div className="mx-5 mt-4 space-y-4">
-            {/* Connected wallet â€” replaces the old mislabeled "Wallet Address" (developer ID) field */}
+            {/* Connected wallet — replaces the old mislabeled "Wallet Address" (developer ID) field */}
             <WalletConnectCard />
 
             <div className="bg-card rounded-xl p-5 border border-border">
@@ -316,7 +316,7 @@ export default function SettingsPage() {
               <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase mb-4">Account</h3>
               <div className="flex items-center justify-between py-2.5 border-b border-border">
                 <span className="text-sm text-gray-300">Credits balance</span>
-                <span className="text-sm font-black text-[#F0B90B]">{credits != null ? credits : 'â€”'}</span>
+                <span className="text-sm font-black text-[#F0B90B]">{credits != null ? credits : '—'}</span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-gray-300">Developer ID</span>
@@ -370,7 +370,7 @@ export default function SettingsPage() {
 
               {revealedKey && (
                 <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                  <p className="text-xs text-emerald-400 font-bold mb-1">API Key created â€” copy it now, it won&apos;t be shown again.</p>
+                  <p className="text-xs text-emerald-400 font-bold mb-1">API Key created — copy it now, it won&apos;t be shown again.</p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 bg-background text-emerald-300 font-mono text-xs px-3 py-2 rounded break-all">{revealedKey}</code>
                     <button

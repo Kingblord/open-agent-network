@@ -18,7 +18,7 @@ export class GridObservationBuilder {
                 cents: currentPriceCents,
                 // USD dollars with an explicit unit so the model can never read
                 // $687.06 as "687.06 cents" (the cause of the bogus PASS).
-                display: `$${humanReadablePrice} USD`,
+                display: `${humanReadablePrice} USD`,
             },
             crossing: crossing
                 ? {

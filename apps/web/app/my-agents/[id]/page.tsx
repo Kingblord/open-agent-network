@@ -100,8 +100,8 @@ interface ActivityEvent {
   createdAt: string;
 }
 
-// Shape of GET /api/protocols â†’ { ok, snapshot } (derived from the fail-closed
-// @ban/registry registries via buildBnbRegistrySnapshot â€” never fabricated).
+// Shape of GET /api/protocols →’ { ok, snapshot } (derived from the fail-closed
+// @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
 interface RegistryContractEntry {
   id: string;
   address: string;
@@ -228,8 +228,8 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
       const cr = (payload.cycleResult ?? {}) as Record<string, unknown>;
       const stage = typeof cr.stage === 'string' ? cr.stage : '';
       if (stage === 'confirmed') return 'Cycle confirmed an on-chain transaction';
-      if (stage === 'awaited') return 'Cycle complete â€” awaiting execution (session/wallet)';
-      if (stage === 'decided') return 'Cycle complete â€” agent passed (no action)';
+      if (stage === 'awaited') return 'Cycle complete — awaiting execution (session/wallet)';
+      if (stage === 'decided') return 'Cycle complete — agent passed (no action)';
       return stage ? `Cycle finished at stage: ${stage}` : 'Scheduler heartbeat recorded';
     }
     default: {
@@ -243,7 +243,7 @@ function renderUsdc(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
 
-// mustflow Â§6 bounded-authority options (client-side lists; server resolves
+// mustflow §6 bounded-authority options (client-side lists; server resolves
 // them through the fail-closed BAN registries into canonical addresses).
 const TOKEN_OPTIONS = [
   { symbol: 'BNB', label: 'BNB (native)' },
@@ -252,12 +252,12 @@ const TOKEN_OPTIONS = [
   { symbol: 'USDC', label: 'USDC' },
 ];
 
-// mustflow Â§10-Â§13: protocol selectability is derived from the LIVE registry
-// snapshot (GET /api/protocols â†’ buildBnbRegistrySnapshot). This used to be
-// hardcoded verified:false â€” which greyed out PancakeSwap/Venus even though the
+// mustflow §10-§13: protocol selectability is derived from the LIVE registry
+// snapshot (GET /api/protocols →’ buildBnbRegistrySnapshot). This used to be
+// hardcoded verified:false — which greyed out PancakeSwap/Venus even though the
 // registry marks them verified + EXECUTION_ENABLED. We now fall back to
 // enabled-by-default only when the snapshot cannot be loaded; the server's
-// fail-closed resolution is always the real gate (unverified â†’ CONTRACT_NOT_ALLOWED).
+// fail-closed resolution is always the real gate (unverified →’ CONTRACT_NOT_ALLOWED).
 const FALLBACK_PROTOCOL_OPTIONS = [
   { id: 'pancakeswap', label: 'PancakeSwap', verified: true },
   { id: 'venus', label: 'Venus', verified: true },
@@ -533,7 +533,7 @@ export default function MyAgentDetailPage() {
     }
     setTaskLoading(true);
     try {
-      // mustflow Â§6 USD-denominated limits â†’ wei (native BNB, 18 decimals).
+      // mustflow §6 USD-denominated limits →’ wei (native BNB, 18 decimals).
       const maxTxWei = Math.floor((Number(sessionForm.maxTxUsd) / bnbUsdPrice) * 1e18).toString();
       const dailyWei = Math.floor((Number(sessionForm.dailyLimitUsd) / bnbUsdPrice) * 1e18).toString();
 
@@ -780,7 +780,7 @@ export default function MyAgentDetailPage() {
   };
 
   const timeAgo = (iso: string | null) => {
-    if (!iso) return 'â€”';
+    if (!iso) return '—';
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
@@ -930,11 +930,11 @@ export default function MyAgentDetailPage() {
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
-              <p className="text-base font-black text-foreground">{tvlDisplay ?? 'â€”'}</p>
+              <p className="text-base font-black text-foreground">{tvlDisplay ?? '—'}</p>
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">SUCCESS RATE</p>
-              <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-muted-foreground'}>{successRateText ?? 'â€”'}</p>
+              <p className={successRateText ? 'text-base font-black text-emerald-400' : 'text-base font-black text-muted-foreground'}>{successRateText ?? '—'}</p>
             </div>
           </div>
 
@@ -946,7 +946,7 @@ export default function MyAgentDetailPage() {
               </div>
               <div className="bg-card rounded-lg p-3">
                 <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Avg execution</p>
-                <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : 'â€”'}</p>
+                <p className="text-sm font-black text-foreground">{performance.avgExecutionMs ? `${performance.avgExecutionMs}ms` : '—'}</p>
               </div>
             </div>
           )}
@@ -954,7 +954,7 @@ export default function MyAgentDetailPage() {
           {performance && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span>Mode</span>
-              <span className="font-black text-[#F0B90B] uppercase">{performance.mode} â€” {performance.modeReason}</span>
+              <span className="font-black text-[#F0B90B] uppercase">{performance.mode} — {performance.modeReason}</span>
             </div>
           )}
         </div>
@@ -981,7 +981,7 @@ export default function MyAgentDetailPage() {
                   ) : balanceBnb != null ? (
                     `${renderUsdc(balanceBnb!, 6)} BNB`
                   ) : (
-                    'â€”'
+                    '—'
                   )}
                 </span>
               </div>
@@ -1030,16 +1030,16 @@ export default function MyAgentDetailPage() {
                 <span className="w-2 h-2 rounded-full bg-[#F0B90B] animate-pulse" />
                 <span className="text-foreground font-black">{tickStageLabel ?? 'Cycle recorded'}</span>
               </div>
-              <span className="text-muted-foreground font-mono">{timeAgo(latestTick.createdAt)} Â· {(latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage ? 'loop active' : 'heartbeat'}</span>
+              <span className="text-muted-foreground font-mono">{timeAgo(latestTick.createdAt)} · {(latestTick.payload.cycleResult as Record<string, unknown> | undefined)?.stage ? 'loop active' : 'heartbeat'}</span>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No scheduled ticks yet. Create a task â€” Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
+              No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
             </p>
           )}
         </div>
 
-        {/* TASKS â€” user-visible unit of work */}
+        {/* TASKS — user-visible unit of work */}
         <div className="bg-card rounded-xl p-5 border border-border space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-foreground tracking-widest uppercase">TASKS</span>
@@ -1054,7 +1054,7 @@ export default function MyAgentDetailPage() {
 
           {tasks.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">
-              No tasks yet. Create a task to configure the agent&apos;s bounded authority and start the loop (observe â†’ policy â†’ execute).
+              No tasks yet. Create a task to configure the agent&apos;s bounded authority and start the loop (observe →’ policy →’ execute).
             </p>
           ) : (
             <div className="space-y-3">
@@ -1110,7 +1110,7 @@ export default function MyAgentDetailPage() {
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-muted-foreground">Spend Cap</span>
                   <span className="text-foreground font-black font-mono">
-                    {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : 'â€”'}
+                    {spendLimitMax != null ? `${renderUsdc(spendLimitMax)} BNB` : '—'}
                   </span>
                 </div>
                 <div className="h-1.5 bg-[#222] rounded-full overflow-hidden" />
@@ -1118,7 +1118,7 @@ export default function MyAgentDetailPage() {
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Max Tx / Session</span>
                 <span className="text-foreground font-black font-mono">
-                  {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : 'â€”'}
+                  {perTxCap != null ? `${renderUsdc(perTxCap)} BNB` : '—'}
                 </span>
               </div>
               <div>
@@ -1243,7 +1243,7 @@ export default function MyAgentDetailPage() {
           </div>
         )}
 
-        {/* EIP-7702 PERMISSIONS (USER FUNDS) â€” one-time bounded authorization records */}
+        {/* EIP-7702 PERMISSIONS (USER FUNDS) — one-time bounded authorization records */}
         <div className="bg-card rounded-xl p-5 border border-border">
           <PermissionCards agentId={agent.id} />
         </div>
@@ -1291,7 +1291,7 @@ export default function MyAgentDetailPage() {
           </div>
         </div>
 
-                {/* REVIEW TERMINAL (overview) â€” live loop stream */}
+                {/* REVIEW TERMINAL (overview) — live loop stream */}
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
@@ -1330,7 +1330,7 @@ export default function MyAgentDetailPage() {
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Gas (BNB)</p>
-              <p className="text-sm font-black text-foreground font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : 'â€”'}</p>
+              <p className="text-sm font-black text-foreground font-mono">{performance && Number(performance.totalFeesWei) > 0 ? (Number(performance.totalFeesWei) / 1e18).toFixed(6) : '—'}</p>
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Last executed</p>
@@ -1340,7 +1340,7 @@ export default function MyAgentDetailPage() {
         </div>
       </div>
 
-      {/* ANALYTICS VIEW â€” full-screen panel with performance + full activity */}
+      {/* ANALYTICS VIEW — full-screen panel with performance + full activity */}
       {activeViewTab === 'analytics' && (
         <div className="fixed inset-0 z-[70] bg-background overflow-y-auto pb-28">
           <div className="sticky top-0 bg-background/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
@@ -1351,7 +1351,7 @@ export default function MyAgentDetailPage() {
             <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-border px-2.5 py-1.5 bg-card">BACK</button>
           </div>
           <div className="px-5 pt-4 space-y-4">
-                        {/* Review terminal â€” live closed-loop stream (real events only) */}
+                        {/* Review terminal — live closed-loop stream (real events only) */}
             <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
@@ -1368,7 +1368,7 @@ export default function MyAgentDetailPage() {
                 <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Confirmed</p><p className="text-sm font-black text-foreground">{performance?.confirmedCount ?? 0}</p></div>
                 <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Failed</p><p className="text-sm font-black text-red-400">{performance?.failedCount ?? 0}</p></div>
                 <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Total trades</p><p className="text-sm font-black text-foreground">{performance?.totalTrades ?? 0}</p></div>
-                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Success rate</p><p className="text-sm font-black text-emerald-400">{successRateText ?? 'â€”'}</p></div>
+                <div><p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">Success rate</p><p className="text-sm font-black text-emerald-400">{successRateText ?? '—'}</p></div>
               </div>
               {realizedPnlUsd != null && (
                 <div className="pt-3 border-t border-border">
@@ -1418,7 +1418,7 @@ export default function MyAgentDetailPage() {
       )}
 
 
-      {/* TASK CONFIG MODAL â€” captures every config the backend consumes */}
+      {/* TASK CONFIG MODAL — captures every config the backend consumes */}
       {showTaskModal && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
@@ -1431,7 +1431,7 @@ export default function MyAgentDetailPage() {
             <div>
               <label className="block text-xs font-black text-muted-foreground mb-1">Network</label>
               <div className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-gray-200 rounded">
-                BNB Smart Chain (56) <span className="text-[10px] text-muted-foreground">â€” BAN execution chain</span>
+                BNB Smart Chain (56) <span className="text-[10px] text-muted-foreground">— BAN execution chain</span>
               </div>
             </div>
 
@@ -1459,9 +1459,9 @@ export default function MyAgentDetailPage() {
               </div>
             </div>
 
-            {/* Live USD â†’ BNB rate */}
+            {/* Live USD →’ BNB rate */}
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>USD â†’ BNB conversion</span>
+              <span>USD →’ BNB conversion</span>
               <span className="font-mono text-gray-300">
                 {bnbUsdPrice != null ? `1 BNB = $${bnbUsdPrice.toFixed(2)}` : 'Price unavailable'}
               </span>
@@ -1515,7 +1515,7 @@ export default function MyAgentDetailPage() {
                       className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-card text-gray-600 border-border cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {p.label}
-                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifyingâ€¦)</span>}
+                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying"¦)</span>}
                       {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
                     </button>
                   );
@@ -1523,7 +1523,7 @@ export default function MyAgentDetailPage() {
               </div>
               {protocolSnapshotError && (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Registry snapshot unavailable â€” showing last-known verified state; the server still validates fail-closed before any session is created.
+                  Registry snapshot unavailable — showing last-known verified state; the server still validates fail-closed before any session is created.
                 </p>
               )}
               {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
@@ -1578,7 +1578,7 @@ export default function MyAgentDetailPage() {
               />
             </div>
 
-            {/* Inline registry-error (422) â€” user-facing, no stack trace */}
+            {/* Inline registry-error (422) — user-facing, no stack trace */}
             {taskError && (
               <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3 py-2 text-[11px] text-red-300 leading-relaxed">
                 {taskError}
@@ -1593,19 +1593,19 @@ export default function MyAgentDetailPage() {
         </div>
       )}
 
-      {/* TRANSACTION CONFIRMATION â€” shown before any wallet top-up */}
+      {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
       <TransactionConfirmModal
         open={topupOpen}
         title="Confirm Top Up"
         subtitle={`Top up the agent wallet on BNB Smart Chain (chain 56)`}
         lines={[
           { label: 'Agent', value: agent.name, tone: 'gold' },
-          { label: 'Recipient', value: agent.walletAddress ?? 'â€”', mono: true },
+          { label: 'Recipient', value: agent.walletAddress ?? '—', mono: true },
           { label: 'Amount', value: `${topupAmount || '0'} BNB`, tone: 'gold', mono: true },
           { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
           { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
         ]}
-        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain â€” no balance change is assumed before that."
+        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that."
         confirmLabel="Confirm Top Up"
         confirmLoadingLabel="Sending..."
         confirmLoading={topupLoading}

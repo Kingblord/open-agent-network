@@ -436,7 +436,7 @@ describe('LpStrategy end-to-end', () => {
 
   it('observe() returns a structured observation, not raw data', async () => {
     const brain = new RecordingBrain();
-    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider() });
+    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider(), config: { poolAddress: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     expect(obs.length).toBe(1);
     expect(obs[0].type).toBe('lp_rebalance');
@@ -444,7 +444,7 @@ describe('LpStrategy end-to-end', () => {
 
   it('decide() returns a schema-valid ActionProposal from candidates', async () => {
     const brain = new RecordingBrain();
-    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider() });
+    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider(), config: { poolAddress: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();
@@ -463,7 +463,7 @@ describe('LpStrategy end-to-end', () => {
         };
       },
     };
-    const strat = new LpStrategy({ brain: passBrain as never, data: makeDataProvider() });
+    const strat = new LpStrategy({ brain: passBrain as never, data: makeDataProvider(), config: { poolAddress: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).toBeNull();
@@ -471,14 +471,14 @@ describe('LpStrategy end-to-end', () => {
 
   it('fails closed on malformed brain output', async () => {
     const wrongBrain = { async decide() { return 'garbage'; } };
-    const strat = new LpStrategy({ brain: wrongBrain as never, data: makeDataProvider() });
+    const strat = new LpStrategy({ brain: wrongBrain as never, data: makeDataProvider(), config: { poolAddress: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     await expect(strat.decide(obs[0], agent as never)).rejects.toThrow(BANError);
   });
 
   it('does NOT invoke PolicyEngine or ExecutionEngine — only the injected brain', async () => {
     const brain = new RecordingBrain();
-    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider() });
+    const strat = new LpStrategy({ brain: brain as never, data: makeDataProvider(), config: { poolAddress: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { LandingThemeToggle } from '@/components/landing-theme-toggle'
 
 const signals = [
   { label: 'FIRST-CLASS AGENTS', value: '04' },
@@ -29,11 +29,11 @@ export default function Page() {
   }, [mounted, user, loading, router])
 
   if (loading) {
-    return <main className="min-h-screen bg-background grid place-items-center font-mono text-sm uppercase tracking-widest text-muted-foreground">Initializing network...</main>
+    return <main data-landing className="min-h-screen bg-background grid place-items-center font-mono text-sm uppercase tracking-widest text-muted-foreground">Initializing network...</main>
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-background text-foreground selection:bg-accent selection:text-accent-foreground">
+    <main data-landing className="min-h-screen overflow-hidden bg-background text-foreground selection:bg-accent selection:text-accent-foreground">
       <div className="mx-auto max-w-[1440px] border-x border-border">
         <header className="flex min-h-20 items-center justify-between border-b border-border px-5 py-4 md:px-10">
           <Link href="/" className="group flex items-center gap-3" aria-label="BNB Agent Network home">
@@ -85,7 +85,7 @@ export default function Page() {
 
         <section className="grid gap-8 bg-accent p-5 text-accent-foreground md:grid-cols-[1fr_auto] md:items-end md:p-10"><div><p className="font-mono text-xs font-bold uppercase tracking-[0.2em]">No gatekeepers. No fabricated numbers.</p><h2 className="mt-4 max-w-3xl text-4xl font-black uppercase leading-[0.9] tracking-[-0.06em] md:text-7xl">Make intelligence<br />work for you.</h2></div><Link href="/signup" className="inline-flex items-center justify-center border-2 border-accent-foreground px-6 py-4 font-mono text-xs font-bold uppercase tracking-widest transition-colors hover:bg-accent-foreground hover:text-accent">Create account <span className="ml-3 text-base" aria-hidden="true">↗</span></Link></section>
 
-        <footer className="flex flex-col justify-between gap-4 px-5 py-6 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:flex-row md:px-10"><span>© 2026 BNA Agent Network</span><span>Built in public / Run by the network</span><span>BAN_001 <ThemeToggle /></span></footer>
+        <footer className="flex flex-col justify-between gap-4 px-5 py-6 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:flex-row md:px-10"><span>© 2026 BNA Agent Network</span><span>Built in public / Run by the network</span><span>BAN_001 <LandingThemeToggle /></span></footer>
       </div>
     </main>
   )

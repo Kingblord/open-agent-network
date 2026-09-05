@@ -466,6 +466,9 @@ importers:
       '@ban/blockchain':
         specifier: workspace:*
         version: link:../blockchain
+      '@ban/registry':
+        specifier: workspace:*
+        version: link:../registry
       '@ban/schemas':
         specifier: workspace:*
         version: link:../schemas

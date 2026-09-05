@@ -21,6 +21,7 @@ import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
+import { isValidAddress } from '@ban/registry';
 import { LpRangeCalculator } from './lp-calculator.js';
 import { LpDataProvider } from './lp-data-provider.js';
 import { LpRiskModel } from './lp-risk-model.js';
@@ -64,12 +65,24 @@ export class LpStrategy implements StrategyEngine {
     // In the live agent loop, the pool address and owner are resolved from the
     // agent's protocol portfolio. For the hermetic unit path a concrete pool
     // and position are provided by tests.
-    // Task-config threading: allow an explicit pool address from the task row;
-    // fall back to the agent's first protocol. Fail-closed (never fabricates).
-    const poolAddress =
+    // Task-config threading: a pool address is REQUIRED to observe (a real
+    // PancakeSwap V3 pool). We accept only a structurally-valid address from
+    // config.poolAddress (task row). We NEVER treat a protocol name like
+    // "pancakeswap" as an address — that would throw a viem address error.
+    // If no valid pool address is configured, fail closed with a clear,
+    // actionable PROVIDER_UNAVAILABLE instead of contacting a guessed address.
+    const rawPool =
       typeof this.config?.poolAddress === 'string' && this.config!.poolAddress
         ? (this.config!.poolAddress as string)
-        : (agent.protocols[0] ?? '');
+        : '';
+    if (!isValidAddress(rawPool)) {
+      throw new BANError(
+        ErrorCode.PROVIDER_UNAVAILABLE,
+        'LP strategy requires a real PancakeSwap V3 pool address in task config (config.poolAddress); none provided. Refusing to guess an address or read a protocol name as a pool.',
+        { retryable: true },
+      );
+    }
+    const poolAddress = rawPool;
     const walletAddress = agent.walletAddress ?? '';
     const pool = await this.data.fetchPoolState(poolAddress, 18, 18);
     let position: import('./types.js').LpPosition | null = null;

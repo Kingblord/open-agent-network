@@ -346,7 +346,7 @@ describe('GridObservationBuilder — structured facts only', () => {
     const obs = builder.build(agent as never, config, levels, crossing, candidates, fills, 52000, '$520.00');
     expect((obs as any).type).toBe('grid_trading');
     expect((obs as any).data.currentPrice.cents).toBe(52000);
-    expect((obs as any).data.currentPrice.display).toBe('$520.00');
+     expect((obs as any).data.currentPrice.display).toBe('$520.00 USD');
   });
 
   it('exposes candidate facts only — not execution params', () => {

@@ -130,10 +130,10 @@ export default function DashboardPage() {
 
   // Sum of confirmed transactions across owned agents (real).
   const totalConfirmed = agents.reduce((sum, a) => sum + (performanceMap[a.id]?.confirmedCount ?? 0), 0);
-  // Total fees paid in wei â†’ displayed only when > 0.
+  // Total fees paid in wei →’ displayed only when > 0.
   const totalFeesWei = agents.reduce((sum, a) => sum + Number(performanceMap[a.id]?.totalFeesWei ?? '0'), 0);
   const feesPresent = totalFeesWei > 0;
-  const feesDisplay = feesPresent ? `${(totalFeesWei / 1e18).toFixed(4)} BNB` : 'â€”';
+  const feesDisplay = feesPresent ? `${(totalFeesWei / 1e18).toFixed(4)} BNB` : '—';
 
   // Portfolio value only when an agent has real positions. Otherwise honest empty.
   const anyRealPositions = agents.some((a) => performanceMap[a.id]?.hasPositions);
@@ -333,7 +333,7 @@ export default function DashboardPage() {
                   </div>
                   <p className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase tracking-wider">Success rate</p>
                   <p className={`text-lg font-black ${metricValue ? 'dark:text-foreground text-black' : 'text-muted-foreground'}`}>
-                    {metricValue || 'â€”'}
+                    {metricValue || '—'}
                   </p>
                   {isActive && (
                     <div className="absolute bottom-0 right-0 w-8 h-8 bg-[#F0B90B] flex items-center justify-center">

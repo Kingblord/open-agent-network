@@ -139,7 +139,7 @@ export default function ProtocolsPage() {
             </button>
             <div>
               <h2 className="text-[22px] font-black text-[#F0B90B] tracking-wide">PROTOCOL REGISTRY</h2>
-              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">BNB Chain 56 Â· read-only view</p>
+              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">BNB Chain 56 · read-only view</p>
             </div>
           </div>
         </header>
@@ -149,7 +149,7 @@ export default function ProtocolsPage() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-black text-foreground tracking-widest uppercase">Integration Ladder</h3>
               <span className="text-[10px] font-mono text-muted-foreground">
-                {snapshot ? `chain ${snapshot.chainId} Â· ${snapshot.generatedAt}` : 'loadingâ€¦'}
+                {snapshot ? `chain ${snapshot.chainId} · ${snapshot.generatedAt}` : 'loading"¦'}
               </span>
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
@@ -165,7 +165,7 @@ export default function ProtocolsPage() {
               ))}
             </div>
             <p className="mt-3 text-[10px] text-muted-foreground">
-              verified â‰  enabled (mustflow Â§12). This view is derived from the fail-closed registries and grants no authority.
+              verified â‰  enabled (mustflow §12). This view is derived from the fail-closed registries and grants no authority.
             </p>
           </div>
 
@@ -174,7 +174,7 @@ export default function ProtocolsPage() {
           )}
 
           {loadingSnapshot && !snapshot ? (
-            <div className="text-center py-10 text-muted-foreground text-xs">Loading registryâ€¦</div>
+            <div className="text-center py-10 text-muted-foreground text-xs">Loading registry"¦</div>
           ) : (
             <>
               <div className="bg-card rounded-xl p-5 border border-border">
@@ -248,7 +248,7 @@ export default function ProtocolsPage() {
                                         : 'bg-[#1A1A1A] text-muted-foreground border border-border'
                                     }`}
                                   >
-                                    {f.name} Â· {f.capability}
+                                    {f.name} · {f.capability}
                                   </span>
                                 ))}
                               </div>

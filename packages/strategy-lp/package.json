@@ -20,7 +20,8 @@
     "@ban/shared": "workspace:*",
     "@ban/agent-core": "workspace:*",
     "@ban/blockchain": "workspace:*",
-    "@ban/ai": "workspace:*"
+    "@ban/ai": "workspace:*",
+    "@ban/registry": "workspace:*"
   },
   "devDependencies": {
     "typescript": "5.7.3",
