@@ -216,10 +216,25 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // 1) Resolve the session (must be ACTIVE for execution).
     const session = opts.session ?? (await getSessionForAgent(agentId));
 
-    // 2) Observe (real strategy adapter). Task-derived config is threaded in so
-    //    user-set bounds/caps reach the strategy (fixes hardcoded grid bounds).
+    // 2) Preflight: validate the strategy config before the first cycle.
     const strategy: import('@ban/agent-core').StrategyEngine =
       opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig));
+    if (strategy.preflight) {
+      const preflightResult = await strategy.preflight(agent);
+      if (!preflightResult.ok) {
+        await persistAuditEvent({
+          type: 'AGENT_CYCLE_ERROR',
+          correlationId,
+          agentId,
+          userId,
+          detail: { stage: 'preflight', reason: preflightResult.reason },
+        });
+        return { ok: false, reason: `preflight: ${preflightResult.reason}`, code: ErrorCode.VALIDATION_FAILED };
+      }
+    }
+
+    // 3) Observe (real strategy adapter). Task-derived config is threaded in so
+    //    user-set bounds/caps reach the strategy (fixes hardcoded grid bounds).
     const observations = await strategy.observe(agent, correlationId);
 
     // Enrich observations with user's personal protocol positions (if provided).

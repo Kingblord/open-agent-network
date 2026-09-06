@@ -46,6 +46,13 @@ export interface StrategyEngine {
     decide(observation: Observation, agent: Agent, hooks?: {
         onDecision?: (decision: StrategyDecision) => void;
     }): Promise<ActionProposal | null>;
+    /** Validate strategy config before first cycle. Throws with a clear message when config is invalid. */
+    preflight?(agent: Agent): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    }>;
 }
 export interface PolicyEngine {
     validateAction(proposal: ActionProposal, context: {

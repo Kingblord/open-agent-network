@@ -64,8 +64,18 @@ export class LpStrategy {
         try {
             position = await this.data.fetchPosition(poolAddress, walletAddress);
         }
-        catch {
-            // No existing position — CREATE candidate only
+        catch (err) {
+            // Network/connection errors are distinguishable from "no position" by
+            // checking the message. If the error is not a "no position" error we
+            // re-throw so the cycle can surface the real issue.
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes('no position') || message.includes('position not found') || message.includes('none')) {
+                // No existing position — CREATE candidate only (valid state)
+            }
+            else {
+                // Real network/contract error — re-throw
+                throw err;
+            }
         }
         const candidates = this.selector.select(pool, position);
         return [this.observationBuilder.build(agent, pool, position, candidates)];
@@ -92,5 +102,12 @@ export class LpStrategy {
         // Proposal is described but NOT executed. Policy/execution happen only in
         // the M18 live orchestration.
         return proposal.data;
+    }
+    /** Validate LP config before first cycle. */
+    async preflight(agent) {
+        const rawPool = typeof this.config?.poolAddress === 'string' ? this.config.poolAddress : '';
+        if (!rawPool)
+            return { ok: false, reason: 'LP strategy requires a PancakeSwap V3 pool address in task config (config.poolAddress)' };
+        return { ok: true };
     }
 }

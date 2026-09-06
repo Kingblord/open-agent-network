@@ -48,5 +48,12 @@ export declare class LpStrategy implements StrategyEngine {
     decide(observation: Observation, agent: Agent, hooks?: {
         onDecision?: (decision: StrategyDecision) => void;
     }): Promise<ActionProposal | null>;
+    /** Validate LP config before first cycle. */
+    preflight(agent: Agent): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    }>;
 }
 //# sourceMappingURL=lp-strategy.d.ts.map

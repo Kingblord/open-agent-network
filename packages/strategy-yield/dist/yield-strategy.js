@@ -85,4 +85,11 @@ export class YieldStrategy {
         // happen only in the M18 live orchestration after this returns.
         return proposal.data;
     }
+    /** Validate yield config before first cycle. */
+    async preflight(agent) {
+        const network = this.config ? toString(this.config.network, this.network) : this.network;
+        if (!network)
+            return { ok: false, reason: 'Yield strategy requires a network identifier' };
+        return { ok: true };
+    }
 }

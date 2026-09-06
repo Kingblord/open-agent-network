@@ -318,7 +318,8 @@ export default function MyAgentDetailPage() {
   } | null>(null);
   const [topupOpen, setTopupOpen] = useState(false);
   const [topupLoading, setTopupLoading] = useState(false);
-  const [topupAmount, setTopupAmount] = useState('0.01');
+  const [topupAmount, setTopupAmount] = useState('');
+  const [topupGasUsd, setTopupGasUsd] = useState('0.50');
   const [topupResult, setTopupResult] = useState<{
     topupRequestId: string;
     walletAddress: string;
@@ -880,6 +881,13 @@ export default function MyAgentDetailPage() {
         setTopupLoading(false);
         return;
       }
+      // Minimum $0.50 USD worth of BNB (dynamic based on live price)
+      const minBnb = bnbUsdPrice ? (0.50 / bnbUsdPrice) : 0.001;
+      if (amount < minBnb) {
+        toast.error({ title: 'Amount too low', description: `Minimum top-up is $0.50 worth of BNB (${minBnb.toFixed(6)} BNB at current price).` });
+        setTopupLoading(false);
+        return;
+      }
       if (amount > 1000) {
         toast.error({ title: 'Invalid amount', description: 'Amount exceeds the 1000 BNB sanity limit.' });
         setTopupLoading(false);
@@ -1208,7 +1216,12 @@ export default function MyAgentDetailPage() {
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => { setTopupAmount('0.01'); setTopupResult(null); setTopupOpen(true); }}
+                  onClick={() => {
+                    const suggested = bnbUsdPrice ? (10 / bnbUsdPrice).toFixed(6) : '0.01';
+                    setTopupAmount(suggested);
+                    setTopupResult(null);
+                    setTopupOpen(true);
+                  }}
                   className="w-full bg-[#F0B90B] text-black font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:bg-yellow-400 transition"
                 >
                   TOP UP
@@ -1232,13 +1245,13 @@ export default function MyAgentDetailPage() {
               </div>
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Minimum <strong className="text-foreground">$0.50 BNB reserve</strong> kept for gas.
                 {balanceBnb != null && bnbUsdPrice != null
-                  ? ` BNB: ${formatToken(Math.max(0, balanceBnb - (0.5 / bnbUsdPrice)), 6)}`
-                  : ''}
+                  ? `BNB: ${formatToken(balanceBnb, 6)}`
+                  : 'BNB: —'}
                 {balanceUsdt > 0 ? ` · USDT: ${formatToken(balanceUsdt, 6)}` : ''}
                 {balanceUsdc > 0 ? ` · USDC: ${formatToken(balanceUsdc, 6)}` : ''}
                 {balance != null && balance.balanceUsd != null ? ` · Total: $${balance.balanceUsd}` : ''}.
+                Top up BNB so the agent can pay gas (~$0.18–$0.50 per tx).
               </p>
             </>
           ) : (
@@ -1953,24 +1966,134 @@ export default function MyAgentDetailPage() {
       />
 
       {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
-      <TransactionConfirmModal
-        open={topupOpen}
-        title="Confirm Top Up"
-        subtitle={`Top up the agent wallet on BNB Smart Chain (chain 56)`}
-        lines={[
-          { label: 'Agent', value: agent.name, tone: 'gold' },
-          { label: 'Recipient', value: agent.walletAddress ?? '—', mono: true },
-          { label: 'Amount', value: `${topupAmount || '0'} BNB`, tone: 'gold', mono: true },
-          { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
-          { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
-        ]}
-        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that."
-        confirmLabel="Confirm Top Up"
-        confirmLoadingLabel="Sending..."
-        confirmLoading={topupLoading}
-        onConfirm={handleTopupConfirm}
-        onClose={() => setTopupOpen(false)}
-      />
+      {topupOpen && (
+        <div className="fixed inset-0 z-[200] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#F0B90B]/15 border border-[#F0B90B]/40 flex items-center justify-center shrink-0">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-black text-[#F0B90B] uppercase tracking-wider">Top Up Agent</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">BNB Smart Chain (chain 56)</p>
+              </div>
+              <button type="button" onClick={() => setTopupOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Amount (BNB)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={topupAmount}
+                    onChange={(e) => setTopupAmount(e.target.value)}
+                    placeholder="0.01"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-3 text-lg font-black text-foreground font-mono focus:border-[#F0B90B] outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">BNB</span>
+                </div>
+                {bnbUsdPrice != null && topupAmount && Number(topupAmount) > 0 && (
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    ≈ ${(Number(topupAmount) * bnbUsdPrice).toFixed(2)} USD
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Quick amounts</label>
+                <div className="flex gap-2">
+                  {[5, 10, 25, 50].map((usd) => {
+                    const bnb = bnbUsdPrice ? (usd / bnbUsdPrice).toFixed(6) : '0.01';
+                    return (
+                      <button
+                        key={usd}
+                        type="button"
+                        onClick={() => setTopupAmount(bnb)}
+                        className={`flex-1 px-2 py-2 text-[10px] font-black rounded border transition ${
+                          topupAmount && Math.abs(Number(topupAmount) - Number(bnb)) < 0.0001
+                            ? 'bg-[#F0B90B] text-black border-[#F0B90B]'
+                            : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'
+                        }`}
+                      >
+                        ${usd}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-background/40 border border-border rounded-lg p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Gas budget (BNB reserve)</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-muted-foreground">$</span>
+                    <input
+                      type="number"
+                      min="0.10"
+                      step="0.10"
+                      value={topupGasUsd}
+                      onChange={(e) => setTopupGasUsd(e.target.value)}
+                      className="w-16 bg-background border border-border rounded px-1.5 py-1 text-[10px] font-mono text-foreground text-right"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Recipient</span>
+                  <span className="font-mono text-[#F0B90B] font-black truncate ml-2 max-w-[200px]">{agent.walletAddress ?? '—'}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Network</span>
+                  <span className="font-mono text-gray-200 font-black">BNB Smart Chain (56)</span>
+                </div>
+                {bnbUsdPrice != null && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">BNB price</span>
+                    <span className="font-mono text-gray-200 font-black">${bnbUsdPrice.toFixed(2)}</span>
+                  </div>
+                )}
+                {topupAmount && Number(topupAmount) > 0 && bnbUsdPrice != null && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Min required</span>
+                    <span className="font-mono text-amber-400 font-black">${Math.max(0.50, Number(topupGasUsd)).toFixed(2)} USD (gas)</span>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-muted-foreground leading-relaxed border border-border bg-muted/40 rounded-lg px-3 py-2.5">
+                <span className="font-black text-foreground uppercase tracking-wider text-[9px] block mb-1">Important</span>
+                Sending BNB to the agent's wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that. The gas budget stays in the wallet for future transactions.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setTopupOpen(false)}
+                disabled={topupLoading}
+                className="w-full bg-[#1A1A1A] border border-border text-gray-300 text-xs font-black py-3 uppercase tracking-wider rounded-lg disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                onClick={handleTopupConfirm}
+                loading={topupLoading}
+                loadingLabel="Sending..."
+                variant="primary"
+                disabled={!topupAmount || Number(topupAmount) <= 0}
+              >
+                Send {topupAmount && Number(topupAmount) > 0 ? `${Number(topupAmount).toFixed(6)} BNB` : 'BNB'}
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* WITHDRAW MODAL — withdraw funds from agent wallet to user */}
       {withdrawOpen && (

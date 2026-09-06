@@ -138,9 +138,10 @@ export class GridStrategy implements StrategyEngine {
 
     // A fixed grid becomes a permanent no-op after a strong trend. Recenter
     // deterministically around the live price instead of repeatedly asking the
-    // AI to explain why a stale range cannot trade.
+    // AI to explain why a stale range cannot trade. Also clears the stopped
+    // flag when auto-recenter is enabled so the grid resumes trading.
     let recentered = false;
-    if (!this.state.stopped && this.state.config.autoRecenterOnBreak !== false) {
+    if (this.state.config.autoRecenterOnBreak !== false) {
       const { lowerPriceCents, upperPriceCents } = this.state.config;
       if (priceCents < lowerPriceCents || priceCents > upperPriceCents) {
         const width = Math.max(2, upperPriceCents - lowerPriceCents);
@@ -163,6 +164,7 @@ export class GridStrategy implements StrategyEngine {
           levels,
           lastPriceCents: priceCents,
           recentered: true,
+          stopped: false, // auto-resume when recentering
         };
         recentered = true;
       }
@@ -236,6 +238,20 @@ export class GridStrategy implements StrategyEngine {
   /** Allow tests to inject a custom state. */
   setState(state: GridState): void {
     this.state = state;
+  }
+
+  /** Validate grid config before first cycle. */
+  async preflight(agent: Agent): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const config = this.configOverride;
+    if (config) {
+      const lower = config.lowerPriceCents ?? 0;
+      const upper = config.upperPriceCents ?? 0;
+      if (lower >= upper) return { ok: false, reason: 'Grid upper price must be above lower price' };
+      if (config.gridCount && config.gridCount < 2) return { ok: false, reason: 'Grid count must be at least 2' };
+      const capital = config.capitalCents ?? 0;
+      if (capital <= 0) return { ok: false, reason: 'Grid capital must be positive' };
+    }
+    return { ok: true };
   }
 }
 

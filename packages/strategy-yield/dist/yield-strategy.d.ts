@@ -50,5 +50,12 @@ export declare class YieldStrategy implements StrategyEngine {
     decide(observation: Observation, agent: Agent, hooks?: {
         onDecision?: (decision: StrategyDecision) => void;
     }): Promise<ActionProposal | null>;
+    /** Validate yield config before first cycle. */
+    preflight(agent: Agent): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    }>;
 }
 //# sourceMappingURL=yield-strategy.d.ts.map

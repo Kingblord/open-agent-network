@@ -59,6 +59,13 @@ export declare class GridStrategy implements StrategyEngine {
     getState(): GridState | null;
     /** Allow tests to inject a custom state. */
     setState(state: GridState): void;
+    /** Validate grid config before first cycle. */
+    preflight(agent: Agent): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    }>;
 }
 export { GridCalculator, GridDataProvider, GridRiskModel, GridCandidateSelector, GridObservationBuilder };
 export type { GridConfig, GridLevel, GridFill, GridState, GridCrossing, GridCandidate, GridAction } from './types.js';

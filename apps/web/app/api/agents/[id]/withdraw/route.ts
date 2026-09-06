@@ -154,9 +154,8 @@ export async function POST(
       // Simple BNB transfer
       const value = parseEther(rawAmount as `${number}`);
 
-      // Check agent wallet has enough BNB (balance + gas reserve)
+      // Check agent wallet has enough BNB for the transfer + gas
       const balance = await publicClient.getBalance({ address: account.address });
-      // Fetch BNB price to enforce $0.50 minimum gas reserve
       let bnbPriceUsd = 600;
       try {
         const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd');
@@ -168,7 +167,9 @@ export async function POST(
       const totalCost = value + estimatedGas + minReserveWei;
       if (balance < totalCost) {
         const available = Number(balance - estimatedGas - minReserveWei) / 1e18;
-        return errorResponse(409, `Agent wallet must keep ~$${MIN_GAS_USD.toFixed(2)} BNB reserve for gas. Only ${available > 0 ? available.toFixed(6) : '0'} BNB withdrawable.`, {
+        const bnbAvailable = Number(balance) / 1e18;
+        const totalCostBnb = Number(totalCost) / 1e18;
+        return errorResponse(409, `Insufficient BNB for withdrawal. You have ${bnbAvailable.toFixed(6)} BNB. Withdrawing ${rawAmount} BNB requires ~${totalCostBnb.toFixed(6)} BNB (including ~$0.50 gas reserve). Maximum withdrawable: ${available > 0 ? available.toFixed(6) : '0'} BNB.`, {
           code: ErrorCode.POLICY_DENIED,
           correlationId: getCorrelationId(),
         });
@@ -201,19 +202,13 @@ export async function POST(
         });
       }
 
-      // Check agent wallet has enough BNB for gas + reserve
+      // Check agent wallet has enough BNB for gas (no minimum reserve for token withdrawals)
       const bnbBalance = await publicClient.getBalance({ address: account.address });
-      let bnbPriceUsd = 600;
-      try {
-        const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd');
-        const priceJson = await priceRes.json() as { binancecoin?: { usd?: number } };
-        if (priceJson?.binancecoin?.usd) bnbPriceUsd = priceJson.binancecoin.usd;
-      } catch { /* use fallback price */ }
-      const minReserveWei = BigInt(Math.floor((MIN_GAS_USD / bnbPriceUsd) * 1e18));
-      const estimatedGas = 60000n * 3_000_000_000n;
-      const gasCost = estimatedGas + minReserveWei;
-      if (bnbBalance < gasCost) {
-        return errorResponse(409, `Agent wallet only has ${Number(bnbBalance) / 1e18} BNB — must keep ~$${MIN_GAS_USD.toFixed(2)} reserve for gas.`, {
+      const estimatedGas = 60000n * 3_000_000_000n; // ~$0.18 at 3 gwei
+      if (bnbBalance < estimatedGas) {
+        const bnbAvailable = Number(bnbBalance) / 1e18;
+        const bnbNeeded = Number(estimatedGas) / 1e18;
+        return errorResponse(409, `Agent wallet has ${bnbAvailable.toFixed(6)} BNB — needs at least ${bnbNeeded.toFixed(6)} BNB (~$0.18) for gas to send ${withdrawToken}. Top up BNB first.`, {
           code: ErrorCode.PROVIDER_UNAVAILABLE,
           correlationId: getCorrelationId(),
         });

@@ -77,4 +77,11 @@ export class HealthStrategy {
         // the M18 live orchestration after this returns (M5 → M8 → Altana → BNB).
         return proposal.data;
     }
+    /** Validate health config before first cycle. */
+    async preflight(agent) {
+        if (!agent.walletAddress && !agent.ownerId) {
+            return { ok: false, reason: 'Health strategy requires a wallet address to monitor' };
+        }
+        return { ok: true };
+    }
 }

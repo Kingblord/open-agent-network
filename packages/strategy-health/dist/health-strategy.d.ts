@@ -46,5 +46,12 @@ export declare class HealthStrategy implements StrategyEngine {
     decide(observation: Observation, agent: Agent, hooks?: {
         onDecision?: (decision: StrategyDecision) => void;
     }): Promise<ActionProposal | null>;
+    /** Validate health config before first cycle. */
+    preflight(agent: Agent): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    }>;
 }
 //# sourceMappingURL=health-strategy.d.ts.map
