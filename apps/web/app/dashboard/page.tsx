@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { PieChart, PieLegend, BarChart, CollapsibleSection, StatCard } from '@/components/charts';
 
 interface Agent {
   id: string;
@@ -115,7 +116,7 @@ export default function DashboardPage() {
       setActivity(events.slice(0, 10));
 
       // Fetch agent wallet balances for allocation display (BNB + USDT + USDC)
-      const allocEntries: { agentId: string; name: string; totalUsd: number }[] = [];
+      const allocEntries: { agentId: string; name: string; totalUsd: number; bnb: number; usdt: number; usdc: number; bnbPrice: number }[] = [];
       let allocTotal = 0;
       for (const a of mine.slice(0, 20)) {
         try {
@@ -128,7 +129,7 @@ export default function DashboardPage() {
             const price = bd.usdPrice || 600;
             const usdVal = bnbBal * price + usdtBal + usdcBal;
             if (usdVal > 0) {
-              allocEntries.push({ agentId: a.id, name: a.name, totalUsd: usdVal });
+              allocEntries.push({ agentId: a.id, name: a.name, totalUsd: usdVal, bnb: bnbBal, usdt: usdtBal, usdc: usdcBal, bnbPrice: price });
               allocTotal += usdVal;
             }
           }
@@ -161,8 +162,9 @@ export default function DashboardPage() {
   // Portfolio value: agent-managed positions + agent wallet balances
   const anyRealPositions = agents.some((a) => performanceMap[a.id]?.hasPositions);
   const portfolioValueUsd = agents.reduce((sum, a) => sum + (Number(performanceMap[a.id]?.capitalManagedUsd || '0') || 0), 0);
-  const [agentAllocations, setAgentAllocations] = useState<{ agentId: string; name: string; totalUsd: number }[]>([]);
+  const [agentAllocations, setAgentAllocations] = useState<{ agentId: string; name: string; totalUsd: number; bnb: number; usdt: number; usdc: number; bnbPrice: number }[]>([]);
   const [allocationTotalUsd, setAllocationTotalUsd] = useState(0);
+  const [userWalletBalance, setUserWalletBalance] = useState<{ bnb: number; usdt: number; usdc: number; totalUsd: number } | null>(null);
 
   const timeAgo = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
@@ -282,16 +284,48 @@ export default function DashboardPage() {
             </button>
           </div>
           {anyRealPositions || agentAllocations.length > 0 ? (
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-[32px] font-black leading-none dark:text-foreground text-black">
-                  ${(portfolioValueUsd + allocationTotalUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-sm font-bold text-[#F0B90B] mt-1">
-                  {anyRealPositions ? `${agentAllocations.length} agents funded` : 'Active positions'}
-                </p>
+            <>
+              <div className="flex items-end justify-between mb-4">
+                <div>
+                  <p className="text-[32px] font-black leading-none dark:text-foreground text-black">
+                    ${(allocationTotalUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-sm font-bold text-[#F0B90B] mt-1">
+                    {agentAllocations.length} agent{agentAllocations.length !== 1 ? 's' : ''} funded
+                  </p>
+                </div>
               </div>
-            </div>
+              <div className="flex flex-col md:flex-row items-center gap-4">
+                <PieChart
+                  segments={[
+                    { label: 'Agent Wallets', value: allocationTotalUsd, color: '#F0B90B' },
+                    { label: 'Managed Positions', value: portfolioValueUsd, color: '#10b981' },
+                  ]}
+                  centerValue={`$${allocationTotalUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                  centerLabel="TOTAL"
+                />
+                <div className="flex-1 w-full">
+                  <PieLegend
+                    segments={[
+                      { label: 'Agent Wallets (in use)', value: allocationTotalUsd, color: '#F0B90B' },
+                      { label: 'Managed Positions', value: portfolioValueUsd, color: '#10b981' },
+                    ]}
+                    total={allocationTotalUsd + portfolioValueUsd}
+                  />
+                  {agentAllocations.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <BarChart
+                        items={agentAllocations.slice(0, 4).map((a) => ({
+                          label: a.name.length > 15 ? a.name.slice(0, 15) + '…' : a.name,
+                          value: a.totalUsd,
+                          color: '#F0B90B',
+                        }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
           ) : (
             <div className="py-2">
               <p className="text-base font-black text-muted-foreground">No positions yet</p>
@@ -317,12 +351,31 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Stat cards row */}
+        <div className="mx-5 grid grid-cols-3 gap-2.5 mt-3">
+          <StatCard
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>}
+            value={String(deployedCount)}
+            label="Deployed"
+          />
+          <StatCard
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
+            value={String(totalConfirmed)}
+            label="Confirmed"
+          />
+          <StatCard
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>}
+            value={feesPresent ? feesDisplay : '—'}
+            label="Gas used"
+          />
+        </div>
+
         {dataLoading ? (
-          <div className="mx-5 mt-2 text-center text-xs text-muted-foreground py-6">
+          <div className="mx-5 mt-5 text-center text-xs text-muted-foreground py-6">
             Loading your agents...
           </div>
         ) : agents.filter((a) => a.status !== 'REVOKED').length === 0 || dataError ? (
-          <div className="mx-5 mt-2 dark:bg-card bg-gray-50 rounded-xl p-6 border dark:border-border border-gray-200 text-center">
+          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-6 border dark:border-border border-gray-200 text-center">
             <p className="text-sm font-black text-muted-foreground">{dataError || 'No active agents deployed'}</p>
             <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-1 mb-4">
               {dataError
@@ -336,76 +389,84 @@ export default function DashboardPage() {
             )}
           </div>
         ) : (
-          <div className="mx-5 mt-2 grid grid-cols-2 gap-3">
-            {agents.filter((a) => a.status !== 'REVOKED').map((ag) => {
-              const key = (ag.strategyId || ag.type || 'yield').toLowerCase();
-              const isActive = ag.status === 'ACTIVE';
-              const perf = performanceMap[ag.id];
-              const metricValue =
-                typeof perf?.successRate === 'string' && perf.confirmedCount > 0
-                  ? `${(parseFloat(perf.successRate) * 100).toFixed(0)}%`
-                  : null;
-              return (
-                <button
-                  key={ag.id}
-                  type="button"
-                  onClick={() => ag && router.push(`/my-agents/${ag.id}`)}
-                  className="relative dark:bg-card bg-gray-50 border dark:border-border border-gray-200 rounded-xl p-4 text-left"
-                >
-                  <div className="w-10 h-10 bg-[#F0B90B] flex items-center justify-center mb-3">{STRATEGY_ICONS[key] || null}</div>
-                  <p className="text-[11px] font-black dark:text-foreground text-black tracking-wider mb-2">{ag.name}</p>
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-400' : 'bg-gray-400'}`} />
-                    <span className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase">{ag.status}</span>
-                  </div>
-                  <p className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase tracking-wider">Success rate</p>
-                  <p className={`text-lg font-black ${metricValue ? 'dark:text-foreground text-black' : 'text-muted-foreground'}`}>
-                    {metricValue || '—'}
-                  </p>
-                  {isActive && (
-                    <div className="absolute bottom-0 right-0 w-8 h-8 bg-[#F0B90B] flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M7 17L17 7" /><path d="M7 7h10v10" />
-                      </svg>
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+          <div className="mx-5 mt-5">
+            <CollapsibleSection title="MY AGENTS" badge={`${agents.filter((a) => a.status !== 'REVOKED').length}`} defaultOpen={true}>
+              <div className="grid grid-cols-2 gap-3">
+                {agents.filter((a) => a.status !== 'REVOKED').map((ag) => {
+                  const key = (ag.strategyId || ag.type || 'yield').toLowerCase();
+                  const isActive = ag.status === 'ACTIVE';
+                  const perf = performanceMap[ag.id];
+                  const metricValue =
+                    typeof perf?.successRate === 'string' && perf.confirmedCount > 0
+                      ? `${(parseFloat(perf.successRate) * 100).toFixed(0)}%`
+                      : null;
+                  return (
+                    <button
+                      key={ag.id}
+                      type="button"
+                      onClick={() => ag && router.push(`/my-agents/${ag.id}`)}
+                      className="relative dark:bg-card bg-gray-50 border dark:border-border border-gray-200 rounded-xl p-4 text-left active:scale-[0.98] transition-transform"
+                    >
+                      <div className="w-10 h-10 bg-[#F0B90B] flex items-center justify-center mb-3">{STRATEGY_ICONS[key] || null}</div>
+                      <p className="text-[11px] font-black dark:text-foreground text-black tracking-wider mb-2">{ag.name}</p>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-400' : 'bg-gray-400'}`} />
+                        <span className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase">{ag.status}</span>
+                      </div>
+                      <p className="text-[9px] font-bold dark:text-muted-foreground text-muted-foreground uppercase tracking-wider">Success rate</p>
+                      <p className={`text-lg font-black ${metricValue ? 'dark:text-foreground text-black' : 'text-muted-foreground'}`}>
+                        {metricValue || '—'}
+                      </p>
+                      {isActive && (
+                        <div className="absolute bottom-0 right-0 w-8 h-8 bg-[#F0B90B] flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 17L17 7" /><path d="M7 7h10v10" />
+                          </svg>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CollapsibleSection>
           </div>
         )}
 
-        <div className="mx-5 mt-5 mb-6 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Latest activity</span>
-            <button type="button" onClick={() => router.push('/history')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase flex items-center gap-1">
-              View all
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5l7 7-7 7" /></svg>
-            </button>
-          </div>
-          {activity.length === 0 ? (
-            <p className="text-xs dark:text-muted-foreground text-muted-foreground py-2">
-              No activity recorded yet. Agent actions will appear here.
-            </p>
-          ) : (
-            activity.slice(0, 3).map((event, idx, arr) => (
-              <div key={event.id} className={`flex items-start gap-3 ${idx < arr.length - 1 ? 'pb-4 border-b dark:border-border border-gray-200 mb-4' : ''}`}>
-                <div className="w-9 h-9 bg-[#F0B90B] flex items-center justify-center shrink-0">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M7 17L17 7" /><path d="M7 7h10v10" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-black capitalize text-black">{event.eventType.replace(/_/g, ' ')}</p>
-                  <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-0.5">{formatActivityPayload(event.payload)}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[10px] text-muted-foreground mb-1">{timeAgo(event.createdAt)}</p>
-                  <span className="bg-[#F0B90B] text-black text-[9px] font-black uppercase px-2 py-0.5">LOG</span>
-                </div>
+        <div className="mx-5 mt-5 mb-6">
+          <CollapsibleSection title="LATEST ACTIVITY" badge={`${activity.length}`} defaultOpen={true}>
+            <div className="space-y-3">
+              {activity.length === 0 ? (
+                <p className="text-xs dark:text-muted-foreground text-muted-foreground py-2">
+                  No activity recorded yet. Agent actions will appear here.
+                </p>
+              ) : (
+                activity.slice(0, 3).map((event, idx, arr) => (
+                  <div key={event.id} className={`flex items-start gap-3 ${idx < arr.length - 1 ? 'pb-3 border-b dark:border-border border-gray-200' : ''}`}>
+                    <div className="w-9 h-9 bg-[#F0B90B] flex items-center justify-center shrink-0">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 17L17 7" /><path d="M7 7h10v10" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black capitalize text-black">{event.eventType.replace(/_/g, ' ')}</p>
+                      <p className="text-xs dark:text-muted-foreground text-muted-foreground mt-0.5">{formatActivityPayload(event.payload)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] text-muted-foreground mb-1">{timeAgo(event.createdAt)}</p>
+                      <span className="bg-[#F0B90B] text-black text-[9px] font-black uppercase px-2 py-0.5">LOG</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            {activity.length > 3 && (
+              <div className="mt-3 text-center">
+                <button type="button" onClick={() => router.push('/history')} className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase">
+                  View all {activity.length} events →
+                </button>
               </div>
-            ))
-          )}
+            )}
+          </CollapsibleSection>
         </div>
       </div>
 
