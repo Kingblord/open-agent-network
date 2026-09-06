@@ -14,6 +14,7 @@ import { getThirdwebClient, bnbChainDef } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
 import { PermissionCards } from '@/components/permission-cards';
+import { CollapsibleSection } from '@/components/charts';
 
 interface Session {
   sessionId: string;
@@ -1262,11 +1263,7 @@ export default function MyAgentDetailPage() {
         </div>
 
         {/* SCHEDULER HEARTBEAT */}
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">Scheduler Heartbeat</span>
-            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">~2m</span>
-          </div>
+        <CollapsibleSection title="SCHEDULER HEARTBEAT" badge="~2m">
           {latestTick ? (
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
@@ -1280,7 +1277,7 @@ export default function MyAgentDetailPage() {
               No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
             </p>
           )}
-        </div>
+        </CollapsibleSection>
 
         {/* TASKS — user-visible unit of work */}
         <div className="bg-card rounded-xl p-5 border border-border space-y-4">
@@ -1543,18 +1540,13 @@ export default function MyAgentDetailPage() {
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
-            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
+            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
           </div>
           <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
         </div>
 
         {/* PERFORMANCE */}
-
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERFORMANCE</span>
-          </div>
-
+        <CollapsibleSection title="PERFORMANCE">
           <div className="mb-2">
             <p className="text-[9px] text-muted-foreground font-black uppercase tracking-wider">REALIZED P&L</p>
             <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-muted-foreground'}>
@@ -1585,7 +1577,7 @@ export default function MyAgentDetailPage() {
               <p className="text-sm font-black text-foreground">{timeAgo(lastExecutedAt)}</p>
             </div>
           </div>
-        </div>
+        </CollapsibleSection>
       </div>
 
       {/* ANALYTICS VIEW — full-screen panel with performance + full activity */}
@@ -1603,7 +1595,7 @@ export default function MyAgentDetailPage() {
             <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
-                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
+                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
               </div>
               <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
             </div>

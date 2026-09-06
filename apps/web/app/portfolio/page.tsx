@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useWallet } from '@/lib/wallet-context';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
+import { PieChart, PieLegend, CollapsibleSection, StatCard } from '@/components/charts';
 
 interface TokenBalance {
   token: string;
@@ -173,6 +174,17 @@ export default function PortfolioPage() {
     })();
   }, [user]);
 
+  // Derived capital allocation breakdown for the pie chart.
+  const walletUsd = balances.reduce((s, b) => s + b.usdValue, 0);
+  const agentsUsd = allocations.reduce((s, a) => s + a.totalUsd, 0);
+  const positionsUsd = positions.reduce((s, p) => s + p.capitalUsd, 0);
+  const allocSegments = [
+    { label: 'My Wallet', value: walletUsd, color: '#8b5cf6' },
+    { label: 'Agent Wallets', value: agentsUsd, color: '#F0B90B' },
+    { label: 'Managed Positions', value: positionsUsd, color: '#10b981' },
+  ].filter((s) => s.value > 0);
+  const allocTotal = walletUsd + agentsUsd + positionsUsd;
+
   if (authLoading || !user) return (
     <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
       <div className="text-center">
@@ -229,13 +241,27 @@ export default function PortfolioPage() {
           )}
         </section>
 
+        {/* Capital Allocation — pie chart */}
+        {allocSegments.length > 0 && (
+          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
+            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase block mb-4">Capital Allocation</span>
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              <PieChart
+                segments={allocSegments}
+                centerValue={`$${allocTotal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                centerLabel="TOTAL"
+              />
+              <div className="flex-1 w-full">
+                <PieLegend segments={allocSegments} total={allocTotal} />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Protocol Positions */}
         {isConnected && address && protocolPositions.length > 0 && (
-          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Protocol Positions</span>
-              {lpCount > 0 && <span className="text-[10px] font-black text-[#F0B90B]">{lpCount} LP</span>}
-            </div>
+          <div className="mx-5 mt-5">
+            <CollapsibleSection title="PROTOCOL POSITIONS" badge={lpCount > 0 ? `${lpCount} LP` : undefined} defaultOpen={false}>
             <div className="space-y-3">
               {protocolPositions.map((p, i) => (
                 <div key={i} className="flex items-center justify-between dark:bg-background/40 bg-white/60 rounded-lg p-3 border dark:border-border border-gray-200">
@@ -262,16 +288,14 @@ export default function PortfolioPage() {
                 </div>
               ))}
             </div>
+            </CollapsibleSection>
           </div>
         )}
 
         {/* Agent Allocations — real wallet balances */}
         {allocations.length > 0 && (
-          <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Agent Allocations</span>
-              <span className="text-[10px] font-black text-[#F0B90B]">{allocations.filter(a => a.totalUsd > 0).length} funded</span>
-            </div>
+          <div className="mx-5 mt-5">
+            <CollapsibleSection title="AGENT ALLOCATIONS" badge={`${allocations.filter(a => a.totalUsd > 0).length} funded`}>
             <div className="space-y-3">
               {allocations.map((a) => (
                 <div key={a.agentId} className="dark:bg-background/40 bg-white/60 rounded-lg border dark:border-border border-gray-200 p-3">
@@ -323,14 +347,13 @@ export default function PortfolioPage() {
                 </div>
               ))}
             </div>
+            </CollapsibleSection>
           </div>
         )}
 
         {/* Positions */}
-        <div className="mx-5 mt-5 dark:bg-card bg-gray-50 rounded-xl p-4 border dark:border-border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-black dark:text-foreground text-black tracking-widest uppercase">Positions</span>
-          </div>
+        <div className="mx-5 mt-5">
+          <CollapsibleSection title="POSITIONS" defaultOpen={false}>
           {loading ? (
             <p className="text-xs text-muted-foreground py-2">Loading...</p>
           ) : positions.length === 0 ? (
@@ -354,6 +377,7 @@ export default function PortfolioPage() {
               ))}
             </div>
           )}
+          </CollapsibleSection>
         </div>
 
         {/* Performance */}
@@ -363,23 +387,27 @@ export default function PortfolioPage() {
             <p className="text-xs text-muted-foreground">Loading...</p>
           ) : (
             <>
-              <div className="grid grid-cols-4 gap-3">
-                <div>
-                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Confirmed</p>
-                  <p className="text-xl font-black leading-none dark:text-foreground text-black">{confirmed}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Failed</p>
-                  <p className="text-xl font-black leading-none text-red-400">{failed}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Success</p>
-                  <p className="text-xl font-black leading-none text-[#F0B90B]">{successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black dark:text-muted-foreground text-muted-foreground tracking-widest uppercase mb-1">Gas</p>
-                  <p className="text-xl font-black leading-none dark:text-foreground text-black font-mono">{feesBnb ?? '—'}</p>
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <StatCard
+                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>}
+                  value={String(confirmed)}
+                  label="Confirmed"
+                />
+                <StatCard
+                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>}
+                  value={String(failed)}
+                  label="Failed"
+                />
+                <StatCard
+                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5"><path d="M23 6l-9.5 9.5-5-5L1 18" /></svg>}
+                  value={successRate != null ? `${(successRate * 100).toFixed(0)}%` : '—'}
+                  label="Success"
+                />
+                <StatCard
+                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>}
+                  value={feesBnb ?? '—'}
+                  label="Gas (BNB)"
+                />
               </div>
               {positions.length > 0 && (
                 <div className="mt-4 pt-3 border-t dark:border-border border-gray-200">
