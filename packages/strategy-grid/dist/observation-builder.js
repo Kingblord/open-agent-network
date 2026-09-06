@@ -3,7 +3,7 @@ export class GridObservationBuilder {
     constructor(strategyId = 'grid-trading') {
         this.strategyId = strategyId;
     }
-    build(agent, config, levels, crossing, candidates, fills, currentPriceCents, humanReadablePrice) {
+    build(agent, config, levels, crossing, candidates, fills, currentPriceCents, humanReadablePrice, recentered = false) {
         const gridData = {
             config: {
                 lowerPriceCents: config.lowerPriceCents,
@@ -13,7 +13,9 @@ export class GridObservationBuilder {
                 maxOrderSizeCents: config.maxOrderSizeCents,
                 maxActiveExposureCents: config.maxActiveExposureCents,
                 expiresAt: config.expiresAt,
+                autoRecenterOnBreak: config.autoRecenterOnBreak !== false,
             },
+            rangeStatus: recentered ? 'RECENTERED_AROUND_LIVE_PRICE' : 'IN_RANGE',
             currentPrice: {
                 cents: currentPriceCents,
                 // USD dollars with an explicit unit so the model can never read

@@ -358,6 +358,13 @@ export default function MyAgentDetailPage() {
     allowedFunctions: 'deposit, withdraw, swap',
     riskLevel: 'LOW',
     expiresAtDays: 30,
+    gridLowerPriceUsd: '',
+    gridUpperPriceUsd: '',
+    gridCount: '5',
+    gridCapitalUsd: '',
+    gridMaxOrderUsd: '',
+    autoRecenterOnBreak: true,
+    poolAddress: '',
   });
   const [bnbUsdPrice, setBnbUsdPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
@@ -737,6 +744,15 @@ export default function MyAgentDetailPage() {
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
         funding,
+        ...(agent?.type === 'grid' ? {
+          gridLowerPriceUsd: Number(sessionForm.gridLowerPriceUsd),
+          gridUpperPriceUsd: Number(sessionForm.gridUpperPriceUsd),
+          gridCount: Number(sessionForm.gridCount),
+          gridCapitalUsd: Number(sessionForm.gridCapitalUsd),
+          gridMaxOrderUsd: Number(sessionForm.gridMaxOrderUsd),
+          autoRecenterOnBreak: sessionForm.autoRecenterOnBreak,
+        } : {}),
+        ...(agent?.type === 'lp' && sessionForm.poolAddress ? { poolAddress: sessionForm.poolAddress.trim() } : {}),
       };
 
       const response = await fetch(`/api/agents/${params.id}/tasks`, {
@@ -1828,6 +1844,33 @@ export default function MyAgentDetailPage() {
               )}
               <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
             </div>
+
+            {/* Allowed functions */}
+            {agent.type === 'grid' && (
+              <div className="space-y-3 rounded-lg border border-border bg-background/40 p-3">
+                <label className="block text-xs font-black text-muted-foreground mb-1.5">Grid configuration (USD)</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" min="0.01" step="any" placeholder="Lower price" value={sessionForm.gridLowerPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridLowerPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Upper price" value={sessionForm.gridUpperPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridUpperPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="2" step="1" placeholder="Grid count" value={sessionForm.gridCount} onChange={(e) => setSessionForm({ ...sessionForm, gridCount: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Capital" value={sessionForm.gridCapitalUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridCapitalUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Max order" value={sessionForm.gridMaxOrderUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridMaxOrderUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                </div>
+                <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <input type="checkbox" checked={sessionForm.autoRecenterOnBreak} onChange={(e) => setSessionForm({ ...sessionForm, autoRecenterOnBreak: e.target.checked })} />
+                  Recenter automatically when price leaves the configured range
+                </label>
+                <p className="text-[10px] text-muted-foreground">The live BNB price is used for the initial range check. No $500-$600 fallback is used when these fields are provided.</p>
+              </div>
+            )}
+
+            {agent.type === 'lp' && (
+              <div>
+                <label className="block text-xs font-black text-muted-foreground mb-1.5">PancakeSwap V3 pool address</label>
+                <input type="text" value={sessionForm.poolAddress} onChange={(e) => setSessionForm({ ...sessionForm, poolAddress: e.target.value })} placeholder="0x..." className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg" />
+                <p className="text-[10px] text-muted-foreground mt-1">Required for live LP observation. BAN will not guess a pool from a protocol name.</p>
+              </div>
+            )}
 
             {/* Allowed functions */}
             <div>

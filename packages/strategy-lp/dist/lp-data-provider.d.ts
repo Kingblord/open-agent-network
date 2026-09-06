@@ -6,11 +6,12 @@
  * Token orientation is surfaced explicitly — never assumed token0/token1 = user's quote/base.
  */
 import type { LpPoolState, LpPosition } from './types.js';
-import type { LiquidityAdapter, PriceDataAdapter } from '@ban/blockchain';
+import type { ChainAdapter, LiquidityAdapter, PriceDataAdapter } from '@ban/blockchain';
 import { LpRangeCalculator } from './lp-calculator.js';
 export interface LpDataProviderDeps {
     liquidity: Pick<LiquidityAdapter, 'getPoolState' | 'getPoolPosition'>;
     price: Pick<PriceDataAdapter, 'getTokenPrice'>;
+    chain?: Pick<ChainAdapter, 'getGasEstimate'>;
     calculator?: LpRangeCalculator;
 }
 export declare class LpDataProvider {

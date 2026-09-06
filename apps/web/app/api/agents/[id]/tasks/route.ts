@@ -81,6 +81,8 @@ export interface TaskRecord {
     gridCount?: number;
     gridCapitalUsd?: number;
     gridMaxOrderUsd?: number;
+    autoRecenterOnBreak?: boolean;
+    poolAddress?: string;
   };
   sessionId: string | null;
   lastRun: {
@@ -115,6 +117,7 @@ function extractGridConfig(b: Record<string, unknown>): {
   gridCount?: number;
   gridCapitalUsd?: number;
   gridMaxOrderUsd?: number;
+  autoRecenterOnBreak?: boolean;
 } {
   const out: {
     gridLowerPriceUsd?: number;
@@ -122,6 +125,7 @@ function extractGridConfig(b: Record<string, unknown>): {
     gridCount?: number;
     gridCapitalUsd?: number;
     gridMaxOrderUsd?: number;
+    autoRecenterOnBreak?: boolean;
   } = {};
   const lower = Number(b.gridLowerPriceUsd ?? b.gridLowerUsd);
   const upper = Number(b.gridUpperPriceUsd ?? b.gridUpperUsd);
@@ -133,6 +137,7 @@ function extractGridConfig(b: Record<string, unknown>): {
   if (Number.isFinite(gridCount) && gridCount >= 2) out.gridCount = Math.floor(gridCount);
   if (Number.isFinite(capital) && capital > 0) out.gridCapitalUsd = capital;
   if (Number.isFinite(maxOrder) && maxOrder > 0) out.gridMaxOrderUsd = maxOrder;
+  if (b.autoRecenterOnBreak === false) out.autoRecenterOnBreak = false;
   return out;
 }
 
@@ -253,6 +258,9 @@ export async function POST(
     // Grid bounds (optional, USD dollars) — persisted on the task row AND fed
     // to runAgentCycle so the strategy actually uses the user's range.
     const gridConfig = extractGridConfig(b);
+    const poolAddress = typeof b.poolAddress === 'string' && /^0x[a-fA-F0-9]{40}$/.test(b.poolAddress)
+      ? b.poolAddress
+      : undefined;
 
     const manager = sessionManagerFactory();
     const session = await manager.create({
@@ -319,6 +327,7 @@ export async function POST(
       allowedFunctions,
       riskLevel,
       expiresAtMs,
+      poolAddress,
       funding,
       ...gridConfig,
     };
@@ -362,6 +371,7 @@ export async function POST(
       allowedFunctions,
       riskLevel,
       expiresAtMs,
+      poolAddress,
       funding,
       ...gridConfig,
     };

@@ -31,6 +31,7 @@ export class GridObservationBuilder {
     fills: GridFill[],
     currentPriceCents: number,
     humanReadablePrice: string,
+    recentered = false,
   ): Observation {
     const gridData = {
       config: {
@@ -41,7 +42,9 @@ export class GridObservationBuilder {
         maxOrderSizeCents: config.maxOrderSizeCents,
         maxActiveExposureCents: config.maxActiveExposureCents,
         expiresAt: config.expiresAt,
+        autoRecenterOnBreak: config.autoRecenterOnBreak !== false,
       },
+      rangeStatus: recentered ? 'RECENTERED_AROUND_LIVE_PRICE' : 'IN_RANGE',
       currentPrice: {
         cents: currentPriceCents,
         // USD dollars with an explicit unit so the model can never read

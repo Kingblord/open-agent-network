@@ -38,6 +38,7 @@ export class GridStrategy {
                 capitalCents: 100000,
                 maxOrderSizeCents: 50000,
                 maxActiveExposureCents: 100000,
+                autoRecenterOnBreak: true,
                 expiresAt: new Date(Date.now() + 86400000).toISOString(),
                 ...(this.configOverride ?? {}),
             };
@@ -60,6 +61,7 @@ export class GridStrategy {
                 realizedPnlCents: 0,
                 stopped: false,
                 lastPriceCents: priceCents,
+                recentered: false,
             };
         }
         else if (this.configOverride) {
@@ -80,14 +82,40 @@ export class GridStrategy {
         }
         // Fetch current price
         const { priceCents, humanReadable } = await this.data.fetchPriceCents('BNB');
-        // Detect crossing
+        // A fixed grid becomes a permanent no-op after a strong trend. Recenter
+        // deterministically around the live price instead of repeatedly asking the
+        // AI to explain why a stale range cannot trade.
+        let recentered = false;
+        if (!this.state.stopped && this.state.config.autoRecenterOnBreak !== false) {
+            const { lowerPriceCents, upperPriceCents } = this.state.config;
+            if (priceCents < lowerPriceCents || priceCents > upperPriceCents) {
+                const width = Math.max(2, upperPriceCents - lowerPriceCents);
+                const lower = Math.max(1, priceCents - Math.floor(width / 2));
+                const upper = lower + width;
+                const levels = this.calculator.generateLevels(lower, upper, this.state.config.gridCount, this.state.config.capitalCents, this.state.config.maxOrderSizeCents);
+                this.state = {
+                    ...this.state,
+                    config: {
+                        ...this.state.config,
+                        lowerPriceCents: lower,
+                        upperPriceCents: upper,
+                    },
+                    levels,
+                    lastPriceCents: priceCents,
+                    recentered: true,
+                };
+                recentered = true;
+            }
+        }
+        // Detect crossing after any range rebuild. The rebuild itself is not a
+        // trade; the next market move must cross a fresh level first.
         const crossing = this.calculator.detectCrossing(this.state.levels, this.state.lastPriceCents, priceCents);
         // Generate candidates
         const candidates = crossing
             ? this.selector.select(priceCents, this.state)
             : [];
         // Build observation
-        const observation = this.observationBuilder.build(agent, this.state.config, this.state.levels, crossing, candidates, this.state.fills, priceCents, humanReadable);
+        const observation = this.observationBuilder.build(agent, this.state.config, this.state.levels, crossing, candidates, this.state.fills, priceCents, humanReadable, recentered);
         return [observation];
     }
     async decide(observation, agent, hooks) {

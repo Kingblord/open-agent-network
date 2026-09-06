@@ -17,6 +17,6 @@ import type { GridConfig, GridLevel, GridCrossing, GridCandidate, GridFill } fro
 export declare class GridObservationBuilder {
     private readonly strategyId;
     constructor(strategyId?: string);
-    build(agent: Agent, config: GridConfig, levels: GridLevel[], crossing: GridCrossing | null, candidates: GridCandidate[], fills: GridFill[], currentPriceCents: number, humanReadablePrice: string): Observation;
+    build(agent: Agent, config: GridConfig, levels: GridLevel[], crossing: GridCrossing | null, candidates: GridCandidate[], fills: GridFill[], currentPriceCents: number, humanReadablePrice: string, recentered?: boolean): Observation;
 }
 //# sourceMappingURL=observation-builder.d.ts.map

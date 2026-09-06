@@ -623,6 +623,13 @@ async function resolveDataProvider(): Promise<ToolAdapters> {
     logger.info('live_data_provider_enabled');
     return live;
   }
+  if (process.env.NODE_ENV === 'production') {
+    throw new BANError(
+      ErrorCode.PROVIDER_UNAVAILABLE,
+      'Production agent cycles require BAN_LIVE_DATA=1; the hermetic dev data provider is disabled in production.',
+      { retryable: false },
+    );
+  }
   return DevDataProvider.instance();
 }
 
@@ -638,6 +645,13 @@ function resolveBrainProvider(): BrainAdapter {
   if (process.env.BAN_AI_PROVIDER === 'openrouter') {
     logger.info('brain_provider_openrouter_enabled', { provider: 'openrouter' });
     return new OpenRouterBrainAdapter();
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new BANError(
+      ErrorCode.PROVIDER_UNAVAILABLE,
+      'Production agent cycles require BAN_AI_PROVIDER=openrouter; the deterministic dev brain is disabled in production.',
+      { retryable: false },
+    );
   }
   logger.info('brain_provider_dev_enabled', { provider: 'dev' });
   return new DevBrainAdapter();
@@ -658,6 +672,7 @@ function resolveGridConfigFromTask(taskConfig?: Record<string, unknown>): Record
   if (Number.isFinite(gridCount) && gridCount >= 2) out.gridCount = Math.floor(gridCount);
   if (Number.isFinite(capitalUsd) && capitalUsd > 0) out.capitalCents = Math.round(capitalUsd * 100);
   if (Number.isFinite(maxOrderUsd) && maxOrderUsd > 0) out.maxOrderSizeCents = Math.round(maxOrderUsd * 100);
+  if (grid.autoRecenterOnBreak === false) out.autoRecenterOnBreak = false;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -692,7 +707,7 @@ async function resolveStrategy(
     const { LpDataProvider, LpStrategy } = await import('@ban/strategy-lp');
     return new LpStrategy({
       brain,
-      data: new LpDataProvider({ liquidity: dev.liquidity, price: dev.price }),
+      data: new LpDataProvider({ liquidity: dev.liquidity, price: dev.price, chain: dev.chain }),
       // Thread task config so a user-set pool address drives observe().
       config: taskConfig,
     });

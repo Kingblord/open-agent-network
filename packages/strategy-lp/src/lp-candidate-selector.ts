@@ -68,7 +68,12 @@ export class LpCandidateSelector {
       };
       const riskAssess: LpRiskAssessment = this.risk.assess(riskFactors);
       const projectedFees = this.estimateProjectedFees(pool, position, range, width);
-      const gasCents = '50000';
+      // Live gas is part of the pool snapshot. Missing gas makes a range
+      // candidate ineligible; REMOVE remains available as a safety action.
+      if (pool.gasEstimateAvailable === false) continue;
+      // Legacy hermetic fixtures omit gas metadata; live snapshots always set
+      // it explicitly through LpDataProvider.
+      const gasCents = pool.gasEstimateUsdCents ?? '50000';
       const slippageCents = this.estimateSlippageCents(range, width);
       const netProfit = this.calc.estimateNetProfitCents(
         projectedFees,
@@ -129,7 +134,9 @@ export class LpCandidateSelector {
       upperTick: position.upperTick,
       reason: 'Position out of range — extract liquidity',
       feesUsd: '0',
-      estimatedGasUsd: '50000',
+      estimatedGasUsd: pool.gasEstimateAvailable && pool.gasEstimateUsdCents !== undefined
+        ? pool.gasEstimateUsdCents
+        : '0',
       estimatedSlippageUsd: '0',
       netProfitUsd: '0',
       riskLevel: riskAssess.level,

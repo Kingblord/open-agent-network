@@ -488,6 +488,40 @@ describe('GridStrategy end-to-end', () => {
     expect((obs[0] as any).type).toBe('grid_trading');
   });
 
+  it('recenters an out-of-range price instead of becoming a permanent no-op', async () => {
+    const { GridStrategy } = await import('../src/grid-strategy.js');
+    const { GridDataProvider } = await import('../src/grid-data-provider.js');
+
+    const data = new GridDataProvider({
+      price: {
+        async getTokenPrice(token: string) {
+          return { asset: token, priceUsd: '747.68', timestamp: new Date().toISOString() };
+        },
+      },
+    });
+    const strat = new GridStrategy({
+      brain: new RecordingBrain() as never,
+      data,
+      config: {
+        lowerPriceCents: 50000,
+        upperPriceCents: 60000,
+        gridCount: 5,
+        capitalCents: 100000,
+        maxOrderSizeCents: 50000,
+      },
+    });
+
+    const [observation] = await strat.observe(agent as never, 'corr_recenter');
+    const state = strat.getState()!;
+    const gridData = (observation as any).data;
+
+    expect(gridData.rangeStatus).toBe('RECENTERED_AROUND_LIVE_PRICE');
+    expect(state.config.lowerPriceCents).toBeLessThan(74768);
+    expect(state.config.upperPriceCents).toBeGreaterThan(74768);
+    expect(state.config.upperPriceCents - state.config.lowerPriceCents).toBe(10000);
+    expect(state.lastPriceCents).toBe(74768);
+  });
+
   it('decide() returns a schema-valid ActionProposal', async () => {
     const { GridStrategy } = await import('../src/grid-strategy.js');
     const { GridDataProvider } = await import('../src/grid-data-provider.js');

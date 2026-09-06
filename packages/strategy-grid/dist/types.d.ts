@@ -26,6 +26,8 @@ export interface GridConfig {
     stopOnLowerBoundBreak?: boolean;
     /** True → price moves above upper bound trigger stop. False → no stop. */
     stopOnUpperBoundBreak?: boolean;
+    /** True → move the grid around the live price when it leaves the range. */
+    autoRecenterOnBreak?: boolean;
     /** Session expiry (ISO timestamp). */
     expiresAt: string;
 }
@@ -73,6 +75,8 @@ export interface GridState {
     stopped: boolean;
     /** Timestamp of last price observation. */
     lastPriceCents: number;
+    /** True for the observation that rebuilt the range around the live price. */
+    recentered?: boolean;
 }
 /** Deterministic grid candidate surfaced to the AI (bounded set). */
 export type GridAction = 'BUY' | 'SELL' | 'STOP';

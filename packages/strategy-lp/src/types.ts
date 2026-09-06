@@ -30,6 +30,10 @@ export interface LpPoolState {
   /** USD price of each token (string to avoid float). */
   token0PriceUsd?: string;
   token1PriceUsd?: string;
+  /** Live chain gas estimate in integer USD cents, when available. */
+  gasEstimateUsdCents?: string;
+  /** False when candidate economics must not be treated as executable. */
+  gasEstimateAvailable?: boolean;
 }
 
 /** A bound on a position of a single LP NFT. */

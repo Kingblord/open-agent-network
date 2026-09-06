@@ -36,6 +36,8 @@ export interface TaskConfigRecord {
   gridCount?: number;
   gridCapitalUsd?: number;
   gridMaxOrderUsd?: number;
+  autoRecenterOnBreak?: boolean;
+  poolAddress?: string;
 }
 
 export async function loadLatestTaskConfig(agentId: string): Promise<Record<string, unknown> | undefined> {

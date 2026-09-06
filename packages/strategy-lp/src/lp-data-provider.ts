@@ -7,12 +7,13 @@
  */
 
 import type { LpPoolState, LpPosition, TokenDecimalInfo } from './types.js';
-import type { LiquidityAdapter, PriceDataAdapter } from '@ban/blockchain';
+import type { ChainAdapter, LiquidityAdapter, PriceDataAdapter } from '@ban/blockchain';
 import { LpRangeCalculator } from './lp-calculator.js';
 
 export interface LpDataProviderDeps {
   liquidity: Pick<LiquidityAdapter, 'getPoolState' | 'getPoolPosition'>;
   price: Pick<PriceDataAdapter, 'getTokenPrice'>;
+  chain?: Pick<ChainAdapter, 'getGasEstimate'>;
   calculator?: LpRangeCalculator;
 }
 
@@ -31,6 +32,12 @@ export class LpDataProvider {
     const tick = this.calc.sqrtPriceX96ToTick(sqrtX96);
     const token0PriceUsd = await this.deps.price.getTokenPrice(raw.token0);
     const token1PriceUsd = await this.deps.price.getTokenPrice(raw.token1);
+    let gasEstimateUsdCents: string | undefined;
+    if (this.deps.chain) {
+      const gas = await this.deps.chain.getGasEstimate({ action: 'lp-rebalance' });
+      const gasUsd = Number.parseFloat(gas.estimatedCostUsd);
+      if (Number.isFinite(gasUsd) && gasUsd >= 0) gasEstimateUsdCents = String(Math.round(gasUsd * 100));
+    }
 
     return {
       poolAddress,
@@ -46,6 +53,8 @@ export class LpDataProvider {
       decimals1,
       token0PriceUsd: token0PriceUsd.priceUsd,
       token1PriceUsd: token1PriceUsd.priceUsd,
+      gasEstimateUsdCents,
+      gasEstimateAvailable: gasEstimateUsdCents !== undefined,
     };
   }
 
