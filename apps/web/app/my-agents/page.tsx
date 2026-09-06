@@ -193,7 +193,7 @@ export default function MyAgentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-mono flex flex-col pb-24">
+    <div className="min-h-screen overflow-x-hidden bg-background text-foreground font-mono flex flex-col pb-24">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-3">
           <button
@@ -217,7 +217,7 @@ export default function MyAgentsPage() {
         </Link>
       </div>
 
-      <div className="p-4 space-y-4 max-w-md mx-auto w-full flex-1">
+      <div className="p-4 space-y-4 max-w-md mx-auto w-full min-w-0 flex-1 overflow-x-hidden">
         <div className="grid grid-cols-2 gap-2 bg-card p-1 rounded-xl border border-border">
           <button
             onClick={() => setActiveTab('DEPLOYED')}
@@ -286,17 +286,17 @@ export default function MyAgentsPage() {
                   <Link
                     key={agent.id}
                     href={`/my-agents/${agent.id}`}
-                    className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 rounded-xl p-4 transition-all relative overflow-hidden group"
+                    className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 rounded-xl p-4 transition-all relative isolate min-w-0 overflow-hidden group"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
+                    <div className="relative z-10 flex min-w-0 items-start justify-between mb-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-background border border-border flex items-center justify-center">
                           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="4" y="8" width="16" height="12" rx="2" /><circle cx="9" cy="13" r="1.5" fill="#F0B90B" /><circle cx="15" cy="13" r="1.5" fill="#F0B90B" /><path d="M10 17h4" /><line x1="12" y1="4" x2="12" y2="8" />
                           </svg>
                         </div>
-                        <div>
-                          <div className="text-foreground font-bold text-sm group-hover:text-[#F0B90B] transition-colors flex items-center gap-1.5">
+                        <div className="min-w-0">
+                          <div className="text-foreground font-bold text-sm group-hover:text-[#F0B90B] transition-colors flex min-w-0 items-center gap-1.5 truncate">
                             {agent.name}
                           </div>
                           <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -317,7 +317,7 @@ export default function MyAgentsPage() {
                     </div>
 
                     {agent.walletAddress && (
-                      <div className="mb-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <div className="relative z-10 mb-3 flex min-w-0 items-center gap-2 overflow-hidden text-[11px] text-muted-foreground">
                         <span className="uppercase text-[9px] font-black text-gray-600 tracking-wider">Wallet</span>
                         <CopyAddress address={agent.walletAddress} />
                         <AgentBalance agentId={agent.id} walletAddress={agent.walletAddress} />
@@ -330,7 +330,7 @@ export default function MyAgentsPage() {
                       </p>
                     )}
 
-                    <div className="grid grid-cols-3 gap-2 bg-background/60 rounded-xl p-2.5 border border-border text-center mb-3">
+                    <div className="relative z-10 grid min-w-0 grid-cols-3 gap-2 bg-background/60 rounded-xl p-2.5 border border-border text-center mb-3">
                       <div>
                         <div className="text-[10px] text-muted-foreground uppercase">Executions</div>
                         <div className="text-xs font-bold text-foreground">{agent.executionCount ?? 0}</div>
@@ -348,7 +348,7 @@ export default function MyAgentsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-[#1a1a1a]">
+                    <div className="relative z-10 flex min-w-0 items-center justify-between gap-2 text-xs pt-1 border-t border-[#1a1a1a]">
                       <span className="text-[11px] text-muted-foreground">
                         {agent.lastExecutionAt ? `Last active ${new Date(agent.lastExecutionAt).toLocaleTimeString()}` : 'Ready for execution'}
                       </span>
