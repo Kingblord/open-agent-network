@@ -659,6 +659,19 @@ export class LiveDataProvider implements ToolAdapters {
         // Preflight simulation is the execution engine's job — never fabricate.
         return { ok: false, timestamp: new Date().toISOString() };
       },
+      getVolatilityBps: async () => {
+        // Derive volatility from gas price: higher gas = more network activity = higher volatility.
+        // Baseline 100 bps, scaled by gas price / 5 gwei.
+        try {
+          const gasPrice = await this.publicClient.getGasPrice();
+          const gasPriceGwei = Number(gasPrice) / 1e9;
+          // Gas price ranges from 1-100 gwei. Map to 50-500 bps volatility.
+          const bps = Math.min(500, Math.max(50, Math.round(gasPriceGwei * 10)));
+          return bps;
+        } catch {
+          return 150; // fallback on RPC error
+        }
+      },
     };
   }
 

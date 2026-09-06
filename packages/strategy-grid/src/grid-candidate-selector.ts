@@ -26,11 +26,13 @@ export class GridCandidateSelector {
   /**
    * Given a price observation and the current grid state, produce a bounded
    * candidate set (≤ topN). Returns empty array if no actionable crossing.
+   * @param volatilityBps Live volatility estimate (bps). Defaults to 150 when absent.
    */
   select(
     currentPriceCents: number,
     state: GridState,
     topN: number = 3,
+    volatilityBps: number = 150,
   ): GridCandidate[] {
     if (state.stopped) return [];
 
@@ -56,12 +58,12 @@ export class GridCandidateSelector {
       state.levels,
     );
 
-    // Risk assessment
+    // Risk assessment with live volatility estimate
     const riskFactors: GridRiskFactors = {
       exposureRatioBps: state.config.capitalCents > 0
         ? Math.floor((state.activeExposureCents * 10000) / state.config.capitalCents)
         : 0,
-      volatilityBps: 150,
+      volatilityBps,
       volatilityAvailable: true,
       distanceToStopCents: this.distanceToStop(crossing.level.priceCents, state.config),
     };

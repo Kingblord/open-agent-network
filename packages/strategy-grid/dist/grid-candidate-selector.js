@@ -17,8 +17,9 @@ export class GridCandidateSelector {
     /**
      * Given a price observation and the current grid state, produce a bounded
      * candidate set (≤ topN). Returns empty array if no actionable crossing.
+     * @param volatilityBps Live volatility estimate (bps). Defaults to 150 when absent.
      */
-    select(currentPriceCents, state, topN = 3) {
+    select(currentPriceCents, state, topN = 3, volatilityBps = 150) {
         if (state.stopped)
             return [];
         const crossing = this.calculator.detectCrossing(state.levels, state.lastPriceCents, currentPriceCents);
@@ -30,12 +31,12 @@ export class GridCandidateSelector {
             return [];
         // Estimate profit
         const profit = this.calculator.estimateProfitCents(crossing, orderSize, state.levels);
-        // Risk assessment
+        // Risk assessment with live volatility estimate
         const riskFactors = {
             exposureRatioBps: state.config.capitalCents > 0
                 ? Math.floor((state.activeExposureCents * 10000) / state.config.capitalCents)
                 : 0,
-            volatilityBps: 150,
+            volatilityBps,
             volatilityAvailable: true,
             distanceToStopCents: this.distanceToStop(crossing.level.priceCents, state.config),
         };

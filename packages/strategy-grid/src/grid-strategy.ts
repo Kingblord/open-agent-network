@@ -41,6 +41,12 @@ export interface GridStrategyDeps {
   observationBuilder?: GridObservationBuilder;
   /** Task-derived config overrides (bounds/caps). Absent → M12 defaults. */
   config?: Partial<GridConfig>;
+  /** Live volatility estimate in bps. Absent → 150 default. */
+  volatilityBps?: number;
+  /** Persisted grid state from a previous cycle (Firestore). Restored before observe. */
+  persistedState?: GridState | null;
+  /** Callback to persist grid state after each observe cycle. */
+  onStateChanged?: (state: GridState) => void;
 }
 
 export class GridStrategy implements StrategyEngine {
@@ -52,8 +58,10 @@ export class GridStrategy implements StrategyEngine {
   private readonly selector: GridCandidateSelector;
   private readonly observationBuilder: GridObservationBuilder;
   private readonly configOverride: Partial<GridConfig> | null;
+  private readonly volatilityBps: number;
+  private readonly onStateChanged: ((state: GridState) => void) | undefined;
 
-  /** In-memory grid state (will be replaced by Firestore persistence in M18). */
+  /** In-memory grid state (restored from persistedState on construction). */
   private state: GridState | null = null;
 
   constructor(deps: GridStrategyDeps) {
@@ -65,6 +73,12 @@ export class GridStrategy implements StrategyEngine {
     this.selector = deps.selector ?? new GridCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
     this.observationBuilder = deps.observationBuilder ?? new GridObservationBuilder(this.strategyId);
     this.configOverride = deps.config ?? null;
+    this.volatilityBps = deps.volatilityBps ?? 150;
+    this.onStateChanged = deps.onStateChanged;
+    // Restore persisted state from previous cycle (Firestore).
+    if (deps.persistedState) {
+      this.state = deps.persistedState;
+    }
   }
 
   async observe(agent: Agent, _correlationId: string): Promise<Observation[]> {
@@ -178,9 +192,9 @@ export class GridStrategy implements StrategyEngine {
       priceCents,
     );
 
-    // Generate candidates
+    // Generate candidates with live volatility estimate
     const candidates = crossing
-      ? this.selector.select(priceCents, this.state)
+      ? this.selector.select(priceCents, this.state, 3, this.volatilityBps)
       : [];
 
     // Build observation
@@ -195,6 +209,9 @@ export class GridStrategy implements StrategyEngine {
       humanReadable,
       recentered,
     );
+
+    // Persist grid state after each cycle (survives serverless cold starts).
+    this.onStateChanged?.(this.state);
 
     return [observation];
   }

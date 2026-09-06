@@ -37,6 +37,10 @@ export interface ChainAdapter {
         revertReason?: string;
         timestamp: string;
     }>;
+    /** Market volatility estimate in basis points. Derived from gas price or recent data. */
+    getVolatilityBps?(input: {
+        action: string;
+    }): Promise<number>;
 }
 export type ToolAdapters = ProtocolAdapterSet & {
     chain: ChainAdapter;

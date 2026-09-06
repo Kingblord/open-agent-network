@@ -19,8 +19,9 @@ export declare class GridCandidateSelector {
     /**
      * Given a price observation and the current grid state, produce a bounded
      * candidate set (≤ topN). Returns empty array if no actionable crossing.
+     * @param volatilityBps Live volatility estimate (bps). Defaults to 150 when absent.
      */
-    select(currentPriceCents: number, state: GridState, topN?: number): GridCandidate[];
+    select(currentPriceCents: number, state: GridState, topN?: number, volatilityBps?: number): GridCandidate[];
     private distanceToStop;
 }
 //# sourceMappingURL=grid-candidate-selector.d.ts.map

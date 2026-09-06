@@ -14,7 +14,9 @@ export class GridStrategy {
     selector;
     observationBuilder;
     configOverride;
-    /** In-memory grid state (will be replaced by Firestore persistence in M18). */
+    volatilityBps;
+    onStateChanged;
+    /** In-memory grid state (restored from persistedState on construction). */
     state = null;
     constructor(deps) {
         this.strategyId = deps.strategyId ?? 'grid-trading';
@@ -25,6 +27,12 @@ export class GridStrategy {
         this.selector = deps.selector ?? new GridCandidateSelector({ calculator: this.calculator, riskModel: this.riskModel });
         this.observationBuilder = deps.observationBuilder ?? new GridObservationBuilder(this.strategyId);
         this.configOverride = deps.config ?? null;
+        this.volatilityBps = deps.volatilityBps ?? 150;
+        this.onStateChanged = deps.onStateChanged;
+        // Restore persisted state from previous cycle (Firestore).
+        if (deps.persistedState) {
+            this.state = deps.persistedState;
+        }
     }
     async observe(agent, _correlationId) {
         // Initialize grid state from the task-derived config when the caller
@@ -112,12 +120,14 @@ export class GridStrategy {
         // Detect crossing after any range rebuild. The rebuild itself is not a
         // trade; the next market move must cross a fresh level first.
         const crossing = this.calculator.detectCrossing(this.state.levels, this.state.lastPriceCents, priceCents);
-        // Generate candidates
+        // Generate candidates with live volatility estimate
         const candidates = crossing
-            ? this.selector.select(priceCents, this.state)
+            ? this.selector.select(priceCents, this.state, 3, this.volatilityBps)
             : [];
         // Build observation
         const observation = this.observationBuilder.build(agent, this.state.config, this.state.levels, crossing, candidates, this.state.fills, priceCents, humanReadable, recentered);
+        // Persist grid state after each cycle (survives serverless cold starts).
+        this.onStateChanged?.(this.state);
         return [observation];
     }
     async decide(observation, agent, hooks) {

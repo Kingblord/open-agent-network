@@ -216,9 +216,30 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // 1) Resolve the session (must be ACTIVE for execution).
     const session = opts.session ?? (await getSessionForAgent(agentId));
 
-    // 2) Preflight: validate the strategy config before the first cycle.
+    // 2) Load grid state from Firestore and resolve volatility (survives serverless cycles).
+    const dev = await resolveDataProvider();
+    let volatilityBps: number | undefined;
+    if (dev.chain?.getVolatilityBps) {
+      try { volatilityBps = await dev.chain.getVolatilityBps({ action: 'grid-trading' }); }
+      catch { /* use default 150 */ }
+    }
+    let persistedGridState: Record<string, unknown> | undefined;
+    let saveGridState: ((state: Record<string, unknown>) => void) | undefined;
+    if (agent.type === 'grid') {
+      try {
+        const { loadGridState, persistGridState } = await import('./persistence');
+        persistedGridState = await loadGridState(agentId) ?? undefined;
+        saveGridState = (state: Record<string, unknown>) => {
+          persistGridState(agentId, state).catch((err: Error) =>
+            logger.warn('grid_state_persist_failed', { agentId, message: err.message }),
+          );
+        };
+      } catch { /* persistence unavailable — use in-memory only */ }
+    }
+
+    // 3) Preflight: validate the strategy config before the first cycle.
     const strategy: import('@ban/agent-core').StrategyEngine =
-      opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig));
+      opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig, { volatilityBps, persistedGridState, saveGridState }));
     if (strategy.preflight) {
       const preflightResult = await strategy.preflight(agent);
       if (!preflightResult.ok) {
@@ -694,6 +715,7 @@ function resolveGridConfigFromTask(taskConfig?: Record<string, unknown>): Record
 async function resolveStrategy(
   agent: Agent,
   taskConfig?: Record<string, unknown>,
+  extra?: { volatilityBps?: number; persistedGridState?: Record<string, unknown>; saveGridState?: (state: Record<string, unknown>) => void },
 ): Promise<import('@ban/agent-core').StrategyEngine> {
   const brain = resolveBrainProvider(); // deterministic or real AI per env
   const type = agent.type ?? '';
@@ -701,12 +723,22 @@ async function resolveStrategy(
 
   if (type === 'yield') {
     const { YieldDataProvider, YieldStrategy } = await import('@ban/strategy-yield');
+    // Pass live gas estimates from the chain adapter to the yield normalizer.
+    const yieldConfig = { ...(taskConfig ?? {}) };
+    if (dev.chain?.getGasEstimate) {
+      try {
+        const gas = await dev.chain.getGasEstimate({ action: 'yield-swap' });
+        if (gas.estimatedCostUsd && Number(gas.estimatedCostUsd) > 0) {
+          // Convert gas cost in USD to bps: assume ~$10k swap → gas/10000*10000
+          yieldConfig.swapCostBps = Math.max(5, Math.round(Number(gas.estimatedCostUsd) * 10));
+        }
+      } catch { /* use defaults */ }
+    }
     return new YieldStrategy({
       brain,
       data: new YieldDataProvider(dev.yield),
       network: 'bnb-mainnet',
-      // Thread the task-derived config so a user-set network/topN drives observe().
-      config: taskConfig,
+      config: yieldConfig,
     });
   }
   if (type === 'health') {
@@ -714,7 +746,6 @@ async function resolveStrategy(
     return new HealthStrategy({
       brain,
       data: new HealthDataProvider(dev.lending, dev.price),
-      // Thread allowed contracts/tokens so the monitor watches user positions.
       config: taskConfig,
     });
   }
@@ -723,7 +754,6 @@ async function resolveStrategy(
     return new LpStrategy({
       brain,
       data: new LpDataProvider({ liquidity: dev.liquidity, price: dev.price, chain: dev.chain }),
-      // Thread task config so a user-set pool address drives observe().
       config: taskConfig,
     });
   }
@@ -734,6 +764,9 @@ async function resolveStrategy(
       brain,
       data: new GridDataProvider({ price: dev.price }),
       config: gridConfig,
+      volatilityBps: extra?.volatilityBps ?? 150,
+      persistedState: extra?.persistedGridState as any,
+      onStateChanged: extra?.saveGridState as any,
     });
   }
   throw new BANError(ErrorCode.VALIDATION_FAILED, `No strategy engine for agent type '${type}'`, {

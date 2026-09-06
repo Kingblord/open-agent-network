@@ -128,3 +128,26 @@ export async function getPerformanceByAgent(agentId: string): Promise<Performanc
   });
   return found;
 }
+
+/** Persist grid strategy state to Firestore (survives serverless cycles). */
+export async function persistGridState(agentId: string, state: Record<string, unknown>): Promise<void> {
+  const db = getAdminDb();
+  await db
+    .collection(collections.agentTasks ?? 'agent_tasks')
+    .doc(agentId)
+    .collection('grid_state')
+    .doc('current')
+    .set(toFirestoreSafe(state));
+}
+
+/** Load persisted grid strategy state from Firestore. Returns null when no state exists. */
+export async function loadGridState(agentId: string): Promise<Record<string, unknown> | null> {
+  const db = getAdminDb();
+  const snap = await db
+    .collection(collections.agentTasks ?? 'agent_tasks')
+    .doc(agentId)
+    .collection('grid_state')
+    .doc('current')
+    .get();
+  return snap.exists ? (snap.data() as Record<string, unknown>) : null;
+}

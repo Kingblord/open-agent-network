@@ -38,6 +38,12 @@ export interface GridStrategyDeps {
     observationBuilder?: GridObservationBuilder;
     /** Task-derived config overrides (bounds/caps). Absent → M12 defaults. */
     config?: Partial<GridConfig>;
+    /** Live volatility estimate in bps. Absent → 150 default. */
+    volatilityBps?: number;
+    /** Persisted grid state from a previous cycle (Firestore). Restored before observe. */
+    persistedState?: GridState | null;
+    /** Callback to persist grid state after each observe cycle. */
+    onStateChanged?: (state: GridState) => void;
 }
 export declare class GridStrategy implements StrategyEngine {
     private readonly strategyId;
@@ -48,7 +54,9 @@ export declare class GridStrategy implements StrategyEngine {
     private readonly selector;
     private readonly observationBuilder;
     private readonly configOverride;
-    /** In-memory grid state (will be replaced by Firestore persistence in M18). */
+    private readonly volatilityBps;
+    private readonly onStateChanged;
+    /** In-memory grid state (restored from persistedState on construction). */
     private state;
     constructor(deps: GridStrategyDeps);
     observe(agent: Agent, _correlationId: string): Promise<Observation[]>;

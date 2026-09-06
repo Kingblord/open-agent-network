@@ -166,6 +166,10 @@ export class DevDataProvider implements ToolAdapters {
           timestamp: new Date().toISOString(),
         };
       },
+      getVolatilityBps: async () => {
+        // Deterministic dev value: 150 bps (moderate volatility baseline).
+        return 150;
+      },
     };
   }
 }
