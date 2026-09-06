@@ -142,6 +142,22 @@ interface RegistrySnapshot {
 
 type LifecycleAction = 'activate' | 'pause' | 'revoke';
 
+/** Real-time on-chain transaction row (Etherscan V2, BSC chainid 56). */
+interface OnchainTx {
+  hash: string;
+  block: number;
+  timestamp: string;
+  from: string;
+  to: string;
+  value: string;
+  token: string;
+  direction: 'OUT' | 'IN';
+  status: 'CONFIRMED' | 'FAILED';
+  gasUsed: string;
+  gasPriceGwei: string;
+  kind: 'NATIVE' | 'ERC20';
+}
+
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
   OBSERVATION_CREATED: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -348,6 +364,9 @@ export default function MyAgentDetailPage() {
     updatedAt: string;
   } | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [onchainTxs, setOnchainTxs] = useState<OnchainTx[]>([]);
+  const [onchainLoading, setOnchainLoading] = useState(false);
+  const [onchainNote, setOnchainNote] = useState<string | null>(null);
   const [sessionForm, setSessionForm] = useState({
     network: 'BNB Smart Chain (56)',
     maxTxUsd: '100',
@@ -392,6 +411,7 @@ export default function MyAgentDetailPage() {
       fetchAgent();
       fetchSessions();
       fetchTasks();
+      fetchOnchainTransactions();
       fetchActivity();
       fetchPerformance();
       fetchBalance();
@@ -489,6 +509,27 @@ export default function MyAgentDetailPage() {
       console.error('Failed to fetch balance:', error);
     } finally {
       setBalanceLoading(false);
+    }
+  };
+
+  /** Real-time on-chain tx history for the agent wallet (rate-limited server-side). */
+  const fetchOnchainTransactions = async () => {
+    setOnchainLoading(true);
+    setOnchainNote(null);
+    try {
+      const response = await fetch(`/api/agents/${params.id}/transactions`);
+      if (response.ok) {
+        const data = await response.json();
+        setOnchainTxs(data.transactions ?? []);
+        if (typeof data.note === 'string') setOnchainNote(data.note);
+      } else {
+        setOnchainNote('On-chain history is unavailable right now.');
+      }
+    } catch (error) {
+      console.error('Failed to fetch on-chain transactions:', error);
+      setOnchainNote('Failed to load on-chain transactions.');
+    } finally {
+      setOnchainLoading(false);
     }
   };
 
@@ -1276,6 +1317,55 @@ export default function MyAgentDetailPage() {
             <p className="text-xs text-muted-foreground">
               No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
             </p>
+          )}
+        </CollapsibleSection>
+
+        {/* ON-CHAIN TRANSACTIONS — realtime via Etherscan V2 (BSC), rate-limited + cached server-side */}
+        <CollapsibleSection title="ON-CHAIN TRANSACTIONS" badge={onchainTxs.length > 0 ? String(onchainTxs.length) : undefined} defaultOpen={false}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] text-muted-foreground">Live wallet history · BscScan (Etherscan V2)</span>
+            <button
+              type="button"
+              onClick={fetchOnchainTransactions}
+              disabled={onchainLoading}
+              className="text-[10px] font-black text-[#F0B90B] uppercase tracking-wider disabled:opacity-50"
+            >
+              {onchainLoading ? 'LOADING...' : 'REFRESH'}
+            </button>
+          </div>
+          {onchainNote && (
+            <p className="text-[11px] text-muted-foreground mb-2 border border-border bg-muted/40 rounded-lg px-3 py-2">{onchainNote}</p>
+          )}
+          {onchainLoading && onchainTxs.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">Loading on-chain transactions…</p>
+          ) : onchainTxs.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No on-chain transactions for this agent wallet yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {onchainTxs.slice(0, 12).map((tx) => (
+                <button
+                  key={tx.hash}
+                  type="button"
+                  onClick={() => window.open(`https://bscscan.com/tx/${tx.hash}`, '_blank')}
+                  className="w-full flex items-center justify-between gap-2 bg-background/40 border border-border rounded-lg p-2.5 text-left hover:border-[#F0B90B]/50 transition"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-black text-foreground">
+                      <span className={tx.direction === 'OUT' ? 'text-red-400' : 'text-emerald-400'}>{tx.direction === 'OUT' ? '↗' : '↙'}</span>{' '}
+                      {tx.direction === 'OUT' ? 'Sent' : 'Received'} {tx.value} {tx.token}
+                      {tx.status === 'FAILED' && <span className="ml-2 text-[9px] text-red-400 font-black">FAILED</span>}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">
+                      {(tx.direction === 'OUT' ? tx.to : tx.from).slice(0, 10)}…{tx.hash.slice(0, 10)}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] text-muted-foreground">{timeAgo(tx.timestamp)}</p>
+                    <p className="text-[9px] text-muted-foreground font-mono">#{tx.block}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </CollapsibleSection>
 

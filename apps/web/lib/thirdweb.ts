@@ -10,6 +10,9 @@ const publicClientId = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID
 
 const configured = typeof publicClientId === 'string' && publicClientId.length > 0
 
+/** True when a real thirdweb client id is configured (wallet flows usable). */
+export const isThirdwebConfigured = configured;
+
 // BNB Smart Chain mainnet (chainId 56). We start from thirdweb's canonical
 // chain definition and override the RPC (so local/dev can point at a custom
 // endpoint). Thirdweb v5 ChainOptions expects `rpc` to be a single string, so

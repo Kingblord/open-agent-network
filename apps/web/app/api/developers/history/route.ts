@@ -5,13 +5,10 @@ import { handleError, errorResponse } from '@/lib/core/errors';
 import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
+import { getNormalTransactions, getTokenTransactions } from '@/lib/etherscan';
 import { ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.history');
-
-const BSC_RPC = process.env.BAN_RPC_URL || 'https://bsc-dataseed.binance.org/';
-const BSCSCAN_API = 'https://api.bscscan.com/api';
-const BSCSCAN_KEY = process.env.BSCSCAN_API_KEY || '';
 
 // Tokens the system tracks
 const TOKENS: Record<string, { address: string; symbol: string; decimals: number }> = {
@@ -96,16 +93,15 @@ export async function GET(request: NextRequest) {
       }
     } catch { /* skip */ }
 
-    // Fetch real on-chain transactions from BscScan
+    // Fetch real on-chain transactions via the rate-limited Etherscan V2 client
+    // (BSC chainid 56). Shared per-process cache + 300ms spacing keeps us under
+    // the free-plan 5/s and 100k/day limits.
     const onchainTxs: OnchainTx[] = [];
 
-    // BNB transfers (normal + internal)
-    const txPromises = [
-      fetchBscScan('account', 'txlist', { address, sort: 'desc', offset: 50 }),
-      fetchBscScan('account', 'tokentx', { address, sort: 'desc', offset: 50 }),
-    ];
-
-    const [bnbTxResult, tokenTxResult] = await Promise.all(txPromises);
+    const [normalTxs, tokenTxs] = await Promise.all([
+      getNormalTransactions(address, 50),
+      getTokenTransactions(address, 50),
+    ]);
 
     // Helper: tag tx with agent info if wallet matches an agent
     function tagAgent(tx: { from: string; to: string }): { agentId?: string; agentName?: string } {
@@ -116,52 +112,48 @@ export async function GET(request: NextRequest) {
       return {};
     }
 
-    // Process BNB transactions
-    if (bnbTxResult?.status === '1' && Array.isArray(bnbTxResult.result)) {
-      for (const tx of bnbTxResult.result.slice(0, 30)) {
-        const isOut = tx.from.toLowerCase() === address.toLowerCase();
-        const valueBnb = Number(tx.value) / 1e18;
-        onchainTxs.push({
-          hash: tx.hash,
-          block: Number(tx.blockNumber),
-          timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
-          from: tx.from,
-          to: tx.to,
-          value: valueBnb.toFixed(6),
-          token: 'BNB',
-          valueUsd: 0,
-          type: isOut ? 'WITHDRAWAL' : 'DEPOSIT',
-          status: tx.isError === '0' ? 'CONFIRMED' : 'FAILED',
-          gasUsed: tx.gasUsed,
-          gasPriceGwei: (Number(tx.gasPrice) / 1e9).toFixed(2),
-          ...tagAgent(tx),
-        });
-      }
+    // Process BNB transactions (typed by the shared Etherscan V2 client)
+    for (const tx of normalTxs.slice(0, 30)) {
+      const isOut = tx.from.toLowerCase() === address.toLowerCase();
+      const valueBnb = Number(tx.value) / 1e18;
+      onchainTxs.push({
+        hash: tx.hash,
+        block: Number(tx.blockNumber),
+        timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
+        from: tx.from,
+        to: tx.to,
+        value: valueBnb.toFixed(6),
+        token: 'BNB',
+        valueUsd: 0,
+        type: isOut ? 'WITHDRAWAL' : 'DEPOSIT',
+        status: tx.isError === '0' && tx.txReceiptStatus !== '0' ? 'CONFIRMED' : 'FAILED',
+        gasUsed: tx.gasUsed,
+        gasPriceGwei: (Number(tx.gasPrice) / 1e9).toFixed(2),
+        ...tagAgent(tx),
+      });
     }
 
     // Process token transactions (USDT, USDC, etc.)
-    if (tokenTxResult?.status === '1' && Array.isArray(tokenTxResult.result)) {
-      for (const tx of tokenTxResult.result.slice(0, 30)) {
-        const isOut = tx.from.toLowerCase() === address.toLowerCase();
-        const tokenSymbol = tx.tokenSymbol || 'UNKNOWN';
-        const decimals = Number(tx.tokenDecimal || 18);
-        const value = Number(tx.value) / 10 ** decimals;
-        onchainTxs.push({
-          hash: tx.hash,
-          block: Number(tx.blockNumber),
-          timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
-          from: tx.from,
-          to: tx.to,
-          value: value.toFixed(4),
-          token: tokenSymbol,
-          valueUsd: 0,
-          type: isOut ? 'WITHDRAWAL' : 'DEPOSIT',
-          status: 'CONFIRMED',
-          gasUsed: tx.gasUsed || '0',
-          gasPriceGwei: tx.gasPrice ? (Number(tx.gasPrice) / 1e9).toFixed(2) : '0',
-          ...tagAgent(tx),
-        });
-      }
+    for (const tx of tokenTxs.slice(0, 30)) {
+      const isOut = tx.from.toLowerCase() === address.toLowerCase();
+      const tokenSymbol = tx.tokenSymbol || 'UNKNOWN';
+      const decimals = Number(tx.tokenDecimal || 18);
+      const value = Number(tx.value) / 10 ** decimals;
+      onchainTxs.push({
+        hash: tx.hash,
+        block: Number(tx.blockNumber),
+        timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
+        from: tx.from,
+        to: tx.to,
+        value: value.toFixed(4),
+        token: tokenSymbol,
+        valueUsd: 0,
+        type: isOut ? 'WITHDRAWAL' : 'DEPOSIT',
+        status: 'CONFIRMED',
+        gasUsed: tx.gasUsed || '0',
+        gasPriceGwei: tx.gasPrice ? (Number(tx.gasPrice) / 1e9).toFixed(2) : '0',
+        ...tagAgent(tx),
+      });
     }
 
     // Fetch BNB price to calculate USD values
@@ -215,25 +207,5 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Fetch from BscScan API with proper error handling. */
-async function fetchBscScan(
-  module: string,
-  action: string,
-  params: Record<string, string | number>,
-): Promise<{ status: string; result: any[]; message: string } | null> {
-  const url = new URL(BSCSCAN_API);
-  url.searchParams.set('module', module);
-  url.searchParams.set('action', action);
-  url.searchParams.set('apikey', BSCSCAN_KEY || 'YourApiKeyToken');
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, String(v));
-  }
-
-  try {
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
+// On-chain reads go through the shared rate-limited Etherscan V2 client
+// (lib/etherscan.ts) — cached + throttled to respect the free-plan limits.

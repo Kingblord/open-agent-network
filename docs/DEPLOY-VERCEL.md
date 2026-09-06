@@ -68,6 +68,22 @@ Add for **Production** (and Preview if you test there).
 Without these, the `ban-agent-tick` cron runs in dev-only mode and won't fire in
 production.
 
+### Required — Realtime on-chain transaction history (Etherscan V2)
+| Name | Value |
+|---|---|
+| `ETHERSCAN_API_KEY` | your Etherscan API key (one key works across all 60+ chains, incl. BSC via chainid 56) |
+
+The `/api/developers/history` and `/api/agents/:id/transactions` routes read real
+on-chain transfers through the Etherscan **V2** endpoint via a shared
+rate-limited client (`apps/web/lib/etherscan.ts`):
+
+- Requests are serialised to ≤3/sec (free plan caps at 5/sec).
+- Responses are cached 30s per query (with in-flight dedupe), so repeated page
+  views don't burn the 100,000 calls/day free-plan quota.
+- The legacy `api.bscscan.com` v1 endpoint is deprecated — do not reintroduce it.
+- If the key is missing the routes fail soft (empty lists + a note, never fake
+  transactions). `BSCSCAN_API_KEY` is still accepted as a fallback.
+
 ### Optional
 | Name | Value |
 |---|---|
