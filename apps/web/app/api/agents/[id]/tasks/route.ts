@@ -68,6 +68,13 @@ export interface TaskRecord {
     allowedFunctions: string[];
     riskLevel: string;
     expiresAtMs: number;
+    funding?: {
+      token: 'BNB' | 'USDT' | 'USDC';
+      amount: string;
+      txHash?: string;
+      gasTxHash?: string;
+      confirmedAt: string;
+    };
     // Optional grid bounds — only present when the user set them (grid agents).
     gridLowerPriceUsd?: number;
     gridUpperPriceUsd?: number;
@@ -226,6 +233,22 @@ export async function POST(
       : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : []);
     const riskLevel = typeof b.riskLevel === 'string' ? b.riskLevel : 'LOW';
     const expiresAtMs = typeof b.expiresAtMs === 'number' && b.expiresAtMs > Date.now() ? b.expiresAtMs : Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const rawFunding = b.funding && typeof b.funding === 'object' ? b.funding as Record<string, unknown> : null;
+    const fundingToken = rawFunding?.token === 'BNB' || rawFunding?.token === 'USDT' || rawFunding?.token === 'USDC'
+      ? rawFunding.token
+      : null;
+    const fundingAmount = rawFunding && typeof rawFunding.amount === 'string' && Number(rawFunding.amount) > 0
+      ? rawFunding.amount
+      : null;
+    const funding = fundingToken && fundingAmount
+      ? {
+          token: fundingToken as 'BNB' | 'USDT' | 'USDC',
+          amount: fundingAmount,
+          txHash: typeof rawFunding?.txHash === 'string' ? rawFunding.txHash : undefined,
+          gasTxHash: typeof rawFunding?.gasTxHash === 'string' ? rawFunding.gasTxHash : undefined,
+          confirmedAt: new Date().toISOString(),
+        }
+      : undefined;
 
     // Grid bounds (optional, USD dollars) — persisted on the task row AND fed
     // to runAgentCycle so the strategy actually uses the user's range.
@@ -296,6 +319,7 @@ export async function POST(
       allowedFunctions,
       riskLevel,
       expiresAtMs,
+      funding,
       ...gridConfig,
     };
 
@@ -338,6 +362,7 @@ export async function POST(
       allowedFunctions,
       riskLevel,
       expiresAtMs,
+      funding,
       ...gridConfig,
     };
 

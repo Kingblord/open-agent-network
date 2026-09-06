@@ -22,6 +22,9 @@ interface Agent {
   source?: 'BAN_NATIVE' | 'EXTERNAL';
   registry?: { verified: boolean };
   reputation?: number | null;
+  /** M15 — computed reputation score (0–100) */
+  reputationScore?: number;
+  reputationRank?: number;
 }
 
 interface AgentsResponse {
@@ -56,6 +59,8 @@ export default function AgentsMarketplacePage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [erc8004Info, setErc8004Info] = useState<{ count: number; liveError?: string | null }>({ count: 0 });
+  const [sortBy, setBySort] = useState<'default' | 'reputation'>('default');
+  const [reputationMap, setReputationMap] = useState<Record<string, { score: number; rank: number }>>({});
 
   const loadExternalAgents = useCallback(async (pageToLoad: number) => {
     setLoading(true);
@@ -79,11 +84,38 @@ export default function AgentsMarketplacePage() {
 
   useEffect(() => { if (tab === 'marketplace') loadExternalAgents(1); }, [tab, loadExternalAgents]);
 
+  // M15 — Fetch reputation scores for all BAN agents
+  useEffect(() => {
+    async function loadReputation() {
+      try {
+        const res = await fetch('/api/reputation');
+        if (res.ok) {
+          const data = await res.json();
+          const map: Record<string, { score: number; rank: number }> = {};
+          (data.reputations || []).forEach((r: { agentId: string; score: number; rank: number }) => {
+            map[r.agentId] = { score: r.score, rank: r.rank };
+          });
+          setReputationMap(map);
+        }
+      } catch { /* reputation is display-only, non-critical */ }
+    }
+    loadReputation();
+  }, []);
+
   const banAgents = BAN_NATIVE_AGENTS;
   const banCategories = Array.from(new Set(banAgents.map((a) => (a.strategyId || a.type || 'General').toUpperCase())));
   const banFiltered = banAgents.filter((a) => {
     const m = a.name.toLowerCase().includes(search.toLowerCase()) || (a.description && a.description.toLowerCase().includes(search.toLowerCase()));
     return selectedCategory === 'ALL' ? m : m && (a.strategyId || a.type || 'General').toUpperCase() === selectedCategory;
+  }).map((a) => ({
+    ...a,
+    reputationScore: reputationMap[a.id]?.score,
+    reputationRank: reputationMap[a.id]?.rank,
+  })).sort((a, b) => {
+    if (sortBy === 'reputation') {
+      return (b.reputationScore ?? 0) - (a.reputationScore ?? 0);
+    }
+    return 0;
   });
 
   const extCategories = Array.from(new Set(externalAgents.map((a) => (a.strategyId || a.type || 'General').toUpperCase())));
@@ -145,6 +177,15 @@ export default function AgentsMarketplacePage() {
           </div>
         )}
 
+        {/* M15 — Sort by reputation */}
+        {tab === 'ban' && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Sort:</span>
+            <button onClick={() => setBySort('default')} className={`px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${sortBy === 'default' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Default</button>
+            <button onClick={() => setBySort('reputation')} className={`px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${sortBy === 'reputation' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}>🏆 Reputation</button>
+          </div>
+        )}
+
         {/* Banner */}
         {tab === 'ban' ? (
           <div className="bg-accent rounded-xl p-4">
@@ -198,6 +239,16 @@ export default function AgentsMarketplacePage() {
                         <div className="text-foreground font-bold text-sm group-hover:text-accent transition-colors flex items-center gap-1.5">
                           {agent.name}
                           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          {/* M15 — Reputation badge */}
+                          {agent.reputationScore != null && agent.reputationScore > 0 && (
+                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              agent.reputationScore >= 75 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                              agent.reputationScore >= 50 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                              'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30'
+                            }`}>
+                              {agent.reputationScore >= 75 ? '⭐' : agent.reputationScore >= 50 ? '✦' : '·'} {agent.reputationScore}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-accent">{(agent.strategyId || agent.type || 'General').toUpperCase()}</div>
                       </div>

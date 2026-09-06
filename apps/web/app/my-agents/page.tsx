@@ -32,6 +32,8 @@ interface PerformanceData {
 interface BalanceData {
   address?: string | null;
   balanceBnb?: string | null;
+  balanceUsdt?: string | null;
+  balanceUsdc?: string | null;
   balanceUsd?: string | null;
   usdPrice?: number | null;
 }
@@ -59,25 +61,29 @@ function AgentBalance({ agentId, walletAddress }: { agentId: string; walletAddre
   }, [load]);
 
   // No wallet provisioned yet →’ show nothing beside the address (no fabricated zero).
-  if (!walletAddress || (!balance?.balanceBnb && !balance?.balanceUsd)) {
+  const hasTokenBalance = Boolean(balance?.balanceBnb || balance?.balanceUsdt || balance?.balanceUsdc || balance?.balanceUsd);
+  const currentBalance = balance;
+  if (!walletAddress || !currentBalance || !hasTokenBalance) {
     return null;
   }
 
   return (
     <button
       type="button"
-      title="Live on-chain BNB balance (BSC)"
+      title="Live on-chain BNB, USDT, and USDC balances (BSC)"
       onClick={() => {
         load();
-        toast.success({ title: 'Balance refreshed', description: 'Live BNB balance fetched from BSC.' });
+        toast.success({ title: 'Balance refreshed', description: 'Live BNB, USDT, and USDC balances fetched from BSC.' });
       }}
       className="inline-flex items-center gap-2 rounded border border-border bg-background/40 px-2 py-1 font-mono hover:border-[#F0B90B]/60 transition"
     >
       <span className="text-[#F0B90B] font-bold">
-        {balance.balanceBnb ? `${balance.balanceBnb} BNB` : '— BNB'}
+        {currentBalance.balanceBnb ? `${currentBalance.balanceBnb} BNB` : ''}
+        {currentBalance.balanceUsdt ? ` · ${currentBalance.balanceUsdt} USDT` : ''}
+        {currentBalance.balanceUsdc ? ` · ${currentBalance.balanceUsdc} USDC` : ''}
       </span>
-      {balance.balanceUsd ? (
-        <span className="text-muted-foreground">· ${balance.balanceUsd}</span>
+      {currentBalance.balanceUsd ? (
+        <span className="text-muted-foreground">· ${currentBalance.balanceUsd}</span>
       ) : (
         <span className="text-gray-600" title="USD price unavailable">· —</span>
       )}

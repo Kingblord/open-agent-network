@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -45,6 +45,13 @@ interface TaskRecord {
     allowedFunctions: string[];
     riskLevel: string;
     expiresAtMs: number;
+    funding?: {
+      token: 'BNB' | 'USDT' | 'USDC';
+      amount: string;
+      txHash?: string;
+      gasTxHash?: string;
+      confirmedAt: string;
+    };
   };
   sessionId: string | null;
   lastRun: { at: string; result: Record<string, unknown> } | null;
@@ -239,6 +246,10 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
   }
 }
 
+function formatToken(value: number, fractionDigits = 6): string {
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: fractionDigits });
+}
+
 function renderUsdc(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
@@ -328,8 +339,11 @@ export default function MyAgentDetailPage() {
     ok: boolean;
     address: string | null;
     balanceBnb: string | null;
+    balanceUsdt: string | null;
+    balanceUsdc: string | null;
     balanceUsd: string | null;
     usdPrice: number | null;
+    tokenBalancesComplete?: boolean;
     updatedAt: string;
   } | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -593,6 +607,8 @@ export default function MyAgentDetailPage() {
     setShowTaskConfirm(false);
     setTaskLoading(true);
     try {
+      let depositTxHash = '';
+      let gasTxHash = '';
       if (taskConfirmData.depositToken === 'BNB') {
         // Send BNB to agent wallet
         let value: bigint;
@@ -605,8 +621,8 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
-        if (!txHash) {
+        depositTxHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+        if (!depositTxHash) {
           setTaskError('Deposit was not confirmed. Task creation cancelled.');
           setTaskLoading(false);
           return;
@@ -625,8 +641,8 @@ export default function MyAgentDetailPage() {
             chain: wallet.chain,
             client: thirdwebClient,
           });
-          const gasHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
-          if (!gasHash) {
+          gasTxHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
+          if (!gasTxHash) {
             setTaskError('Gas deposit cancelled.');
             setTaskLoading(false);
             return;
@@ -662,8 +678,8 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        const tokenHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
-        if (!tokenHash) {
+        depositTxHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
+        if (!depositTxHash) {
           setTaskError(`${token} transfer was not confirmed. Task creation cancelled.`);
           setTaskLoading(false);
           return;
@@ -676,7 +692,14 @@ export default function MyAgentDetailPage() {
       });
 
       // Now create the task
-      await executeCreateTask();
+      await executeCreateTask({
+        token: taskConfirmData.depositToken as 'BNB' | 'USDT' | 'USDC',
+        amount: taskConfirmData.depositToken === 'BNB'
+          ? (Number(taskConfirmData.depositUsd) / (bnbUsdPrice ?? 600)).toFixed(6)
+          : taskConfirmData.depositUsd,
+        txHash: depositTxHash,
+        gasTxHash: gasTxHash || undefined,
+      });
     } catch (error) {
       console.error('Task deposit error:', error);
       setTaskError(error instanceof Error ? error.message : 'Deposit failed');
@@ -685,7 +708,12 @@ export default function MyAgentDetailPage() {
   };
 
   /** Create the task on the server (no deposit) */
-  const executeCreateTask = async () => {
+  const executeCreateTask = async (funding?: {
+    token: 'BNB' | 'USDT' | 'USDC';
+    amount: string;
+    txHash?: string;
+    gasTxHash?: string;
+  }) => {
     setTaskError(null);
     if (!bnbUsdPrice) return;
     setTaskLoading(true);
@@ -698,13 +726,17 @@ export default function MyAgentDetailPage() {
         dailyLimitUsd: sessionForm.dailyLimitUsd,
         maxTxWei,
         dailyWei,
-        allowedTokens: sessionForm.allowedTokens,
+        allowedTokens: Array.from(new Set([
+          ...sessionForm.allowedTokens,
+          ...(funding ? [funding.token] : []),
+        ])),
         allowedProtocols: sessionForm.allowedProtocols,
         allowedFunctions: sessionForm.allowedFunctions
           ? sessionForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
           : [],
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
+        funding,
       };
 
       const response = await fetch(`/api/agents/${params.id}/tasks`, {
@@ -916,7 +948,7 @@ export default function MyAgentDetailPage() {
     const option = protocolOptions.find((p) => p.id === id);
     if (option && !option.verified) {
       setTaskError(
-        `${option.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled). Remove it or try again later.`
+        `${option.label} is recognized but not yet verified for autonomous execution (verified ≠  enabled). Remove it or try again later.`
       );
       return;
     }
@@ -1032,6 +1064,9 @@ export default function MyAgentDetailPage() {
           : tickStage ? 'Observed' : null;
 
   const balanceBnb = balance && balance.balanceBnb != null ? Number(balance.balanceBnb) : null;
+  const balanceUsdt = balance && balance.balanceUsdt != null ? Number(balance.balanceUsdt) : 0;
+  const balanceUsdc = balance && balance.balanceUsdc != null ? Number(balance.balanceUsdc) : 0;
+  const hasAnyBalance = (balanceBnb != null && balanceBnb > 0) || balanceUsdt > 0 || balanceUsdc > 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-28">
@@ -1083,8 +1118,8 @@ export default function MyAgentDetailPage() {
               <p className="text-base font-black text-foreground">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
-              <p className="text-base font-black text-foreground">{tvlDisplay ?? '—'}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL DEPLOYED</p>
+              <p className="text-base font-black text-foreground">{tvlDisplay ?? (balance != null && balance.balanceUsd ? `$${balance.balanceUsd}` : '—')}</p>
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">SUCCESS RATE</p>
@@ -1127,17 +1162,31 @@ export default function MyAgentDetailPage() {
                 <p className="text-xs font-mono text-[#F0B90B] break-all">{agent.walletAddress}</p>
               </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Balance</span>
-                <span className="text-lg font-black text-foreground font-mono">
-                  {balanceLoading && balance == null ? (
-                    <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
-                  ) : balanceBnb != null ? (
-                    `${renderUsdc(balanceBnb!, 6)} BNB`
-                  ) : (
-                    '—'
-                  )}
-                </span>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">BNB</span>
+                  <span className="text-lg font-black text-foreground font-mono">
+                    {balanceLoading && balance == null ? (
+                      <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
+                    ) : balanceBnb != null ? (
+                      `${formatToken(balanceBnb, 6)} BNB`
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                </div>
+                {balanceUsdt > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">USDT</span>
+                    <span className="text-sm font-black text-emerald-400 font-mono">{formatToken(balanceUsdt, 6)} USDT</span>
+                  </div>
+                )}
+                {balanceUsdc > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">USDC</span>
+                    <span className="text-sm font-black text-sky-400 font-mono">{formatToken(balanceUsdc, 6)} USDC</span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1151,7 +1200,7 @@ export default function MyAgentDetailPage() {
                 <button
                   type="button"
                   onClick={() => { setWithdrawAmount(''); setWithdrawResult(null); setWithdrawError(null); setWithdrawOpen(true); }}
-                  disabled={!balanceBnb || balanceBnb <= 0}
+                  disabled={!hasAnyBalance}
                   className="w-full bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-40"
                 >
                   WITHDRAW
@@ -1167,9 +1216,13 @@ export default function MyAgentDetailPage() {
               </div>
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Minimum <strong className="text-foreground">$0.50 BNB reserve</strong> kept for gas. {balanceBnb != null && bnbUsdPrice != null
-                  ? `Available: ${Math.max(0, balanceBnb - (0.5 / bnbUsdPrice)).toFixed(6)} BNB (${((balanceBnb - (0.5 / bnbUsdPrice)) * (bnbUsdPrice ?? 0)).toFixed(2)} USD)`
-                  : ''} Top up BNB here so it can pay gas and execute within its session limits.
+                Minimum <strong className="text-foreground">$0.50 BNB reserve</strong> kept for gas.
+                {balanceBnb != null && bnbUsdPrice != null
+                  ? ` BNB: ${formatToken(Math.max(0, balanceBnb - (0.5 / bnbUsdPrice)), 6)}`
+                  : ''}
+                {balanceUsdt > 0 ? ` · USDT: ${formatToken(balanceUsdt, 6)}` : ''}
+                {balanceUsdc > 0 ? ` · USDC: ${formatToken(balanceUsdc, 6)}` : ''}
+                {balance != null && balance.balanceUsd != null ? ` · Total: $${balance.balanceUsd}` : ''}.
               </p>
             </>
           ) : (
@@ -1234,11 +1287,16 @@ export default function MyAgentDetailPage() {
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.riskLevel}</span>
-                    {task.config.allowedTokens.length > 0 && (
-                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedTokens.join(', ')}</span>
+                    {(task.config.allowedTokens ?? []).length > 0 && (
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{(task.config.allowedTokens ?? []).join(', ')}</span>
                     )}
-                    {task.config.allowedProtocols.length > 0 && (
-                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
+                    {(task.config.allowedProtocols ?? []).length > 0 && (
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{(task.config.allowedProtocols ?? []).join(', ')}</span>
+                    )}
+                    {task.config.funding && (
+                      <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5">
+                        Allocated: {task.config.funding.amount} {task.config.funding.token}
+                      </span>
                     )}
                   </div>
                   {task.lastRun && (
@@ -1748,11 +1806,11 @@ export default function MyAgentDetailPage() {
                       type="button"
                       disabled={disabled}
                       onClick={() => toggleProtocol(p.id)}
-                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled).` : undefined}
+                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified ≠  enabled).` : undefined}
                       className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-card text-gray-600 border-border cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {p.label}
-                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying"¦)</span>}
+                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying…)</span>}
                       {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
                     </button>
                   );
@@ -1765,7 +1823,7 @@ export default function MyAgentDetailPage() {
               )}
               {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Protocols are recognized but not yet verified for autonomous execution (verified â‰  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
+                  Protocols are recognized but not yet verified for autonomous execution (verified ≠  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
@@ -1912,6 +1970,16 @@ export default function MyAgentDetailPage() {
                     className="w-full bg-background border border-border rounded-lg px-3 py-3 text-lg font-black text-foreground font-mono focus:border-[#F0B90B] outline-none"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">{withdrawToken}</span>
+                </div>
+                <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground">
+                  <span>Available</span>
+                  <span className="font-mono font-black text-foreground">
+                    {withdrawToken === 'BNB'
+                      ? `${formatToken(Math.max(0, balanceBnb ?? 0), 6)} BNB`
+                      : withdrawToken === 'USDT'
+                        ? `${formatToken(balanceUsdt, 6)} USDT`
+                        : `${formatToken(balanceUsdc, 6)} USDC`}
+                  </span>
                 </div>
               </div>
 

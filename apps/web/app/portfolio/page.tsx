@@ -142,18 +142,22 @@ export default function PortfolioPage() {
             if (pd.hasPositions && parseFloat(pd.capitalManagedUsd) > 0) posList.push({ agentId: a.id, name: a.name, capitalUsd: parseFloat(pd.capitalManagedUsd) });
           }
 
-          // Real agent wallet allocation
+          // Real agent wallet allocation — fetches BNB + USDT + USDC from the balance API
           const bnbBal = balanceRes?.balanceBnb ? Number(balanceRes.balanceBnb) : 0;
-          const bnbUsdVal = bnbBal * (balanceRes?.usdPrice ?? bnbPrice);
+          const usdtBal = balanceRes?.balanceUsdt ? Number(balanceRes.balanceUsdt) : 0;
+          const usdcBal = balanceRes?.balanceUsdc ? Number(balanceRes.balanceUsdc) : 0;
+          const price = balanceRes?.usdPrice ?? bnbPrice;
+          const bnbUsdVal = bnbBal * price;
+          const totalAgentUsd = bnbUsdVal + usdtBal + usdcBal;
           allocList.push({
             agentId: a.id,
             name: a.name,
             walletAddress: a.walletAddress ?? '',
             bnbBalance: bnbBal,
             bnbUsd: bnbUsdVal,
-            usdtBalance: 0,
-            usdcBalance: 0,
-            totalUsd: bnbUsdVal,
+            usdtBalance: usdtBal,
+            usdcBalance: usdcBal,
+            totalUsd: totalAgentUsd,
             hasWallet: Boolean(a.walletAddress),
           });
         }
@@ -162,7 +166,8 @@ export default function PortfolioPage() {
         setFeesBnb(fees > 0n ? (Number(fees) / 1e18).toFixed(4) : null);
         setPositions(posList);
         setAllocations(allocList);
-        setTotalUsd(prev => prev + posList.reduce((s, p) => s + p.capitalUsd, 0) + allocList.reduce((s, a) => s + a.totalUsd, 0));
+        // Total USD = user wallet balances (set by fetchBalances) + agent allocations + protocol positions
+        setTotalUsd(prev => posList.reduce((s, p) => s + p.capitalUsd, 0) + allocList.reduce((s, a) => s + a.totalUsd, 0));
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
@@ -277,7 +282,12 @@ export default function PortfolioPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-[#F0B90B]">${a.totalUsd.toFixed(2)}</p>
-                      <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">{a.bnbBalance.toFixed(4)} BNB</p>
+                      <p className="text-[10px] dark:text-muted-foreground text-muted-foreground">
+                        {a.bnbBalance > 0 ? `${a.bnbBalance.toFixed(4)} BNB` : ''}
+                        {a.usdtBalance > 0 ? `${a.usdtBalance.toFixed(2)} USDT` : ''}
+                        {a.usdcBalance > 0 ? `${a.usdcBalance.toFixed(2)} USDC` : ''}
+                        {a.totalUsd === 0 ? 'No balance' : ''}
+                      </p>
                     </div>
                   </button>
                   <div className="flex items-center gap-2 border-t dark:border-border border-gray-200 pt-2">

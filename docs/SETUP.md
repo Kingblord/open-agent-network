@@ -1,22 +1,117 @@
-# Open Agent Network - Setup Guide
+# BAN Smart Money — Setup Guide
 
-## Step 1: Firebase Project Setup
+## Prerequisites
+
+- Node.js 18+
+- pnpm 8+
+- Firebase project with Firestore enabled
+- Inngest account (inngest.com)
+- Vercel account (for deployment)
+
+## Step 1: Clone & Install
+
+```bash
+git clone <repo-url>
+cd open-agent-network
+pnpm install
+```
+
+## Step 2: Firebase Setup
 
 1. Go to [Firebase Console](https://console.firebase.google.com)
 2. Create a new project or select existing one
 3. Enable Firestore Database
-4. In Security Rules, use this temporary rule (development only):
-   ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /{document=**} {
-         allow read, write: if true;
-       }
-     }
-   }
-   ```
-5. Copy your Firebase config from Project Settings
+4. Enable Firebase Authentication (Email/Password)
+5. Generate a service account key (Project Settings → Service Accounts → Generate New Private Key)
+6. Copy the service account JSON values into `.env.local`
+
+## Step 3: Inngest Setup
+
+1. Go to [Inngest](https://inngest.com) and create an account
+2. Create a new project
+3. Copy the Signing Key and Event Key into `.env.local`
+
+## Step 4: Environment Configuration
+
+Create `apps/web/.env.local`:
+
+```env
+# Firebase Admin SDK (server-side)
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+
+# Firebase Client SDK (browser)
+NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+
+# Inngest
+INNGEST_SIGNING_KEY=your-signing-key
+INNGEST_EVENT_KEY=your-event-key
+
+# AI (OpenRouter)
+OPENROUTER_API_KEY=your-openrouter-key
+
+# Blockchain
+BAN_RPC_URL=https://bsc-dataseed.binance.org/
+BAN_CHAIN_ID=56
+BAN_LIVE_DATA=1
+
+# Altana (optional for hackathon)
+ALTANA_API_KEY=your-altana-key
+```
+
+## Step 5: Firestore Collections
+
+The following collections are created automatically by the application:
+
+- `users`, `agents`, `agent_sessions`, `agent_permissions`, `strategies`
+- `action_proposals`, `executions`, `jobs`, `spend_ledger`, `positions`
+- `market_data`, `performance`, `audit_events`, `agent_events`
+- `protocol_configs`, `agent_tasks`, `agent_keystores`
+
+See `firestore/firestore.rules` for security rules.
+
+## Step 6: Run Locally
+
+```bash
+# Start development server (Next.js + Inngest)
+pnpm dev
+
+# The Inngest dev server will be available at http://localhost:3000/api/inngest
+```
+
+## Step 7: Deploy to Vercel
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+
+# Set environment variables in Vercel dashboard
+```
+
+## Step 8: Verify
+
+1. Open the deployed URL
+2. Sign up for a new account
+3. Browse the marketplace (`/agents`)
+4. Check the dashboard (`/dashboard`)
+
+## Testing
+
+```bash
+# Run all tests
+pnpm test
+
+# Run specific package tests
+cd packages/eip7702 && pnpm test
+cd packages/policy-engine && pnpm test
+cd packages/execution-engine && pnpm test
+```
 
 ## Step 2: Environment Variables
 

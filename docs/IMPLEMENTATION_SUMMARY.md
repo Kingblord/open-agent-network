@@ -1,287 +1,118 @@
-# Open Agent Network - MVP Implementation Summary
+# BAN Smart Money — Implementation Summary
 
 ## Overview
 
-Successfully built a **complete MVP** of the Open Agent Network, a decentralized multi-agent platform where developers can hire and deploy AI agents on a credit-based economy.
+**BAN Smart Money** is a BNB Chain marketplace where users discover, hire, authorize, monitor and revoke autonomous financial agents. BAN is the project/network layer that powers four first-class BNB financial agents for yield optimisation, health-factor monitoring, LP rebalancing and grid trading.
 
-## What Was Built
+## Architecture
 
-### Architecture (3 Components)
-1. **Frontend** - Next.js 16 React 19 with Tailwind CSS and shadcn/ui
-2. **Backend** - Next.js API routes with Firestore database
-3. **Authentication** - JWT + secure HTTP-only cookies
+### Stack
+- **Frontend + Control Plane**: Next.js 16 / React 19 / TypeScript on Vercel
+- **Database**: Firebase Firestore (durable application state)
+- **Authentication**: Firebase Authentication + JWT session cookies
+- **Durable Jobs**: Inngest (primary), QStash (fallback)
+- **Blockchain**: BNB Chain (testnet first)
+- **AI**: Tool-calling LLM (reasoning only — never executes)
+- **Agent Wallets**: Altana + EIP-7702
 
-### Core Deliverables
+### Monorepo Structure
+- `apps/web/` — Next.js frontend + 42 API route handlers + Inngest functions
+- `packages/` — 15 reusable packages (schemas, agent-core, policy-engine, execution-engine, blockchain, ai, registry, signers, eip7702, performance-engine, shared, strategy-yield, strategy-health, strategy-lp, strategy-grid)
 
-#### 1. Authentication System (4 files)
-- `app/api/auth/signup/route.ts` - User registration with 50 initial credits
-- `app/api/auth/login/route.ts` - Secure login with JWT
-- `app/api/auth/logout/route.ts` - Session termination
-- `app/api/auth/me/route.ts` - Current user retrieval
-- `lib/auth-context.tsx` - React context for auth state management
-- `lib/auth.ts` - Password hashing, token generation, cookie management
+### Core Components
+1. **Agent Registry** — CRUD, lifecycle management, capability declarations
+2. **Session Manager** — Altana wallet sessions with scoped permissions
+3. **Permission Engine** — EIP-7702 delegation with spend caps and expiry
+4. **Policy Engine** — Deterministic validation (contract/function/token/amount/risk)
+5. **Execution Engine** — Preflight → policy → idempotency → sign → submit → reconcile
+6. **AI Brain** — Tool-calling reasoning layer (OpenRouter or dev adapter)
+7. **Job System** — Inngest durable queues with retry/backoff/dead-letter
+8. **Performance Engine** — Aggregation and mode classification (LIVE/TESTNET/SIMULATED)
 
-#### 2. Database Layer (2 files)
-- `lib/firebase.ts` - Firebase/Firestore initialization
-- `lib/db.ts` - Full CRUD operations for all collections
-- `lib/schemas.ts` - Zod validation for 10+ data types
-- 6 Firestore collections: developers, agents, tasks, hirings, creditTransactions, apiKeys
+### Financial Agents
+1. **Yield Optimisation** — Scans Venus/Aave/Lista for best effective yield
+2. **Health Factor Monitoring** — Protects lending positions from liquidation
+3. **LP Rebalancing** — Manages concentrated PancakeSwap liquidity
+4. **Grid Trading** — Bounded automated grid strategy
 
-#### 3. Backend API Routes (15 endpoints)
-- Authentication: signup, login, logout, me
-- Developers: profile CRUD, credits balance, API key management
-- Agents: list, create, read, update, delete
-- Hirings: submit task, get status, list history
-- Credits: transaction history, balance tracking
-
-#### 4. Frontend Dashboard (6 pages)
-- `app/page.tsx` - Landing page with hero section
-- `app/login/page.tsx` - Secure login form
-- `app/signup/page.tsx` - Registration with validation
-- `app/dashboard/page.tsx` - Dashboard with stats and activity
-- `app/agents/page.tsx` - Browse and hire agents
-- `app/my-agents/page.tsx` - Create and manage personal agents
-- `app/history/page.tsx` - Transaction audit log
-- `app/settings/page.tsx` - Profile and API key management
-
-#### 5. UI Components
-- `components/dashboard-layout.tsx` - Sidebar navigation with responsive design
-- Tailwind CSS styling with dark mode by default
-- Form validation and error handling
-- Loading states and spinners
-
-### Key Features Implemented
-
-#### User Management
-- Email/password registration with bcryptjs hashing
-- JWT-based authentication
-- Secure HTTP-only cookies
-- User profile management
-- Credit balance tracking (starts with 50 credits)
-
-#### Agent Management
-- Create agents with capabilities and pricing
-- Browse all agents on network
-- View agent ratings and reviews
-- Filter agents by capability
-- Update/delete own agents
-
-#### Hiring System
-- Submit tasks to hire agents
-- Real-time credit deduction
-- Task status tracking (pending → completed)
-- Mock agent execution (2-second simulated execution)
-- Results display and history
-
-#### Credit Economy
-- Initial allocation: 50 credits per new user
-- Transparent pricing: agents set cost per execution
-- Immediate credit deduction on hiring
-- Failed execution refunds
-- Complete transaction audit trail
-- API key generation for programmatic access
-
-#### Security
-- Password hashing with bcryptjs
-- JWT token verification
-- API key hashing and validation
-- Input validation with Zod
-- Protected API routes
-- User scoping (can only access own data)
-
-## Technical Stack
-
-### Frontend
-- **Next.js 16** - React framework with App Router
-- **React 19** - Latest features and hooks
-- **Tailwind CSS 4** - Utility-first styling
-- **shadcn/ui** - Accessible component library
-- **TypeScript** - Type safety
-
-### Backend
-- **Next.js API Routes** - RESTful endpoints
-- **Firestore** - NoSQL database
-- **Zod** - Data validation
-- **bcryptjs** - Password hashing
-- **jsonwebtoken** - JWT authentication
-
-### Libraries
-- firebase (12.16.0)
-- jsonwebtoken (9.0.3)
-- bcryptjs (3.0.3)
-- zod (4.4.3)
-
-## File Structure
-
+### Security Model
 ```
-📁 app/
-├── 📁 api/
-│   ├── 📁 auth/
-│   │   ├── signup/route.ts
-│   │   ├── login/route.ts
-│   │   ├── logout/route.ts
-│   │   └── me/route.ts
-│   ├── 📁 agents/
-│   │   ├── route.ts (list/create)
-│   │   └── [id]/route.ts (CRUD)
-│   ├── 📁 hirings/
-│   │   ├── route.ts (list/create)
-│   │   └── [id]/route.ts (details)
-│   ├── 📁 developers/
-│   │   ├── 📁 profile/route.ts
-│   │   ├── 📁 credits/route.ts
-│   │   └── 📁 keys/route.ts
-│   └── 📁 credits/
-│       └── transactions/route.ts
-├── dashboard/page.tsx
-├── agents/page.tsx
-├── my-agents/page.tsx
-├── history/page.tsx
-├── settings/page.tsx
-├── login/page.tsx
-├── signup/page.tsx
-├── page.tsx (landing)
-└── layout.tsx
-
-📁 lib/
-├── firebase.ts
-├── auth.ts
-├── auth-context.tsx
-├── db.ts
-├── schemas.ts
-├── api-middleware.ts
-└── utils.ts
-
-📁 components/
-├── dashboard-layout.tsx
-└── ui/
-    └── button.tsx
+AI decision → Action Proposal → Authentication → Session validation →
+Permission validation → Spend-limit validation → Protocol/function allowlist →
+Token validation → Risk validation → Idempotency check → Simulation →
+Execution → Receipt verification → State update
 ```
 
-## Database Collections
+The AI **never** holds keys, signs transactions, or bypasses policy.
 
-### developers
-```json
-{
-  "id": "dev_1234567890",
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "$2a$10$hashed...",
-  "credits": 50,
-  "tier": "free",
-  "createdAt": "2024-01-15T10:30:00Z",
-  "updatedAt": "2024-01-15T10:30:00Z"
-}
+## Key Features
+
+### Marketplace Journey
+```
+DISCOVER → UNDERSTAND → HIRE → AUTHORIZE → OBSERVE → DECIDE →
+EXECUTE → VERIFY → MONITOR → REVOKE
 ```
 
-### agents
-```json
-{
-  "id": "agent_abc123",
-  "developerId": "dev_1234567890",
-  "name": "Analysis Bot",
-  "description": "Provides detailed data analysis",
-  "capabilities": ["analysis", "reasoning"],
-  "costPerExecution": 10,
-  "rating": 4.5,
-  "reviewCount": 12,
-  "isActive": true,
-  "createdAt": "2024-01-15T11:00:00Z",
-  "updatedAt": "2024-01-15T11:00:00Z"
-}
+### Agent Lifecycle
+```
+REGISTER → CONFIGURE → AUTHORIZE → OBSERVE → REASON → PROPOSE →
+VALIDATE → EXECUTE → VERIFY → RECONCILE → REPORT
 ```
 
-### hirings
-```json
-{
-  "id": "hiring_xyz789",
-  "agentId": "agent_abc123",
-  "taskId": "task_def456",
-  "developerId": "dev_9876543210",
-  "status": "completed",
-  "creditsCost": 10,
-  "creditsRefunded": 0,
-  "result": {"output": "Analysis complete"},
-  "createdAt": "2024-01-15T12:00:00Z",
-  "completedAt": "2024-01-15T12:02:00Z"
-}
-```
+### Security Invariants
+- AI = reasoning engine only (never holds keys or signs transactions)
+- Policy engine is the sole gateway between AI proposals and execution
+- Every financial job is idempotent (retry never blindly repeats)
+- Blockchain state is authoritative for financial data
+- Testnet first; mainnet only after all safety gates pass
 
-## API Examples
+## API Routes (42 endpoints)
 
-### Signup
-```bash
-POST /api/auth/signup
-Content-Type: application/json
+### Authentication
+- `POST /api/auth/signup` — User registration
+- `POST /api/auth/login` — Secure login with JWT
+- `POST /api/auth/logout` — Session termination
+- `GET /api/auth/me` — Current user retrieval
 
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "SecurePass123"
-}
+### Agents
+- `GET/POST /api/agents` — List/create agents
+- `GET/PUT /api/agents/[id]` — Agent CRUD
+- `POST /api/agents/deploy` — Deploy agent with wallet
+- `POST /api/agents/run` — Execute agent run cycle
+- `GET /api/agents/[id]/activity` — Audit trail (M14)
+- `GET /api/agents/[id]/performance` — Performance metrics
+- `GET /api/agents/[id]/sessions` — Session management
 
-Response: { developerId, token }
-```
+### Permissions (EIP-7702)
+- `GET/POST /api/permissions` — List/create permissions
+- `POST /api/permissions/[id]/activate` — Verify & activate
+- `POST /api/permissions/[id]/revoke` — Revoke permission
 
-### Create Agent
-```bash
-POST /api/agents
-Authorization: Bearer token
-Content-Type: application/json
+### Durable Jobs
+- `GET /api/jobs` — List jobs
+- `GET /api/jobs/[id]` — Job details
 
-{
-  "name": "Analysis Bot",
-  "description": "Provides analysis",
-  "capabilities": ["analysis", "reasoning"],
-  "costPerExecution": 10
-}
+### Inngest
+- `GET/POST/PUT /api/inngest` — Inngest serve endpoint
 
-Response: { agentId }
-```
+### Other
+- `GET /api/protocols` — Protocol registry
+- `GET /api/prices/bnb` — BNB price feed
+- `GET /api/health` — Health check
 
-### Hire Agent
-```bash
-POST /api/hirings
-Authorization: Bearer token
-Content-Type: application/json
+## Database Collections (18)
 
-{
-  "agentId": "agent_abc123",
-  "taskDescription": "Analyze sales data",
-  "input": { "data": [...] }
-}
+`users`, `agents`, `agent_sessions`, `agent_permissions`, `strategies`,
+`action_proposals`, `executions`, `jobs`, `spend_ledger`, `positions`,
+`market_data`, `performance`, `audit_events`, `agent_events`,
+`protocol_configs`, `agent_tasks`, `agent_keystores`, `hirings`
 
-Response: { hiringId, creditsCost, newBalance }
-```
+## Deployment
 
-## Testing Workflow
-
-1. **Sign Up** → Get 50 credits
-2. **Create Agent** → Set pricing (e.g., 10 credits)
-3. **Create Second Account** → Get 50 credits
-4. **Hire Agent** → Select agent, describe task
-5. **Verify** → Check credits deducted, transaction logged
-6. **View History** → See all transactions
-
-## Deployment Checklist
-
-- [ ] Add Firebase credentials to `.env.local`
-- [ ] Create Firestore collections
-- [ ] Generate JWT_SECRET with `openssl rand -base64 32`
-- [ ] Test signup/login flow
-- [ ] Test agent creation
-- [ ] Test agent hiring
-- [ ] Deploy to Vercel
-
-## Known Limitations (MVP Scope)
-
-- Agent execution is mocked (2-second delay)
-- No real-time WebSocket updates (polling based)
-- No payment integration (mock credit purchase)
-- No multi-agent orchestration
-- No long-context processing
-- Limited error handling for edge cases
-- No rate limiting or DDoS protection
+- **Platform**: Vercel (Next.js serverless)
+- **CI/CD**: GitHub Actions (lint, test, build, deploy)
+- **Emulators**: Firestore local emulator + Inngest dev server
+- **Environment**: `.env.local` with Firebase config, Inngest signing key, OpenRouter API key
 - No comprehensive logging/analytics
 
 ## Post-MVP Enhancements

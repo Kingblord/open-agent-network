@@ -114,7 +114,7 @@ export default function DashboardPage() {
       events.sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime());
       setActivity(events.slice(0, 10));
 
-      // Fetch agent wallet balances for allocation display
+      // Fetch agent wallet balances for allocation display (BNB + USDT + USDC)
       const allocEntries: { agentId: string; name: string; totalUsd: number }[] = [];
       let allocTotal = 0;
       for (const a of mine.slice(0, 20)) {
@@ -123,7 +123,10 @@ export default function DashboardPage() {
           if (r.ok) {
             const bd = await r.json();
             const bnbBal = Number(bd.balanceBnb || 0);
-            const usdVal = bnbBal * (bd.usdPrice || 600);
+            const usdtBal = Number(bd.balanceUsdt || 0);
+            const usdcBal = Number(bd.balanceUsdc || 0);
+            const price = bd.usdPrice || 600;
+            const usdVal = bnbBal * price + usdtBal + usdcBal;
             if (usdVal > 0) {
               allocEntries.push({ agentId: a.id, name: a.name, totalUsd: usdVal });
               allocTotal += usdVal;

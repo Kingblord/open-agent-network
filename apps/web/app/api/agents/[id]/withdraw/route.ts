@@ -185,6 +185,22 @@ export async function POST(
       const decimals = 18;
       const amountWei = parseUnits(rawAmount as `${number}`, decimals);
 
+      // Validate the token balance before attempting to sign. This is required
+      // for deposits made after the page was opened and prevents a generic
+      // contract revert when the UI has stale balance data.
+      const tokenBalance = await publicClient.readContract({
+        address: tokenAddr,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [account.address],
+      });
+      if (tokenBalance < amountWei) {
+        return errorResponse(409, `Insufficient ${withdrawToken} balance. Available: ${Number(tokenBalance) / 10 ** decimals} ${withdrawToken}.`, {
+          code: ErrorCode.POLICY_DENIED,
+          correlationId: getCorrelationId(),
+        });
+      }
+
       // Check agent wallet has enough BNB for gas + reserve
       const bnbBalance = await publicClient.getBalance({ address: account.address });
       let bnbPriceUsd = 600;

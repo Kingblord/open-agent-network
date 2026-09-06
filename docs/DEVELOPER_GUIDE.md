@@ -1,24 +1,107 @@
-# Developer Guide - Open Agent Network
+# BAN Smart Money — Developer Guide
 
 ## Quick Reference
 
-### Authentication Flow
+### Architecture Layers
 
 ```
-User Input → Validation → Hash/JWT → Store Cookie → Redirect
+Control Plane (Next.js API routes on Vercel)
+  → Runtime Plane (Strategies + AI Brain + Policy + Execution)
+    → Data Plane (Blockchain + Protocol Adapters)
+      → State Reconciliation (Firestore + Onchain)
 ```
 
-### Hiring Flow
+### Agent Run Cycle
 
 ```
-Select Agent → Enter Task → Deduct Credits → Create Hiring → Mock Execute → Update Status
+OBSERVE → REASON → PROPOSE → POLICY → EXECUTE → VERIFY → RECONCILE
 ```
 
-### Data Flow
+### Key Interfaces
 
+```typescript
+// Core BAN interfaces (packages/agent-core)
+AgentRegistry     // CRUD, lifecycle
+SessionManager    // Altana wallet sessions
+PermissionEngine  // EIP-7702 delegation
+ToolGateway       // Capability-limited tool access
+StrategyEngine    // Strategy runtime
+PolicyEngine      // Deterministic validation
+JobScheduler      // Inngest durable queues
+ExecutionEngine   // Transaction pipeline
 ```
-Frontend → API Route → Validation → Firestore → Response → UI Update
+
+### Package Structure
+
+| Package | Purpose |
+|---|---|
+| `@ban/schemas` | Zod schemas (Agent, Session, ActionProposal, Execution, etc.) |
+| `@ban/shared` | Error taxonomy, ID generation, logging |
+| `@ban/agent-core` | Interface contracts for all BAN components |
+| `@ban/policy-engine` | Deterministic validation + spend ledger |
+| `@ban/execution-engine` | Preflight → policy → idempotency → sign → submit |
+| `@ban/blockchain` | Adapter interfaces (Price, Yield, Lending, Liquidity, Swap) |
+| `@ban/ai` | Brain adapter (Dev + OpenRouter) |
+| `@ban/registry` | Protocol/contract/token/address registries |
+| `@ban/signers` | Session-scoped signing boundary |
+| `@ban/eip7702` | EIP-7702 authorization + permission resolver |
+| `@ban/performance-engine` | Metrics aggregation + mode classification |
+| `@ban/strategy-yield` | Yield optimisation strategy |
+| `@ban/strategy-health` | Health factor monitoring strategy |
+| `@ban/strategy-lp` | LP rebalancing strategy |
+| `@ban/strategy-grid` | Grid trading strategy |
+
+### Running Locally
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start Firestore emulator + Inngest dev server
+pnpm dev
+
+# Run tests
+pnpm test
+
+# Build
+pnpm build
 ```
+
+### Environment Variables
+
+```env
+# Firebase
+FIREBASE_PROJECT_ID=...
+FIREBASE_CLIENT_EMAIL=...
+FIREBASE_PRIVATE_KEY=...
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+
+# Inngest
+INNGEST_SIGNING_KEY=...
+INNGEST_EVENT_KEY=...
+
+# AI
+OPENROUTER_API_KEY=...
+
+# Blockchain
+BAN_RPC_URL=https://bsc-dataseed.binance.org/
+BAN_CHAIN_ID=56
+BAN_LIVE_DATA=1
+
+# Altana
+ALTANA_API_KEY=...
+```
+
+### Security Rules
+
+1. AI = reasoning engine only (never holds keys or signs transactions)
+2. Policy engine is the sole gateway between AI proposals and execution
+3. Every financial job is idempotent (retry never blindly repeats)
+4. Blockchain state is authoritative for financial data
+5. Testnet first; mainnet only after all safety gates pass
+6. Every integration uses adapter interfaces (never scatter SDK calls)
 
 ## Adding Features
 
