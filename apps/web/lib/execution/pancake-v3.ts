@@ -26,6 +26,76 @@ const PANCAKE_V3_ROUTER_ABI = parseAbi([
   'function exactInputSingle(ExactInputSingleParams params) external payable returns (uint256 amountOut)',
 ]);
 
+/**
+ * PancakeSwap V3 Factory (BSC mainnet) — the canonical deployment used by the
+ * Smart Router. Used ONLY to discover which fee tiers have a live pool for the
+ * token pair; a wrong tier would make the swap revert (funds stay safe, but
+ * the fill is lost), so the signer resolves the tier on-chain before building.
+ */
+const PANCAKE_V3_FACTORY = '0x0BFbCF9fa4f9C56B0F40a671Ad45E7806C799594' as Address;
+
+const FACTORY_ABI = parseAbi([
+  'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)',
+]);
+
+const POOL_ABI = parseAbi([
+  'function liquidity() view returns (uint128 liquidity)',
+]);
+
+const FEE_TIERS: readonly number[] = [500, 100, 2500, 10000]; // preference order (stable↔wrapped-native usually 500)
+
+/**
+ * Resolve the BEST existing PancakeSwap V3 fee tier for a token pair: the
+ * tier with an existing pool and the deepest liquidity. Preference order
+ * breaks ties (500 first — the standard USDT↔WBNB tier). Fails soft: returns
+ * the default tier when the factory is unreachable, so execution degrades to
+ * the previous behavior instead of blocking.
+ */
+export async function resolveBestFeeTier(
+  tokenIn: Address,
+  tokenOut: Address,
+): Promise<number> {
+  const { createPublicClient, http } = await import('viem');
+  const { bsc } = await import('viem/chains');
+  const client = createPublicClient({
+    chain: bsc,
+    transport: http(process.env.BAN_RPC_URL || 'https://bsc-dataseed1.binance.org'),
+  });
+
+  // In-process cache (10 min) — the tier for a pair rarely changes.
+  const cacheKey = `${tokenIn.toLowerCase()}-${tokenOut.toLowerCase()}`;
+  const cached = tierCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.tier;
+
+  for (const fee of FEE_TIERS) {
+    try {
+      const pool = await client.readContract({
+        address: PANCAKE_V3_FACTORY,
+        abi: FACTORY_ABI,
+        functionName: 'getPool',
+        args: [tokenIn, tokenOut, fee],
+      });
+      if (!pool || pool === '0x0000000000000000000000000000000000000000') continue;
+      const liquidity = await client.readContract({
+        address: pool,
+        abi: POOL_ABI,
+        functionName: 'liquidity',
+      });
+      if (liquidity > 0n) {
+        tierCache.set(cacheKey, { tier: fee, at: Date.now() });
+        return fee;
+      }
+    } catch {
+      // Factory/RPC hiccup — try the next tier; final fallback below.
+    }
+  }
+  return GRID_DEFAULT_FEE_TIER;
+}
+
+const GRID_DEFAULT_FEE_TIER = 500;
+
+const tierCache = new Map<string, { tier: number; at: number }>();
+
 export interface PancakeV3SwapParams {
   side: 'BUY' | 'SELL';
   tokenIn: Address;

@@ -156,6 +156,9 @@ interface OnchainTx {
   gasUsed: string;
   gasPriceGwei: string;
   kind: 'NATIVE' | 'ERC20';
+  /** Human-readable classification: FUNDING / AGENT_EXECUTION / GAS / WITHDRAWAL. */
+  category?: 'FUNDING' | 'AGENT_EXECUTION' | 'GAS' | 'WITHDRAWAL' | 'TRANSFER';
+  label?: string;
 }
 
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -1363,7 +1366,7 @@ export default function MyAgentDetailPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-black text-foreground">
                       <span className={tx.direction === 'OUT' ? 'text-red-400' : 'text-emerald-400'}>{tx.direction === 'OUT' ? '↗' : '↙'}</span>{' '}
-                      {tx.direction === 'OUT' ? 'Sent' : 'Received'} {tx.value} {tx.token}
+                      {tx.label ? `${tx.label} — ${tx.value} ${tx.token}` : `${tx.direction === 'OUT' ? 'Sent' : 'Received'} ${tx.value} ${tx.token}`}
                       {tx.status === 'FAILED' && <span className="ml-2 text-[9px] text-red-400 font-black">FAILED</span>}
                     </p>
                     <p className="text-[10px] text-muted-foreground font-mono truncate">
@@ -1951,13 +1954,16 @@ export default function MyAgentDetailPage() {
             {/* Allowed functions */}
             {agent.type === 'grid' && (
               <div className="space-y-3 rounded-lg border border-border bg-background/40 p-3">
-                <label className="block text-xs font-black text-muted-foreground mb-1.5">Grid configuration (USD)</label>
+                <label className="block text-xs font-black text-muted-foreground mb-1.5">Grid configuration (USD) — optional</label>
+                <p className="text-[10px] text-muted-foreground">
+                  Leave blank to auto-configure: your initial deposit becomes the trading capital, bounds are set to the live price ±25%, 10 levels, equal-sized orders. Any value you enter overrides the auto setup.
+                </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="number" min="0.01" step="any" placeholder="Lower price" value={sessionForm.gridLowerPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridLowerPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Upper price" value={sessionForm.gridUpperPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridUpperPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="2" step="1" placeholder="Grid count" value={sessionForm.gridCount} onChange={(e) => setSessionForm({ ...sessionForm, gridCount: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Capital" value={sessionForm.gridCapitalUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridCapitalUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Max order" value={sessionForm.gridMaxOrderUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridMaxOrderUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Lower price (auto ±25%)" value={sessionForm.gridLowerPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridLowerPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Upper price (auto ±25%)" value={sessionForm.gridUpperPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridUpperPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="2" step="1" placeholder="Grid count (auto 10)" value={sessionForm.gridCount} onChange={(e) => setSessionForm({ ...sessionForm, gridCount: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Capital (auto = deposit)" value={sessionForm.gridCapitalUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridCapitalUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
+                  <input type="number" min="0.01" step="any" placeholder="Max order (auto = cap/levels)" value={sessionForm.gridMaxOrderUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridMaxOrderUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
                 </div>
                 <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
                   <input type="checkbox" checked={sessionForm.autoRecenterOnBreak} onChange={(e) => setSessionForm({ ...sessionForm, autoRecenterOnBreak: e.target.checked })} />

@@ -46,6 +46,7 @@ import { agentRegistry } from '@/lib/agent-registry';
 import { sessionManagerFactory } from '@/lib/session-manager-factory';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
 import { resolveAllowedContracts, resolveAllowedTokens, canonicalizeAllowedFunctions } from '@/lib/session-resolution';
+import { getBnbUsdPrice } from '@/lib/bnb-price';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
 import { BANError, ErrorCode } from '@ban/shared';
 
@@ -138,6 +139,69 @@ function extractGridConfig(b: Record<string, unknown>): {
   if (Number.isFinite(capital) && capital > 0) out.gridCapitalUsd = capital;
   if (Number.isFinite(maxOrder) && maxOrder > 0) out.gridMaxOrderUsd = maxOrder;
   if (b.autoRecenterOnBreak === false) out.autoRecenterOnBreak = false;
+  return out;
+}
+
+/**
+ * AUTO GRID SETUP — derive a sane grid configuration from the task's INITIAL
+ * DEPOSIT when the user left the grid fields blank.
+ *
+ * The user's deposit IS the trading capital, so:
+ *   - capital   = funding USD (USDT/USDC amount, or BNB amount × BNB price)
+ *   - bounds    = live BNB price ±25% (a band wide enough to survive normal
+ *                 daily volatility, tight enough that capital stays productive;
+ *                 auto-recenter re-anchors the grid when price leaves the band)
+ *   - gridCount = 10 (configurable levels across the band)
+ *   - maxOrder  = capital ÷ gridCount (each level spends an equal share — the
+ *                 standard equal-notional grid; exposure-capped by the session)
+ *
+ * Anything the user DID set always wins. Derivation is best-effort: without a
+ * live BNB price no bounds are invented (the strategy's own preflight then
+ * reports the gap honestly).
+ */
+async function deriveGridConfig(
+  user: ReturnType<typeof extractGridConfig> extends infer T ? T : never,
+  funding: { token: 'BNB' | 'USDT' | 'USDC'; amount: string } | undefined,
+): Promise<{
+  gridLowerPriceUsd?: number;
+  gridUpperPriceUsd?: number;
+  gridCount?: number;
+  gridCapitalUsd?: number;
+  gridMaxOrderUsd?: number;
+  autoRecenterOnBreak?: boolean;
+}> {
+  const out = { ...user };
+
+  // Capital from the deposit (USD): stables are 1:1; BNB needs the live price.
+  let capitalUsd = user.gridCapitalUsd;
+  if (capitalUsd == null && funding) {
+    if (funding.token === 'USDT' || funding.token === 'USDC') {
+      const n = Number(funding.amount);
+      if (Number.isFinite(n) && n > 0) capitalUsd = n;
+    } else {
+      const price = await getBnbUsdPrice();
+      const n = Number(funding.amount);
+      if (price != null && Number.isFinite(n) && n > 0) capitalUsd = n * price;
+    }
+  }
+  if (capitalUsd != null && capitalUsd > 0) out.gridCapitalUsd = capitalUsd;
+
+  // Grid count default (user value wins — extractGridConfig already filtered).
+  if (out.gridCount == null) out.gridCount = 10;
+
+  // Max order per level: equal-notional across levels.
+  if (out.gridMaxOrderUsd == null && capitalUsd != null && out.gridCount) {
+    out.gridMaxOrderUsd = Math.floor((capitalUsd / out.gridCount) * 100) / 100;
+  }
+
+  // Bounds: live price ±25% — only when the user gave neither bound.
+  if (out.gridLowerPriceUsd == null && out.gridUpperPriceUsd == null) {
+    const price = await getBnbUsdPrice();
+    if (price != null && price > 0) {
+      out.gridLowerPriceUsd = Math.floor(price * 0.75 * 100) / 100;
+      out.gridUpperPriceUsd = Math.floor(price * 1.25 * 100) / 100;
+    }
+  }
   return out;
 }
 
@@ -258,8 +322,13 @@ export async function POST(
       : undefined;
 
     // Grid bounds (optional, USD dollars) — persisted on the task row AND fed
-    // to runAgentCycle so the strategy actually uses the user's range.
-    const gridConfig = extractGridConfig(b);
+    // to runAgentCycle so the strategy actually uses the user's range. When
+    // the user left the grid fields blank, derive a sane setup from the INITIAL
+    // DEPOSIT (capital) + live price (AUTO GRID SETUP). User-set values win.
+    const userGridConfig = extractGridConfig(b);
+    const gridConfig = agent.type === 'grid'
+      ? await deriveGridConfig(userGridConfig, funding)
+      : userGridConfig;
     const poolAddress = typeof b.poolAddress === 'string' && /^0x[a-fA-F0-9]{40}$/.test(b.poolAddress)
       ? b.poolAddress
       : undefined;

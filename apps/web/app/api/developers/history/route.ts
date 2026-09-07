@@ -31,6 +31,8 @@ export interface OnchainTx {
   status: 'CONFIRMED' | 'FAILED';
   agentId?: string;
   agentName?: string;
+  /** Human-readable ledger line (agent-aware when the counterparty is an agent). */
+  label?: string;
   gasUsed: string;
   gasPriceGwei: string;
 }
@@ -116,6 +118,17 @@ export async function GET(request: NextRequest) {
     for (const tx of normalTxs.slice(0, 30)) {
       const isOut = tx.from.toLowerCase() === address.toLowerCase();
       const valueBnb = Number(tx.value) / 1e18;
+      const tags = tagAgent(tx);
+      // Agent-aware labeling: transfers to/from the user's OWN agent wallets
+      // are funding/withdrawals between the user and that agent — label them
+      // explicitly so the history feed reads like a ledger, not raw tx noise.
+      const agentLabel = tags.agentName
+        ? isOut
+          ? `Top-up to ${tags.agentName}`
+          : `Withdrawal from ${tags.agentName}`
+        : isOut
+          ? 'Sent (BNB)'
+          : 'Received (BNB)';
       onchainTxs.push({
         hash: tx.hash,
         block: Number(tx.blockNumber),
@@ -129,7 +142,8 @@ export async function GET(request: NextRequest) {
         status: tx.isError === '0' && tx.txReceiptStatus !== '0' ? 'CONFIRMED' : 'FAILED',
         gasUsed: tx.gasUsed,
         gasPriceGwei: (Number(tx.gasPrice) / 1e9).toFixed(2),
-        ...tagAgent(tx),
+        ...tags,
+        label: agentLabel,
       });
     }
 
@@ -139,6 +153,14 @@ export async function GET(request: NextRequest) {
       const tokenSymbol = tx.tokenSymbol || 'UNKNOWN';
       const decimals = Number(tx.tokenDecimal || 18);
       const value = Number(tx.value) / 10 ** decimals;
+      const tags = tagAgent(tx);
+      const agentLabel = tags.agentName
+        ? isOut
+          ? `Top-up to ${tags.agentName} (${tokenSymbol})`
+          : `Withdrawal from ${tags.agentName} (${tokenSymbol})`
+        : isOut
+          ? `Sent (${tokenSymbol})`
+          : `Received (${tokenSymbol})`;
       onchainTxs.push({
         hash: tx.hash,
         block: Number(tx.blockNumber),
@@ -152,7 +174,8 @@ export async function GET(request: NextRequest) {
         status: 'CONFIRMED',
         gasUsed: tx.gasUsed || '0',
         gasPriceGwei: tx.gasPrice ? (Number(tx.gasPrice) / 1e9).toFixed(2) : '0',
-        ...tagAgent(tx),
+        ...tags,
+        label: agentLabel,
       });
     }
 

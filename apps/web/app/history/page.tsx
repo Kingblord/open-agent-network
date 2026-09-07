@@ -19,6 +19,8 @@ interface OnchainTx {
   status: 'CONFIRMED' | 'FAILED';
   agentId?: string;
   agentName?: string;
+  /** Human-readable ledger line (agent-aware when the counterparty is an agent). */
+  label?: string;
   gasUsed: string;
   gasPriceGwei: string;
 }
@@ -130,8 +132,11 @@ export default function HistoryPage() {
   const formatPayload = (item: HistoryItem): string => {
     if (item.type === 'ONCHAIN') {
       const tx = item.payload as unknown as OnchainTx;
-      const prefix = tx.type === 'DEPOSIT' ? 'Received' : 'Sent';
-      return `${prefix} ${tx.value} ${tx.token} ($${tx.valueUsd.toFixed(2)}) → ${tx.to.slice(0, 6)}...${tx.to.slice(-4)}`;
+      // Prefer the server's agent-aware label (funding/withdrawal between the
+      // user and a named agent) over the generic sent/received line.
+      const prefix = tx.label ?? (tx.type === 'DEPOSIT' ? 'Received' : 'Sent');
+      const usd = tx.valueUsd > 0 ? ` ($${tx.valueUsd.toFixed(2)})` : '';
+      return `${prefix} ${tx.value} ${tx.token}${usd} → ${tx.to.slice(0, 6)}...${tx.to.slice(-4)}`;
     }
     const entries = Object.entries(item.payload);
     if (entries.length === 0) return 'Agent event recorded';

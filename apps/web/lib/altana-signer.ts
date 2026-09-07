@@ -3,7 +3,7 @@ import type { ActionProposal } from '@ban/schemas';
 import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import type { SignedTransaction, SigningBackend, SignRequest } from '@ban/signers';
 import type { Address } from 'viem';
-import { buildPancakeV3SwapCalls, type ExecutableCall } from './execution/pancake-v3';
+import { buildPancakeV3SwapCalls, resolveBestFeeTier, type ExecutableCall } from './execution/pancake-v3';
 import { buildVenusCalls, buildAaveCalls } from './execution/lending';
 import {
   getAltanaStoreDir,
@@ -214,6 +214,15 @@ export async function createAltanaSigningBackend(
     if (execKind === 'PANCAKE_V3_SWAP') {
       const p = (proposal.params ?? {}) as Record<string, unknown>;
       const amountIn = BigInt(String(p.amountIn ?? proposal.amount ?? '0'));
+      // FEE TIER AUTO-DETECT: resolve the best on-chain pool tier for the pair
+      // (deepest liquidity) unless the proposal carries an explicit override.
+      // A wrong tier would revert the swap on-chain — safe, but the fill is
+      // lost — so the signer resolves it live before building the calldata.
+      const requestedTier = Number(p.feeTier);
+      const feeTier =
+        Number.isFinite(requestedTier) && [100, 500, 2500, 10000].includes(requestedTier)
+          ? requestedTier
+          : await resolveBestFeeTier(p.tokenIn as Address, p.tokenOut as Address);
       calls = buildPancakeV3SwapCalls(
         {
           side: p.side === 'SELL' ? 'SELL' : 'BUY',
@@ -222,7 +231,7 @@ export async function createAltanaSigningBackend(
           amountIn,
           levelPriceUsd: Number(p.levelPriceUsd),
           slippageBps: Number(p.slippageBps ?? undefined),
-          feeTier: Number(p.feeTier ?? undefined),
+          feeTier,
         },
         wallet.address as Address,
         to as Address,

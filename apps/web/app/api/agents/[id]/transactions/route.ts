@@ -85,12 +85,36 @@ export async function GET(
       gasUsed: string;
       gasPriceGwei: string;
       kind: 'NATIVE' | 'ERC20';
+      /** Human-readable classification shown in the UI. */
+      category: 'FUNDING' | 'AGENT_EXECUTION' | 'GAS' | 'WITHDRAWAL' | 'TRANSFER';
+      label: string;
     };
 
     const lowerWallet = walletAddress.toLowerCase();
     const rows: TxRow[] = [];
 
+    /**
+     * Classify a native (BNB) transfer relative to the agent wallet:
+     *   - OUT with empty calldata → owner WITHDRAWAL (escape hatch); zero-value
+     *     empty sends are gas/internal ops
+     *   - IN from a non-agent address → user FUNDING
+     *   - anything else (non-empty calldata OUT) → AGENT_EXECUTION
+     */
+    function classifyNative(tx: { from: string; to: string; input?: string; value?: string }): { category: TxRow['category']; label: string } {
+      const isOut = tx.from.toLowerCase() === lowerWallet;
+      const input = typeof tx.input === 'string' ? tx.input : '';
+      const isEmptyCall = !input || input === '0x';
+      const value = typeof tx.value === 'string' ? Number(tx.value) : NaN;
+      if (isOut) {
+        if (isEmptyCall && value === 0) return { category: 'GAS', label: 'Gas refund / internal' };
+        if (isEmptyCall) return { category: 'WITHDRAWAL', label: 'Owner withdrawal (BNB)' };
+        return { category: 'AGENT_EXECUTION', label: 'Agent execution (BNB call)' };
+      }
+      return { category: 'FUNDING', label: 'Task funding deposit (BNB)' };
+    }
+
     for (const tx of normalTxs) {
+      const { category, label } = classifyNative(tx);
       rows.push({
         hash: tx.hash,
         block: Number(tx.blockNumber),
@@ -104,11 +128,24 @@ export async function GET(
         gasUsed: tx.gasUsed,
         gasPriceGwei: (Number(tx.gasPrice) / 1e9).toFixed(2),
         kind: 'NATIVE',
+        category,
+        label,
       });
     }
 
     for (const tx of tokenTxs) {
       const decimals = Number(tx.tokenDecimal || 18);
+      const isOut = tx.from.toLowerCase() === lowerWallet;
+      const symbol = tx.tokenSymbol || tx.tokenAddress.slice(0, 8);
+      // Stablecoin/WBNB OUT moves are agent executions (swap/approve leg or
+      // lending supply); IN moves are funding. Pure native-BNB funding is
+      // classified in the loop above.
+      const isStable = /usdt|usdc|busd/i.test(symbol);const category: TxRow['category'] = isOut
+        ? 'AGENT_EXECUTION'
+        : 'FUNDING';
+      const label = isOut
+        ? `Agent execution (token spend — ${symbol})`
+        : `Task funding deposit (${symbol})`;
       rows.push({
         hash: tx.hash,
         block: Number(tx.blockNumber),
@@ -116,12 +153,14 @@ export async function GET(
         from: tx.from,
         to: tx.to,
         value: (Number(tx.value) / 10 ** decimals).toFixed(4),
-        token: tx.tokenSymbol || tx.tokenAddress.slice(0, 8),
-        direction: tx.from.toLowerCase() === lowerWallet ? 'OUT' : 'IN',
+        token: symbol,
+        direction: isOut ? 'OUT' : 'IN',
         status: 'CONFIRMED',
         gasUsed: tx.gasUsed || '0',
         gasPriceGwei: tx.gasPrice ? (Number(tx.gasPrice) / 1e9).toFixed(2) : '0',
         kind: 'ERC20',
+        category,
+        label,
       });
     }
 
