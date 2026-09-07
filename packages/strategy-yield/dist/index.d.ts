@@ -5,4 +5,5 @@ export { YieldRiskModel } from './yield-risk-model.js';
 export { YieldCandidateSelector } from './yield-candidate-selector.js';
 export { ObservationBuilder } from './observation-builder.js';
 export { YieldStrategy, type YieldStrategyDeps } from './yield-strategy.js';
+export { canonicalizeYieldProposal } from './canonical-proposal.js';
 //# sourceMappingURL=index.d.ts.map

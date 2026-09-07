@@ -35,11 +35,11 @@ function raw(over: Partial<HealthLendingSnapshot> = {}): HealthLendingSnapshot {
     address: '0xabc',
     protocol: 'venus',
     collateral: '200000', // integer cents
-    borrowed: '100000',
+    borrowed: '145455', // HF = 200000*0.8/145455 ≈ 1.10 → CRITICAL (candidates exist)
     ltv: 0.55,
     liquidationThreshold: 0.8,
-    healthFactor: 1.6,
-    assetPrices: { BNB: '30000' },
+    healthFactor: 1.1, // HF 110 → CRITICAL so observe() carries a REPAY candidate
+    assetPrices: { BNB: '30000', USDT: '10000' },
     timestamp: 'now',
     ...over,
   };

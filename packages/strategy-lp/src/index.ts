@@ -22,3 +22,4 @@ export {
 } from './lp-candidate-selector.js';
 export { LpObservationBuilder } from './observation-builder.js';
 export { LpStrategy, type LpStrategyDeps } from './lp-strategy.js';
+export { canonicalizeLpProposal } from './canonical-proposal.js';

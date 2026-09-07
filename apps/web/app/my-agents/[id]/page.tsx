@@ -422,11 +422,11 @@ export default function MyAgentDetailPage() {
   useEffect(() => { fetchProtocolSnapshot(); }, []);
 
   // REALTIME: poll agent activity so audit events (decisions, policy results,
-  // executions) appear live without a manual refresh. Light poll — Firestore
-  // reads stay well within free-tier quotas.
+  // executions) appear live without a manual refresh. 60s cadence keeps
+  // Firestore reads well inside the free-tier quota (2 queries × ≤100 docs).
   useEffect(() => {
     if (!user || !params.id) return;
-    const t = setInterval(() => { fetchActivity(); }, 15000);
+    const t = setInterval(() => { fetchActivity(); }, 60000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);

@@ -9,3 +9,4 @@ export { LpRiskModel } from './lp-risk-model.js';
 export { LpCandidateSelector, } from './lp-candidate-selector.js';
 export { LpObservationBuilder } from './observation-builder.js';
 export { LpStrategy } from './lp-strategy.js';
+export { canonicalizeLpProposal } from './canonical-proposal.js';

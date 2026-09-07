@@ -17,11 +17,13 @@
  */
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import { isValidAddress } from '@ban/registry';
 import { LpRangeCalculator } from './lp-calculator.js';
 import { LpRiskModel } from './lp-risk-model.js';
 import { LpCandidateSelector } from './lp-candidate-selector.js';
 import { LpObservationBuilder } from './observation-builder.js';
+import { canonicalizeLpProposal } from './canonical-proposal.js';
 export class LpStrategy {
     strategyId;
     brain;
@@ -82,12 +84,17 @@ export class LpStrategy {
     }
     async decide(observation, agent, hooks) {
         const capabilities = agent.capabilities.map((c) => c.id);
-        const decision = await this.brain.decide({
+        // Pre-schema vocabulary normalization (REMOVE/CREATE/REPOSITION →
+        // BURN/MINT/REBALANCE…); a directive becomes an honest PASS.
+        const normalized = normalizeStrategyDecision(await this.brain.decide({
             agentId: agent.id,
             strategyId: this.strategyId,
             observations: [observation],
             capabilities,
-        });
+        }));
+        if (normalized === null)
+            return null;
+        const decision = normalized;
         const parsed = StrategyDecisionSchema.safeParse(decision);
         if (!parsed.success) {
             throw new BANError(ErrorCode.INTERNAL, `LP strategy brain returned a malformed decision: ${parsed.error.message}`, { retryable: false });
@@ -99,9 +106,10 @@ export class LpStrategy {
         if (!proposal.success) {
             throw new BANError(ErrorCode.INTERNAL, `LP strategy brain produced an invalid proposal.`, { retryable: false });
         }
-        // Proposal is described but NOT executed. Policy/execution happen only in
-        // the M18 live orchestration.
-        return proposal.data;
+        // Execution-critical fields are canonicalized from the observed pool and
+        // deterministic candidates — never model-authored values. Returns null
+        // when there is no executable LP candidate (honest no-op).
+        return canonicalizeLpProposal(proposal.data, observation);
     }
     /** Validate LP config before first cycle. */
     async preflight(agent) {

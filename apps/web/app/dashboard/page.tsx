@@ -69,8 +69,11 @@ export default function DashboardPage() {
     setDataLoading(true);
     setDataError(null);
     try {
-      // The registry reads ownerId (not `my=true`). Scope to the signed-in user.
-      const res = await fetch(`/api/agents?ownerId=${encodeURIComponent(user.id)}`);
+      // FIRESTORE QUOTA: one aggregate endpoint instead of a per-agent fan-out
+      // of performance + activity calls (which cost 150-500 reads per agent per
+      // poll and drained the 20k/day quota). The summary caps total reads at
+      // ~4 queries regardless of agent count.
+      const res = await fetch('/api/dashboard/summary');
       if (!res.ok) {
         setDataError('Unable to load your agents.');
         setDataLoading(false);
@@ -80,40 +83,52 @@ export default function DashboardPage() {
       const mine: Agent[] = data.agents || [];
       setAgents(mine);
 
-      // Fetch performance for each owned agent (real operational metrics only).
-      const perfEntries = await Promise.all(
-        mine.map(async (a) => {
-          try {
-            const r = await fetch(`/api/agents/${a.id}/performance`);
-            if (r.ok) {
-              const pd = await r.json();
-              return [a.id, pd.performance as PerformanceData] as const;
-            }
-          } catch {
-            // ignore per-agent perf failure
-          }
-          return null;
-        })
-      );
+      // Lightweight per-agent execution stats from the summary (no fabricated
+      // fields — anything the summary does not carry renders as its empty value).
       const map: Record<string, PerformanceData> = {};
-      perfEntries.forEach((e) => { if (e) map[e[0]] = e[1]; });
+      for (const a of mine) {
+        const exec = (data.executions as Record<string, {
+          confirmedCount: number;
+          totalTrades: number;
+          feesWei: number;
+          lastExecutedAt: string | null;
+        }> | undefined)?.[a.id];
+        const posCents = Number((data.positionValueUsdCents as Record<string, string> | undefined)?.[a.id] ?? '0') || 0;
+        map[a.id] = {
+          agentId: a.id,
+          totalTrades: exec?.totalTrades ?? 0,
+          confirmedCount: exec?.confirmedCount ?? 0,
+          failedCount: Math.max(0, (exec?.totalTrades ?? 0) - (exec?.confirmedCount ?? 0)),
+          successRate: exec && exec.totalTrades > 0
+            ? `${Math.round((exec.confirmedCount / exec.totalTrades) * 100)}`
+            : '0',
+          totalFeesWei: String(exec?.feesWei ?? 0),
+          avgExecutionMs: 0,
+          lastExecutedAt: exec?.lastExecutedAt ?? null,
+          // Position-based capital in USD CENTS (consistent with perf-engine).
+          capitalManagedUsd: posCents > 0 ? posCents.toFixed(0) : '0',
+          hasPositions: posCents > 0,
+          realizedPnlUsd: null,
+          unrealizedPnlUsd: null,
+          mode: 'LIVE',
+          modeReason: 'Aggregate from on-chain-scoped executions',
+        };
+      }
       setPerformanceMap(map);
 
-      // Latest activity across owned agents (owner-only endpoint).
-      const events: ActivityEvent[] = [];
-      for (const a of mine.slice(0, 8)) {
-        try {
-          const r = await fetch(`/api/agents/${a.id}/activity?limit=12`);
-          if (r.ok) {
-            const ad = await r.json();
-            events.push(...(ad.events || []));
-          }
-        } catch {
-          // ignore
-        }
-      }
-      events.sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime());
-      setActivity(events.slice(0, 10));
+      // Latest activity across owned agents (from the same summary response).
+      const events: ActivityEvent[] = (data.activity || []).map((e: {
+        id: string; agentId: string; eventType: string; severity: string;
+        createdAt: string; detail: Record<string, unknown>;
+      }) => ({
+        id: e.id,
+        eventType: e.eventType,
+        agentId: e.agentId,
+        correlationId: '',
+        payload: e.detail,
+        createdAt: e.createdAt,
+      }));
+      setActivity(events);
 
       // Fetch agent wallet balances for allocation display (BNB + USDT + USDC)
       const allocEntries: { agentId: string; name: string; totalUsd: number; bnb: number; usdt: number; usdc: number; bnbPrice: number }[] = [];
@@ -150,10 +165,11 @@ export default function DashboardPage() {
   }, [user, loadDashboard]);
 
   // REALTIME: light poll so capital allocation, activity and agent balances
-  // stay live without manual refresh. 30s keeps Firestore/RPC reads modest.
+  // stay live without manual refresh. 90s cadence: each pass reads perf +
+  // activity + balance per agent (the heaviest page in the app).
   useEffect(() => {
     if (!user) return;
-    const t = setInterval(() => { loadDashboard(); }, 30000);
+    const t = setInterval(() => { loadDashboard(); }, 90000);
     return () => clearInterval(t);
   }, [user, loadDashboard]);
 

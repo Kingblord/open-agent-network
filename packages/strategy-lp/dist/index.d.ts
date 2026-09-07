@@ -10,4 +10,5 @@ export { LpRiskModel, type LpRiskFactors, type LpRiskAssessment, type RiskLevel 
 export { LpCandidateSelector, type LpCandidateSelectorDeps, } from './lp-candidate-selector.js';
 export { LpObservationBuilder } from './observation-builder.js';
 export { LpStrategy, type LpStrategyDeps } from './lp-strategy.js';
+export { canonicalizeLpProposal } from './canonical-proposal.js';
 //# sourceMappingURL=index.d.ts.map

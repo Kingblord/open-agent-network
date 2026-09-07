@@ -187,6 +187,9 @@ importers:
 
   packages/ai:
     dependencies:
+      '@ban/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
       '@ban/schemas':
         specifier: workspace:*
         version: link:../schemas

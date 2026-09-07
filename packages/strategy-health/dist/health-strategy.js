@@ -1,9 +1,11 @@
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import { HealthFactorCalculator } from './health-factor-calculator.js';
 import { HealthRiskModel } from './health-risk-model.js';
 import { HealthCandidateSelector } from './health-candidate-selector.js';
 import { ObservationBuilder } from './observation-builder.js';
+import { canonicalizeHealthProposal } from './canonical-proposal.js';
 /**
  * M10 — HealthStrategy (implements @ban/agent-core StrategyEngine).
  *
@@ -54,12 +56,17 @@ export class HealthStrategy {
     }
     async decide(observation, agent, hooks) {
         const capabilities = agent.capabilities.map((c) => c.id);
-        const decision = await this.brain.decide({
+        // Pre-schema vocabulary normalization (REPAY/ADD_COLLATERAL → DEPOSIT…);
+        // a directive becomes an honest PASS instead of a hard failure.
+        const normalized = normalizeStrategyDecision(await this.brain.decide({
             agentId: agent.id,
             strategyId: this.strategyId,
             observations: [observation],
             capabilities,
-        });
+        }));
+        if (normalized === null)
+            return null;
+        const decision = normalized;
         const parsed = StrategyDecisionSchema.safeParse(decision);
         if (!parsed.success) {
             throw new BANError(ErrorCode.INTERNAL, `Health strategy brain returned a malformed decision: ${parsed.error.message}`, {
@@ -73,9 +80,10 @@ export class HealthStrategy {
         if (!proposal.success) {
             throw new BANError(ErrorCode.INTERNAL, `Health strategy brain produced an invalid proposal.`, { retryable: false });
         }
-        // Proposal is described but NOT executed. Policy/execution happen only in
-        // the M18 live orchestration after this returns (M5 → M8 → Altana → BNB).
-        return proposal.data;
+        // Execution-critical fields are canonicalized from verified Venus constants
+        // and the observation's candidates — never model-authored values. Returns
+        // null when there is no executable corrective candidate (honest no-op).
+        return canonicalizeHealthProposal(proposal.data, observation);
     }
     /** Validate health config before first cycle. */
     async preflight(agent) {

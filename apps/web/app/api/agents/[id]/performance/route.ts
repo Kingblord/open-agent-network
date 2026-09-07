@@ -52,23 +52,26 @@ export async function GET(
     // (summarize() then falls back to position-based capital).
     const walletCapitalPromise = getAgentWalletCapitalUsd(walletAddress);
 
-    // Fetch executions (last 500). Single-field equality only — no composite
-    // orderBy, so no manual Firestore index is required. Sort in-memory below.
+    // Fetch executions (last 150 — FIRESTORE QUOTA: the dashboard/polling path
+    // hits this endpoint per agent; 500 docs/agent/poll drained the 20k/day
+    // read quota. 150 confirmed-execution docs are plenty for honest aggregates).
+    // Single-field equality only — no composite orderBy, so no manual Firestore
+    // index is required. Sort in-memory below.
     const execSnap = await db
       .collection(collections.executions)
       .where('agentId', '==', id)
-      .limit(500)
+      .limit(150)
       .get();
 
     const executions = sortByCreatedDesc(
       execSnap.docs.map((d) => d.data() as { createdAt: unknown })
     ) as any[];
 
-    // Fetch position records if they exist
+    // Fetch position records (last 50 — see FIRESTORE QUOTA note above).
     const posSnap = await db
       .collection(collections.positions)
       .where('agentId', '==', id)
-      .limit(100)
+      .limit(50)
       .get();
 
     const positions = posSnap.docs.map((d) => ({

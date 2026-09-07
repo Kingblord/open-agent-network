@@ -99,10 +99,10 @@ export default function AuditTrailPage() {
   }, [mounted, user, loadEvents]);
 
   // REALTIME: keep the audit trail live with a light poll (pagination-safe:
-  // the interval always reloads the first page; explicit "load more" is manual).
+  // the interval always reloads the first page; explicit "load more" is manual). 60s cadence: single userId-scoped query pair.
   useEffect(() => {
     if (!mounted || !user) return;
-    const t = setInterval(() => { loadEvents(); }, 20000);
+    const t = setInterval(() => { loadEvents(); }, 60000);
     return () => clearInterval(t);
   }, [mounted, user, loadEvents]);
 

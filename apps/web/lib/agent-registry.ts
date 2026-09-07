@@ -151,6 +151,9 @@ function writeAgentAuditEvent(entry: {
     eventId: generateId('evt'),
     eventType: entry.eventType,
     agentId: entry.agentId,
+    // userId mirrors actorId so owner-scoped queries (FIRESTORE QUOTA: one
+    // query per user instead of a fan-out per agent) see lifecycle events too.
+    userId: entry.actorId,
     correlationId: entry.correlationId,
     actorId: entry.actorId,
     payload: { from: entry.from, to: entry.to },

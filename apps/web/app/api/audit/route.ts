@@ -75,9 +75,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, events: [], hasMore: false });
     }
 
-    // Collect from both audit_events and agent_events collections
-    // Firestore single-field equality only — query each agent separately
-    const events: Array<{
+    const mapSnap = (
+      snap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>,
+      fallbackType: string,
+    ): Array<{
       id: string;
       eventType: string;
       severity: string;
@@ -86,7 +87,34 @@ export async function GET(request: NextRequest) {
       correlationId: string;
       payload: Record<string, unknown>;
       createdAt: string;
-    }> = [];
+    }> => {
+      const out: Array<{
+        id: string;
+        eventType: string;
+        severity: string;
+        agentId: string;
+        agentName: string;
+        correlationId: string;
+        payload: Record<string, unknown>;
+        createdAt: string;
+      }> = [];
+      snap.forEach((doc) => {
+        const data = doc.data();
+        const eventType = data.eventType ?? data.type ?? fallbackType;
+        if (filterType && eventType !== filterType) return;
+        out.push({
+          id: doc.id,
+          eventType,
+          severity: data.severity ?? 'INFO',
+          agentId: data.agentId ?? '',
+          agentName: agentNameMap[data.agentId ?? ''] ?? data.agentId ?? '',
+          correlationId: data.correlationId ?? '',
+          payload: data.payload ?? data.detail ?? {},
+          createdAt: data.createdAt ?? doc.createTime?.toDate()?.toISOString() ?? new Date().toISOString(),
+        });
+      });
+      return out;
+    };
 
     // Build agent name map
     const agentNameMap: Record<string, string> = {};
@@ -94,54 +122,18 @@ export async function GET(request: NextRequest) {
       agentNameMap[doc.id] = doc.data().name ?? doc.id;
     });
 
-    // Query audit_events for each target agent (Firestore single-field equality)
-    const auditPromises = targetAgentIds.map(async (agentId) => {
-      const snap = await db
-        .collection(collections.auditEvents)
-        .where('agentId', '==', agentId)
-        .limit(limit * 2)
-        .get();
-      snap.forEach((doc) => {
-        const data = doc.data();
-        const eventType = data.eventType ?? data.type ?? 'UNKNOWN';
-        if (filterType && eventType !== filterType) return;
-        events.push({
-          id: doc.id,
-          eventType,
-          severity: data.severity ?? 'INFO',
-          agentId: data.agentId ?? agentId,
-          agentName: agentNameMap[data.agentId ?? agentId] ?? agentId,
-          correlationId: data.correlationId ?? '',
-          payload: data.payload ?? data.detail ?? {},
-          createdAt: data.createdAt ?? doc.createTime?.toDate()?.toISOString() ?? new Date().toISOString(),
-        });
-      });
-    });
-
-    const agentEventPromises = targetAgentIds.map(async (agentId) => {
-      const snap = await db
-        .collection(collections.agentEvents)
-        .where('agentId', '==', agentId)
-        .limit(limit * 2)
-        .get();
-      snap.forEach((doc) => {
-        const data = doc.data();
-        const eventType = data.eventType ?? data.type ?? 'AGENT_EVENT';
-        if (filterType && eventType !== filterType) return;
-        events.push({
-          id: doc.id,
-          eventType,
-          severity: data.severity ?? 'INFO',
-          agentId: data.agentId ?? agentId,
-          agentName: agentNameMap[data.agentId ?? agentId] ?? agentId,
-          correlationId: data.correlationId ?? '',
-          payload: data.payload ?? data.detail ?? {},
-          createdAt: data.createdAt ?? doc.createTime?.toDate()?.toISOString() ?? new Date().toISOString(),
-        });
-      });
-    });
-
-    await Promise.all([...auditPromises, ...agentEventPromises]);
+    // FIRESTORE QUOTA: query by userId (stored on every audit event at write
+    // time) instead of one query PER AGENT per collection. This caps a load at
+    // 2 queries × `limit` reads regardless of how many agents the user owns —
+    // the previous per-agent fan-out (2 × N agents × 2×limit reads) drained
+    // the 20k/day read quota within minutes of a page staying open.
+    const [auditSnap, agentSnap] = await Promise.all([
+      db.collection(collections.auditEvents).where('userId', '==', user.developerId).limit(limit).get(),
+      db.collection(collections.agentEvents).where('userId', '==', user.developerId).limit(limit).get(),
+    ]);
+    const events = [...mapSnap(auditSnap, 'UNKNOWN'), ...mapSnap(agentSnap, 'AGENT_EVENT')]
+      // Keep the single-agent filter honest (userId queries span all agents).
+      .filter((e) => !filterAgentId || e.agentId === filterAgentId);
 
     // Sort by createdAt descending (newest first)
     events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

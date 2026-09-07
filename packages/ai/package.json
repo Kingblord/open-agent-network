@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@ban/schemas": "workspace:*",
-    "@ban/shared": "workspace:*"
+    "@ban/shared": "workspace:*",
+    "@ban/agent-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "5.7.3",

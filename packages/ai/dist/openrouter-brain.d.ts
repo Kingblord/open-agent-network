@@ -46,11 +46,12 @@ export declare class OpenRouterBrainAdapter implements BrainAdapter {
     }): Promise<StrategyDecision>;
 }
 /**
- * Normalize a raw model-authored proposal:
- *  - uppercases/whitespace-trims the action,
- *  - maps BUY/SELL → SWAP with params.side (+ params.requestedAction for audit),
- *  - maps STOP/HOLD/WAIT → null (the caller converts the decision to PASS),
- *  - leaves unknown values untouched so schema validation still fails closed.
+ * Normalize a raw model-authored proposal using the SHARED strategy-vocabulary
+ * map (@ban/agent-core): BUY/SELL → SWAP (+ params.side), REPAY/ADD_COLLATERAL
+ * → DEPOSIT (+ params.healthAction), REMOVE/CREATE/REPOSITION →
+ * BURN/MINT/REBALANCE, and STOP/HOLD/WAIT/NONE → null (caller converts the
+ * decision to an honest PASS). Unknown values remain untouched so strict
+ * schema validation still fails closed.
  */
 export declare function normalizeProposalAction(proposal: Record<string, unknown>): Record<string, unknown> | null;
 //# sourceMappingURL=openrouter-brain.d.ts.map

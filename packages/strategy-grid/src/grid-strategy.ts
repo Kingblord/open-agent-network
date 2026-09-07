@@ -23,6 +23,7 @@ import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { GridCalculator } from './grid-calculator.js';
 import { GridDataProvider } from './grid-data-provider.js';
@@ -228,12 +229,20 @@ export class GridStrategy implements StrategyEngine {
 
   async decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null> {
     const capabilities = agent.capabilities.map((c) => c.id);
-    const decision = await this.brain.decide({
-      agentId: agent.id,
-      strategyId: this.strategyId,
-      observations: [observation],
-      capabilities,
-    });
+    // Pre-schema vocabulary normalization: raw strategy vocab (BUY/SELL/…)
+    // from any brain is mapped to the canonical action enum here, so a
+    // vocabulary mismatch can never hard-fail the cycle (it becomes an
+    // honest PASS instead).
+    const normalized = normalizeStrategyDecision(
+      await this.brain.decide({
+        agentId: agent.id,
+        strategyId: this.strategyId,
+        observations: [observation],
+        capabilities,
+      }),
+    );
+    if (normalized === null) return null; // directive — honest no-op
+    const decision = normalized;
 
     const parsed = StrategyDecisionSchema.safeParse(decision);
     if (!parsed.success) {

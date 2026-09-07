@@ -55,7 +55,7 @@ export async function GET(
       });
     }
 
-    const limit = Math.min(Number(request.nextUrl.searchParams.get('limit') ?? '50') || 50, 200);
+    const limit = Math.min(Number(request.nextUrl.searchParams.get('limit') ?? '50') || 50, 100);
     const startAfter = request.nextUrl.searchParams.get('startAfter') || undefined;
 
     const db = getAdminDb();
@@ -64,15 +64,18 @@ export async function GET(
     // agent_events holds lifecycle transitions; audit_events holds runtime events
     // (proposals, executions, transactions, positions).
     // Single-field equality only (no composite orderBy) → no manual Firestore index.
+    // FIRESTORE QUOTA: capped at limit (≤100) per collection — the old limit*4
+    // (up to 400 docs per collection per poll) drained the 20k/day read quota
+    // when combined with client polling.
     const auditQuery = db
       .collection(collections.auditEvents)
       .where('agentId', '==', id)
-      .limit(limit * 4);
+      .limit(limit);
 
     const agentEventsQuery = db
       .collection(collections.agentEvents)
       .where('agentId', '==', id)
-      .limit(limit * 4);
+      .limit(limit);
 
     const [auditSnap, agentSnap] = await Promise.all([auditQuery.get(), agentEventsQuery.get()]);
 

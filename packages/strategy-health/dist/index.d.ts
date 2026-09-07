@@ -5,4 +5,5 @@ export { HealthDataProvider } from './health-data-provider.js';
 export { HealthCandidateSelector } from './health-candidate-selector.js';
 export { ObservationBuilder } from './observation-builder.js';
 export { HealthStrategy, type HealthStrategyDeps } from './health-strategy.js';
+export { canonicalizeHealthProposal, HEALTH_VTOKENS } from './canonical-proposal.js';
 //# sourceMappingURL=index.d.ts.map

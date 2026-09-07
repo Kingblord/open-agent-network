@@ -1,5 +1,6 @@
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import { GridCalculator } from './grid-calculator.js';
 import { GridDataProvider } from './grid-data-provider.js';
 import { GridRiskModel } from './grid-risk-model.js';
@@ -133,12 +134,19 @@ export class GridStrategy {
     }
     async decide(observation, agent, hooks) {
         const capabilities = agent.capabilities.map((c) => c.id);
-        const decision = await this.brain.decide({
+        // Pre-schema vocabulary normalization: raw strategy vocab (BUY/SELL/…)
+        // from any brain is mapped to the canonical action enum here, so a
+        // vocabulary mismatch can never hard-fail the cycle (it becomes an
+        // honest PASS instead).
+        const normalized = normalizeStrategyDecision(await this.brain.decide({
             agentId: agent.id,
             strategyId: this.strategyId,
             observations: [observation],
             capabilities,
-        });
+        }));
+        if (normalized === null)
+            return null; // directive — honest no-op
+        const decision = normalized;
         const parsed = StrategyDecisionSchema.safeParse(decision);
         if (!parsed.success) {
             throw new BANError(ErrorCode.INTERNAL, `Grid strategy brain returned a malformed decision: ${parsed.error.message}`, { retryable: false });

@@ -20,6 +20,7 @@ import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { isValidAddress } from '@ban/registry';
 import { LpRangeCalculator } from './lp-calculator.js';
@@ -27,6 +28,7 @@ import { LpDataProvider } from './lp-data-provider.js';
 import { LpRiskModel } from './lp-risk-model.js';
 import { LpCandidateSelector } from './lp-candidate-selector.js';
 import { LpObservationBuilder } from './observation-builder.js';
+import { canonicalizeLpProposal } from './canonical-proposal.js';
 
 export interface LpStrategyDeps {
   strategyId?: string;
@@ -107,12 +109,18 @@ export class LpStrategy implements StrategyEngine {
 
   async decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null> {
     const capabilities = agent.capabilities.map((c) => c.id);
-    const decision = await this.brain.decide({
-      agentId: agent.id,
-      strategyId: this.strategyId,
-      observations: [observation],
-      capabilities,
-    });
+    // Pre-schema vocabulary normalization (REMOVE/CREATE/REPOSITION →
+    // BURN/MINT/REBALANCE…); a directive becomes an honest PASS.
+    const normalized = normalizeStrategyDecision(
+      await this.brain.decide({
+        agentId: agent.id,
+        strategyId: this.strategyId,
+        observations: [observation],
+        capabilities,
+      }),
+    );
+    if (normalized === null) return null;
+    const decision = normalized;
 
     const parsed = StrategyDecisionSchema.safeParse(decision);
     if (!parsed.success) {
@@ -133,9 +141,10 @@ export class LpStrategy implements StrategyEngine {
         { retryable: false },
       );
     }
-    // Proposal is described but NOT executed. Policy/execution happen only in
-    // the M18 live orchestration.
-    return proposal.data;
+    // Execution-critical fields are canonicalized from the observed pool and
+    // deterministic candidates — never model-authored values. Returns null
+    // when there is no executable LP candidate (honest no-op).
+    return canonicalizeLpProposal(proposal.data, observation);
   }
 
   /** Validate LP config before first cycle. */

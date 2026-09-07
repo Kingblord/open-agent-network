@@ -111,4 +111,6 @@ export interface StrategyRegistration {
     listStrategies(): Promise<StrategyDefinition[]>;
 }
 export declare function canTransition(current: string, next: string, machine: 'agent' | 'session' | 'execution'): boolean;
+export { canonicalizeAction, toWeiIntegerString, isHexAddress, readObservationCandidates, pickCandidate, normalizeStrategyDecision, CANONICAL_ACTIONS, STRATEGY_ACTION_MAP, } from './canonical-action.js';
+export type { CanonicalAction, CanonicalActionResult } from './canonical-action.js';
 //# sourceMappingURL=index.d.ts.map

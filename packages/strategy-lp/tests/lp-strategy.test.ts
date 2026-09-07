@@ -416,8 +416,8 @@ describe('LpStrategy end-to-end', () => {
         async getPoolPosition() {
           return {
             positionId: 'pos_1',
-            lowerTick: -60,
-            upperTick: 60,
+            lowerTick: 200, // out of range at tick 0 → REMOVE candidate always kept
+            upperTick: 400,
             liquidity: '1000000000000000',
             token0Amount: '1000000',
             token1Amount: '1000000',

@@ -2,12 +2,14 @@ import type { Agent, ActionProposal, Observation, StrategyDecision } from '@ban/
 import { ActionProposalSchema, StrategyDecisionSchema } from '@ban/schemas';
 import { BANError, ErrorCode } from '@ban/shared';
 import type { StrategyEngine } from '@ban/agent-core';
+import { normalizeStrategyDecision } from '@ban/agent-core';
 import type { BrainAdapter } from '@ban/ai';
 import { YieldDataProvider } from './yield-data-provider.js';
 import { YieldNormalizer } from './yield-normalizer.js';
 import { YieldRiskModel } from './yield-risk-model.js';
 import { YieldCandidateSelector } from './yield-candidate-selector.js';
 import { ObservationBuilder } from './observation-builder.js';
+import { canonicalizeYieldProposal } from './canonical-proposal.js';
 
 export interface YieldStrategyDeps {
   network?: string;
@@ -86,12 +88,18 @@ export class YieldStrategy implements StrategyEngine {
 
   async decide(observation: Observation, agent: Agent, hooks?: { onDecision?: (decision: StrategyDecision) => void }): Promise<ActionProposal | null> {
     const capabilities = agent.capabilities.map((c) => c.id);
-    const decision = await this.brain.decide({
-      agentId: agent.id,
-      strategyId: this.strategyId,
-      observations: [observation],
-      capabilities,
-    });
+    // Pre-schema vocabulary normalization (INVEST/HARVEST → DEPOSIT/WITHDRAW…);
+    // a directive becomes an honest PASS instead of a hard failure.
+    const normalized = normalizeStrategyDecision(
+      await this.brain.decide({
+        agentId: agent.id,
+        strategyId: this.strategyId,
+        observations: [observation],
+        capabilities,
+      }),
+    );
+    if (normalized === null) return null;
+    const decision = normalized;
 
     const parsed = StrategyDecisionSchema.safeParse(decision);
     if (!parsed.success) {
@@ -106,9 +114,10 @@ export class YieldStrategy implements StrategyEngine {
     if (!proposal.success) {
       throw new BANError(ErrorCode.INTERNAL, `Strategy brain produced an invalid proposal.`, { retryable: false });
     }
-    // The proposal is described but NOT executed inside M9. Policy/execution
-    // happen only in the M18 live orchestration after this returns.
-    return proposal.data;
+    // Execution-critical fields are canonicalized from the verified BSC
+    // deployment set and the observation's candidates — never model-authored
+    // values. Returns null when no target resolves (honest no-op).
+    return canonicalizeYieldProposal(proposal.data, observation);
   }
 
   /** Validate yield config before first cycle. */
