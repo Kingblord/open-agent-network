@@ -102,6 +102,30 @@ async function getSessionForAgent(agentId: string): Promise<Session | null> {
 }
 
 /**
+ * Resolve the OWNER's personal wallet (the address they linked in Settings,
+ * stored on their developer record). This is the wallet whose Venus/Aave
+ * positions the AI must observe — the AGENT wallet is separate and usually
+ * empty. Returns null when the owner record or linked address is missing
+ * (degrades to strategy-only observations, never a cycle failure).
+ */
+async function resolveOwnerWallet(ownerId: string | undefined): Promise<string | null> {
+  if (!ownerId) return null;
+  try {
+    const db = getAdminDb();
+    const snap = await db.collection(collections.users).doc(ownerId).get();
+    const wallet = snap.data()?.walletAddress;
+    if (typeof wallet === 'string' && /^0x[a-fA-F0-9]{40}$/.test(wallet)) return wallet;
+    return null;
+  } catch (err) {
+    logger.warn('owner_wallet_resolve_failed', {
+      ownerId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
  * Stablecoin ERC-20 addresses (BSC mainnet, 18 decimals) whose wei value is
  * USD-denominated. Proposals SPENDING these tokens carry estimatedValue in
  * token wei (≈ USD × 1e18), which must be converted to a BNB-wei equivalent
@@ -298,11 +322,15 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     //    user-set bounds/caps reach the strategy (fixes hardcoded grid bounds).
     const observations = await strategy.observe(agent, correlationId);
 
-    // Enrich observations with user's personal protocol positions (if provided).
-    // This is what lets the AI see the USER's wallet state — Venus deposits,
-    // Aave positions, LP positions, token balances — not just the agent's.
-    const enrichedObs = opts.userWalletAddress
-      ? await enrichObservationsWithUserPositions(observations, opts.userWalletAddress, agent)
+    // Enrich observations with the OWNER's personal protocol positions. This
+    // is what lets the AI see the USER's wallet state — Venus vUSDT/vBNB
+    // deposits, Aave positions, token balances — not just the (usually empty)
+    // agent wallet. Resolved from the owner's developer record (the address
+    // they linked in Settings); a missing link degrades to strategy-only
+    // observations, never a failure.
+    const ownerWalletAddress = opts.userWalletAddress ?? (await resolveOwnerWallet(agent.ownerId));
+    const enrichedObs = ownerWalletAddress
+      ? await enrichObservationsWithUserPositions(observations, ownerWalletAddress, agent)
       : observations;
 
     await persistAuditEvent({

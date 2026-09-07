@@ -14,7 +14,6 @@ import { getThirdwebClient, bnbChainDef } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
 import { PermissionCards } from '@/components/permission-cards';
-import { CollapsibleSection } from '@/components/charts';
 
 interface Session {
   sessionId: string;
@@ -46,13 +45,6 @@ interface TaskRecord {
     allowedFunctions: string[];
     riskLevel: string;
     expiresAtMs: number;
-    funding?: {
-      token: 'BNB' | 'USDT' | 'USDC';
-      amount: string;
-      txHash?: string;
-      gasTxHash?: string;
-      confirmedAt: string;
-    };
   };
   sessionId: string | null;
   lastRun: { at: string; result: Record<string, unknown> } | null;
@@ -108,6 +100,21 @@ interface ActivityEvent {
   createdAt: string;
 }
 
+/** Row shape of GET /api/agents/:id/transactions (real Etherscan V2 data). */
+interface OnchainTxRow {
+  hash: string;
+  block: number;
+  timestamp: string;
+  from: string;
+  to: string;
+  value: string;
+  token: string;
+  direction: 'IN' | 'OUT';
+  status: 'CONFIRMED' | 'FAILED' | 'PENDING';
+  category: 'FUNDING' | 'AGENT_EXECUTION' | 'GAS' | 'WITHDRAWAL' | 'TRANSFER';
+  label: string;
+}
+
 // Shape of GET /api/protocols →’ { ok, snapshot } (derived from the fail-closed
 // @ban/registry registries via buildBnbRegistrySnapshot — never fabricated).
 interface RegistryContractEntry {
@@ -141,25 +148,6 @@ interface RegistrySnapshot {
 }
 
 type LifecycleAction = 'activate' | 'pause' | 'revoke';
-
-/** Real-time on-chain transaction row (Etherscan V2, BSC chainid 56). */
-interface OnchainTx {
-  hash: string;
-  block: number;
-  timestamp: string;
-  from: string;
-  to: string;
-  value: string;
-  token: string;
-  direction: 'OUT' | 'IN';
-  status: 'CONFIRMED' | 'FAILED';
-  gasUsed: string;
-  gasPriceGwei: string;
-  kind: 'NATIVE' | 'ERC20';
-  /** Human-readable classification: FUNDING / AGENT_EXECUTION / GAS / WITHDRAWAL. */
-  category?: 'FUNDING' | 'AGENT_EXECUTION' | 'GAS' | 'WITHDRAWAL' | 'TRANSFER';
-  label?: string;
-}
 
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
   OBSERVATION_CREATED: (
@@ -266,10 +254,6 @@ function getTimelineSubtitle(eventType: string, payload: Record<string, unknown>
   }
 }
 
-function formatToken(value: number, fractionDigits = 6): string {
-  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: fractionDigits });
-}
-
 function renderUsdc(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
@@ -320,6 +304,9 @@ export default function MyAgentDetailPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [onchainTxs, setOnchainTxs] = useState<OnchainTxRow[]>([]);
+  const [onchainTxsLoading, setOnchainTxsLoading] = useState(false);
+  const [onchainTxsNote, setOnchainTxsNote] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -338,7 +325,7 @@ export default function MyAgentDetailPage() {
   } | null>(null);
   const [topupOpen, setTopupOpen] = useState(false);
   const [topupLoading, setTopupLoading] = useState(false);
-  const [topupAmount, setTopupAmount] = useState('');
+  const [topupAmount, setTopupAmount] = useState('0.01');
   const [topupResult, setTopupResult] = useState<{
     topupRequestId: string;
     walletAddress: string;
@@ -359,17 +346,11 @@ export default function MyAgentDetailPage() {
     ok: boolean;
     address: string | null;
     balanceBnb: string | null;
-    balanceUsdt: string | null;
-    balanceUsdc: string | null;
     balanceUsd: string | null;
     usdPrice: number | null;
-    tokenBalancesComplete?: boolean;
     updatedAt: string;
   } | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
-  const [onchainTxs, setOnchainTxs] = useState<OnchainTx[]>([]);
-  const [onchainLoading, setOnchainLoading] = useState(false);
-  const [onchainNote, setOnchainNote] = useState<string | null>(null);
   const [sessionForm, setSessionForm] = useState({
     network: 'BNB Smart Chain (56)',
     maxTxUsd: '100',
@@ -381,13 +362,6 @@ export default function MyAgentDetailPage() {
     allowedFunctions: 'deposit, withdraw, swap',
     riskLevel: 'LOW',
     expiresAtDays: 30,
-    gridLowerPriceUsd: '',
-    gridUpperPriceUsd: '',
-    gridCount: '5',
-    gridCapitalUsd: '',
-    gridMaxOrderUsd: '',
-    autoRecenterOnBreak: true,
-    poolAddress: '',
   });
   const [bnbUsdPrice, setBnbUsdPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
@@ -414,26 +388,27 @@ export default function MyAgentDetailPage() {
       fetchAgent();
       fetchSessions();
       fetchTasks();
-      fetchOnchainTransactions();
       fetchActivity();
       fetchPerformance();
       fetchBalance();
+      fetchOnchainTransactions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);
 
-  useEffect(() => { fetchProtocolSnapshot(); }, []);
-
-  // REALTIME: poll agent activity so audit events (decisions, policy results,
-  // executions) appear live without a manual refresh. 60s cadence keeps
-  // Firestore reads well inside the free-tier quota (2 queries × ≤100 docs).
+  // REALTIME: keep the audit trail + on-chain history live. 60s cadence keeps
+  // Firestore/Etherscan reads well inside free-tier quotas.
   useEffect(() => {
     if (!user || !params.id) return;
-    const t = setInterval(() => { fetchActivity(); }, 60000);
+    const t = setInterval(() => {
+      fetchActivity();
+      fetchOnchainTransactions();
+    }, 60000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params.id]);
 
+  useEffect(() => { fetchProtocolSnapshot(); }, []);
 
   const fetchAgent = async () => {
     try {
@@ -509,6 +484,29 @@ export default function MyAgentDetailPage() {
     }
   };
 
+  // REAL on-chain history for this agent's wallet — Etherscan V2 (BSC 56),
+  // categorized server-side (FUNDING / AGENT_EXECUTION / GAS / WITHDRAWAL).
+  // Fails soft: an upstream outage yields a note, never fake rows.
+  const fetchOnchainTransactions = async () => {
+    setOnchainTxsLoading(true);
+    try {
+      const response = await fetch(`/api/agents/${params.id}/transactions?limit=25`);
+      if (response.ok) {
+        const data = await response.json();
+        setOnchainTxs(data.transactions ?? []);
+        setOnchainTxsNote(data.note ?? null);
+        return;
+      }
+      setOnchainTxs([]);
+      setOnchainTxsNote('On-chain history is temporarily unavailable.');
+    } catch (error) {
+      console.error('Failed to fetch on-chain transactions:', error);
+      setOnchainTxsNote('On-chain history is temporarily unavailable.');
+    } finally {
+      setOnchainTxsLoading(false);
+    }
+  };
+
   const fetchBalance = async (force = false) => {
     if (balanceLoading) return;
     if (!force && balance) return;
@@ -523,27 +521,6 @@ export default function MyAgentDetailPage() {
       console.error('Failed to fetch balance:', error);
     } finally {
       setBalanceLoading(false);
-    }
-  };
-
-  /** Real-time on-chain tx history for the agent wallet (rate-limited server-side). */
-  const fetchOnchainTransactions = async () => {
-    setOnchainLoading(true);
-    setOnchainNote(null);
-    try {
-      const response = await fetch(`/api/agents/${params.id}/transactions`);
-      if (response.ok) {
-        const data = await response.json();
-        setOnchainTxs(data.transactions ?? []);
-        if (typeof data.note === 'string') setOnchainNote(data.note);
-      } else {
-        setOnchainNote('On-chain history is unavailable right now.');
-      }
-    } catch (error) {
-      console.error('Failed to fetch on-chain transactions:', error);
-      setOnchainNote('Failed to load on-chain transactions.');
-    } finally {
-      setOnchainLoading(false);
     }
   };
 
@@ -670,8 +647,6 @@ export default function MyAgentDetailPage() {
     setShowTaskConfirm(false);
     setTaskLoading(true);
     try {
-      let depositTxHash = '';
-      let gasTxHash = '';
       if (taskConfirmData.depositToken === 'BNB') {
         // Send BNB to agent wallet
         let value: bigint;
@@ -684,8 +659,8 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        depositTxHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
-        if (!depositTxHash) {
+        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+        if (!txHash) {
           setTaskError('Deposit was not confirmed. Task creation cancelled.');
           setTaskLoading(false);
           return;
@@ -704,8 +679,8 @@ export default function MyAgentDetailPage() {
             chain: wallet.chain,
             client: thirdwebClient,
           });
-          gasTxHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
-          if (!gasTxHash) {
+          const gasHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
+          if (!gasHash) {
             setTaskError('Gas deposit cancelled.');
             setTaskLoading(false);
             return;
@@ -741,8 +716,8 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        depositTxHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
-        if (!depositTxHash) {
+        const tokenHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
+        if (!tokenHash) {
           setTaskError(`${token} transfer was not confirmed. Task creation cancelled.`);
           setTaskLoading(false);
           return;
@@ -755,14 +730,7 @@ export default function MyAgentDetailPage() {
       });
 
       // Now create the task
-      await executeCreateTask({
-        token: taskConfirmData.depositToken as 'BNB' | 'USDT' | 'USDC',
-        amount: taskConfirmData.depositToken === 'BNB'
-          ? (Number(taskConfirmData.depositUsd) / (bnbUsdPrice ?? 600)).toFixed(6)
-          : taskConfirmData.depositUsd,
-        txHash: depositTxHash,
-        gasTxHash: gasTxHash || undefined,
-      });
+      await executeCreateTask();
     } catch (error) {
       console.error('Task deposit error:', error);
       setTaskError(error instanceof Error ? error.message : 'Deposit failed');
@@ -771,12 +739,7 @@ export default function MyAgentDetailPage() {
   };
 
   /** Create the task on the server (no deposit) */
-  const executeCreateTask = async (funding?: {
-    token: 'BNB' | 'USDT' | 'USDC';
-    amount: string;
-    txHash?: string;
-    gasTxHash?: string;
-  }) => {
+  const executeCreateTask = async () => {
     setTaskError(null);
     if (!bnbUsdPrice) return;
     setTaskLoading(true);
@@ -789,26 +752,13 @@ export default function MyAgentDetailPage() {
         dailyLimitUsd: sessionForm.dailyLimitUsd,
         maxTxWei,
         dailyWei,
-        allowedTokens: Array.from(new Set([
-          ...sessionForm.allowedTokens,
-          ...(funding ? [funding.token] : []),
-        ])),
+        allowedTokens: sessionForm.allowedTokens,
         allowedProtocols: sessionForm.allowedProtocols,
         allowedFunctions: sessionForm.allowedFunctions
           ? sessionForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
           : [],
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
-        funding,
-        ...(agent?.type === 'grid' ? {
-          gridLowerPriceUsd: Number(sessionForm.gridLowerPriceUsd),
-          gridUpperPriceUsd: Number(sessionForm.gridUpperPriceUsd),
-          gridCount: Number(sessionForm.gridCount),
-          gridCapitalUsd: Number(sessionForm.gridCapitalUsd),
-          gridMaxOrderUsd: Number(sessionForm.gridMaxOrderUsd),
-          autoRecenterOnBreak: sessionForm.autoRecenterOnBreak,
-        } : {}),
-        ...(agent?.type === 'lp' && sessionForm.poolAddress ? { poolAddress: sessionForm.poolAddress.trim() } : {}),
       };
 
       const response = await fetch(`/api/agents/${params.id}/tasks`, {
@@ -927,31 +877,25 @@ export default function MyAgentDetailPage() {
   };
 
   const handleTopupConfirm = async () => {
-    if (!agent || !topupAmount || !bnbUsdPrice) return;
+    if (!agent || !topupAmount) return;
     setTopupLoading(true);
     try {
-      const amountUsd = Number(topupAmount);
-      if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-        toast.error({ title: 'Invalid amount', description: 'Enter a positive amount in USD.' });
+      const amount = Number(topupAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error({ title: 'Invalid amount', description: 'Enter a positive BNB amount.' });
         setTopupLoading(false);
         return;
       }
-      if (amountUsd < 0.50) {
-        toast.error({ title: 'Amount too low', description: 'Minimum top-up is $0.50 worth of BNB at current price.' });
+      if (amount > 1000) {
+        toast.error({ title: 'Invalid amount', description: 'Amount exceeds the 1000 BNB sanity limit.' });
         setTopupLoading(false);
         return;
       }
-      if (amountUsd > 500000) {
-        toast.error({ title: 'Amount too high', description: 'Maximum top-up is $500,000 USD worth of BNB.' });
-        setTopupLoading(false);
-        return;
-      }
-      const amountBnb = amountUsd / bnbUsdPrice;
       // 1) Server-side validation + honest deposit instruction (intent record).
       const response = await fetch('/api/developers/topup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agent.id, amountBnb }),
+        body: JSON.stringify({ agentId: agent.id, amountBnb: amount }),
       });
       const data = await response.json().catch(() => null);
       if (!(response.ok && data?.ok)) {
@@ -964,9 +908,9 @@ export default function MyAgentDetailPage() {
       // 2) One-click send from the CONNECTED wallet (popup -> sign -> broadcast -> wait for hash).
       let value: bigint;
       try {
-        value = parseEther(amountBnb.toFixed(6) as `${number}`);
+        value = parseEther(topupAmount);
       } catch {
-        toast.error({ title: 'Invalid amount', description: 'Enter a valid amount.' });
+        toast.error({ title: 'Invalid amount', description: 'Enter a valid BNB amount.' });
         setTopupLoading(false);
         return;
       }
@@ -986,11 +930,20 @@ export default function MyAgentDetailPage() {
       toast.success({
         title: txHash ? 'Transaction sent' : 'Deposit instruction ready',
         description: txHash
-          ? `Sent ${amountBnb.toFixed(6)} BNB ($${amountUsd.toFixed(2)}) to the agent wallet. It counts once confirmed on-chain.`
+          ? 'Sent ' + amount + ' BNB to the agent wallet. It counts once confirmed on-chain.'
           : 'Send the BNB to the agent wallet shown. BAN counts it once confirmed on-chain.',
       });
       setTopupOpen(false);
+      // INSTANT feedback: refresh balance + activity + on-chain history right
+      // away, then a short delayed re-fetch so the balance reflects the deposit
+      // as soon as the chain confirms (usually within a few seconds).
       fetchBalance(true);
+      fetchActivity();
+      fetchOnchainTransactions();
+      if (txHash) {
+        setTimeout(() => fetchBalance(true), 8000);
+        setTimeout(() => { fetchBalance(true); fetchOnchainTransactions(); }, 20000);
+      }
     } catch (error) {
       console.error('Topup error:', error);
       toast.error({ title: 'Top-up failed', description: 'Transaction was cancelled or failed in your wallet.' });
@@ -1026,7 +979,7 @@ export default function MyAgentDetailPage() {
     const option = protocolOptions.find((p) => p.id === id);
     if (option && !option.verified) {
       setTaskError(
-        `${option.label} is recognized but not yet verified for autonomous execution (verified ≠  enabled). Remove it or try again later.`
+        `${option.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled). Remove it or try again later.`
       );
       return;
     }
@@ -1142,9 +1095,6 @@ export default function MyAgentDetailPage() {
           : tickStage ? 'Observed' : null;
 
   const balanceBnb = balance && balance.balanceBnb != null ? Number(balance.balanceBnb) : null;
-  const balanceUsdt = balance && balance.balanceUsdt != null ? Number(balance.balanceUsdt) : 0;
-  const balanceUsdc = balance && balance.balanceUsdc != null ? Number(balance.balanceUsdc) : 0;
-  const hasAnyBalance = (balanceBnb != null && balanceBnb > 0) || balanceUsdt > 0 || balanceUsdc > 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased pb-28">
@@ -1196,8 +1146,8 @@ export default function MyAgentDetailPage() {
               <p className="text-base font-black text-foreground">{confirmedCount > 0 ? confirmedCount : 'None yet'}</p>
             </div>
             <div>
-              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL DEPLOYED</p>
-              <p className="text-base font-black text-foreground">{tvlDisplay ?? (balance != null && balance.balanceUsd ? `$${balance.balanceUsd}` : '—')}</p>
+              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">CAPITAL MANAGED</p>
+              <p className="text-base font-black text-foreground">{tvlDisplay ?? '—'}</p>
             </div>
             <div>
               <p className="text-[9px] font-black text-muted-foreground uppercase tracking-wider mb-1">SUCCESS RATE</p>
@@ -1240,41 +1190,23 @@ export default function MyAgentDetailPage() {
                 <p className="text-xs font-mono text-[#F0B90B] break-all">{agent.walletAddress}</p>
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">BNB</span>
-                  <span className="text-lg font-black text-foreground font-mono">
-                    {balanceLoading && balance == null ? (
-                      <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
-                    ) : balanceBnb != null ? (
-                      `${formatToken(balanceBnb, 6)} BNB`
-                    ) : (
-                      '—'
-                    )}
-                  </span>
-                </div>
-                {balanceUsdt > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">USDT</span>
-                    <span className="text-sm font-black text-emerald-400 font-mono">{formatToken(balanceUsdt, 6)} USDT</span>
-                  </div>
-                )}
-                {balanceUsdc > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">USDC</span>
-                    <span className="text-sm font-black text-sky-400 font-mono">{formatToken(balanceUsdc, 6)} USDC</span>
-                  </div>
-                )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Balance</span>
+                <span className="text-lg font-black text-foreground font-mono">
+                  {balanceLoading && balance == null ? (
+                    <span className="inline-block animate-spin h-4 w-4 border-2 border-[#F0B90B] border-t-transparent rounded-full" />
+                  ) : balanceBnb != null ? (
+                    `${renderUsdc(balanceBnb!, 6)} BNB`
+                  ) : (
+                    '—'
+                  )}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    setTopupAmount('10');
-                    setTopupResult(null);
-                    setTopupOpen(true);
-                  }}
+                  onClick={() => { setTopupAmount('0.01'); setTopupResult(null); setTopupOpen(true); }}
                   className="w-full bg-[#F0B90B] text-black font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:bg-yellow-400 transition"
                 >
                   TOP UP
@@ -1282,7 +1214,7 @@ export default function MyAgentDetailPage() {
                 <button
                   type="button"
                   onClick={() => { setWithdrawAmount(''); setWithdrawResult(null); setWithdrawError(null); setWithdrawOpen(true); }}
-                  disabled={!hasAnyBalance}
+                  disabled={!balanceBnb || balanceBnb <= 0}
                   className="w-full bg-[#1A1A1A] border border-border text-gray-300 font-black text-xs py-3.5 tracking-[0.15em] uppercase hover:border-red-500/50 transition disabled:opacity-40"
                 >
                   WITHDRAW
@@ -1298,13 +1230,9 @@ export default function MyAgentDetailPage() {
               </div>
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                {balanceBnb != null && bnbUsdPrice != null
-                  ? `BNB: ${formatToken(balanceBnb, 6)}`
-                  : 'BNB: —'}
-                {balanceUsdt > 0 ? ` · USDT: ${formatToken(balanceUsdt, 6)}` : ''}
-                {balanceUsdc > 0 ? ` · USDC: ${formatToken(balanceUsdc, 6)}` : ''}
-                {balance != null && balance.balanceUsd != null ? ` · Total: $${balance.balanceUsd}` : ''}.
-                Top up BNB so the agent can pay gas (~$0.18–$0.50 per tx).
+                Minimum <strong className="text-foreground">$0.50 BNB reserve</strong> kept for gas. {balanceBnb != null && bnbUsdPrice != null
+                  ? `Available: ${Math.max(0, balanceBnb - (0.5 / bnbUsdPrice)).toFixed(6)} BNB (${((balanceBnb - (0.5 / bnbUsdPrice)) * (bnbUsdPrice ?? 0)).toFixed(2)} USD)`
+                  : ''} Top up BNB here so it can pay gas and execute within its session limits.
               </p>
             </>
           ) : (
@@ -1318,7 +1246,11 @@ export default function MyAgentDetailPage() {
         </div>
 
         {/* SCHEDULER HEARTBEAT */}
-        <CollapsibleSection title="SCHEDULER HEARTBEAT" badge="~2m">
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">Scheduler Heartbeat</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#F0B90B]">~2m</span>
+          </div>
           {latestTick ? (
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
@@ -1332,56 +1264,7 @@ export default function MyAgentDetailPage() {
               No scheduled ticks yet. Create a task — Inngest runs the closed loop every ~2 minutes via <span className="font-mono text-muted-foreground">/api/inngest</span> (no GitHub Actions).
             </p>
           )}
-        </CollapsibleSection>
-
-        {/* ON-CHAIN TRANSACTIONS — realtime via Etherscan V2 (BSC), rate-limited + cached server-side */}
-        <CollapsibleSection title="ON-CHAIN TRANSACTIONS" badge={onchainTxs.length > 0 ? String(onchainTxs.length) : undefined} defaultOpen={false}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-muted-foreground">Live wallet history · BscScan (Etherscan V2)</span>
-            <button
-              type="button"
-              onClick={fetchOnchainTransactions}
-              disabled={onchainLoading}
-              className="text-[10px] font-black text-[#F0B90B] uppercase tracking-wider disabled:opacity-50"
-            >
-              {onchainLoading ? 'LOADING...' : 'REFRESH'}
-            </button>
-          </div>
-          {onchainNote && (
-            <p className="text-[11px] text-muted-foreground mb-2 border border-border bg-muted/40 rounded-lg px-3 py-2">{onchainNote}</p>
-          )}
-          {onchainLoading && onchainTxs.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">Loading on-chain transactions…</p>
-          ) : onchainTxs.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">No on-chain transactions for this agent wallet yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {onchainTxs.slice(0, 12).map((tx) => (
-                <button
-                  key={tx.hash}
-                  type="button"
-                  onClick={() => window.open(`https://bscscan.com/tx/${tx.hash}`, '_blank')}
-                  className="w-full flex items-center justify-between gap-2 bg-background/40 border border-border rounded-lg p-2.5 text-left hover:border-[#F0B90B]/50 transition"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-black text-foreground">
-                      <span className={tx.direction === 'OUT' ? 'text-red-400' : 'text-emerald-400'}>{tx.direction === 'OUT' ? '↗' : '↙'}</span>{' '}
-                      {tx.label ? `${tx.label} — ${tx.value} ${tx.token}` : `${tx.direction === 'OUT' ? 'Sent' : 'Received'} ${tx.value} ${tx.token}`}
-                      {tx.status === 'FAILED' && <span className="ml-2 text-[9px] text-red-400 font-black">FAILED</span>}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground font-mono truncate">
-                      {(tx.direction === 'OUT' ? tx.to : tx.from).slice(0, 10)}…{tx.hash.slice(0, 10)}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[10px] text-muted-foreground">{timeAgo(tx.timestamp)}</p>
-                    <p className="text-[9px] text-muted-foreground font-mono">#{tx.block}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </CollapsibleSection>
+        </div>
 
         {/* TASKS — user-visible unit of work */}
         <div className="bg-card rounded-xl p-5 border border-border space-y-4">
@@ -1414,16 +1297,11 @@ export default function MyAgentDetailPage() {
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.riskLevel}</span>
-                    {(task.config.allowedTokens ?? []).length > 0 && (
-                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{(task.config.allowedTokens ?? []).join(', ')}</span>
+                    {task.config.allowedTokens.length > 0 && (
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedTokens.join(', ')}</span>
                     )}
-                    {(task.config.allowedProtocols ?? []).length > 0 && (
-                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{(task.config.allowedProtocols ?? []).join(', ')}</span>
-                    )}
-                    {task.config.funding && (
-                      <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5">
-                        Allocated: {task.config.funding.amount} {task.config.funding.token}
-                      </span>
+                    {task.config.allowedProtocols.length > 0 && (
+                      <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
                     )}
                   </div>
                   {task.lastRun && (
@@ -1597,6 +1475,54 @@ export default function MyAgentDetailPage() {
           <PermissionCards agentId={agent.id} />
         </div>
 
+        {/* ON-CHAIN TRANSACTIONS — real Etherscan V2 history for this agent wallet */}
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">ON-CHAIN TRANSACTIONS</span>
+            <button
+              type="button"
+              onClick={fetchOnchainTransactions}
+              disabled={onchainTxsLoading}
+              className="text-[10px] font-black text-[#F0B90B] tracking-wider uppercase disabled:opacity-50"
+            >
+              {onchainTxsLoading ? 'REFRESHING…' : 'REFRESH'}
+            </button>
+          </div>
+
+          {onchainTxs.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">
+              {onchainTxsNote ?? 'No on-chain transactions for this agent wallet yet.'}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {onchainTxs.slice(0, 8).map((tx) => (
+                <button
+                  key={tx.hash}
+                  type="button"
+                  onClick={() => window.open(`https://bscscan.com/tx/${tx.hash}`, '_blank')}
+                  className="w-full text-left flex items-start gap-3 hover:bg-[#141414] rounded-lg p-2 -m-2 transition"
+                >
+                  <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${tx.direction === 'IN' ? 'bg-green-950 border-green-900 text-green-400' : 'bg-[#1A1A1A] border-border text-[#F0B90B]'}`}>
+                    {tx.direction === 'IN' ? '↓' : '↑'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline gap-2">
+                      <p className="font-black text-gray-200 text-xs truncate">{tx.label}</p>
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">{formatEventTimestamp(tx.timestamp)}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {tx.category} · {tx.value} {tx.token} · {tx.status}
+                    </p>
+                  </div>
+                </button>
+              ))}
+              <p className="text-[10px] text-muted-foreground pt-1">
+                Live from BscScan (Etherscan V2) · tap a row to view on BscScan
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* LIVE ACTIVITY */}
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-4">
@@ -1644,13 +1570,18 @@ export default function MyAgentDetailPage() {
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
-            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+            <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
           </div>
           <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
         </div>
 
         {/* PERFORMANCE */}
-        <CollapsibleSection title="PERFORMANCE">
+
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERFORMANCE</span>
+          </div>
+
           <div className="mb-2">
             <p className="text-[9px] text-muted-foreground font-black uppercase tracking-wider">REALIZED P&L</p>
             <p className={realizedPnlUsd != null ? `text-2xl font-black ${realizedPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}` : 'text-2xl font-black text-muted-foreground'}>
@@ -1681,7 +1612,7 @@ export default function MyAgentDetailPage() {
               <p className="text-sm font-black text-foreground">{timeAgo(lastExecutedAt)}</p>
             </div>
           </div>
-        </CollapsibleSection>
+        </div>
       </div>
 
       {/* ANALYTICS VIEW — full-screen panel with performance + full activity */}
@@ -1699,7 +1630,7 @@ export default function MyAgentDetailPage() {
             <div className="bg-card rounded-xl p-5 border border-border">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-black text-foreground tracking-widest uppercase">REVIEW TERMINAL</span>
-                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">● LIVE</span>
+                <span className="text-[10px] font-mono text-[#F0B90B] animate-pulse">â— LIVE</span>
               </div>
               <LiveRuntimeTerminal agentId={agent.id} initialEvents={events} />
             </div>
@@ -1928,11 +1859,11 @@ export default function MyAgentDetailPage() {
                       type="button"
                       disabled={disabled}
                       onClick={() => toggleProtocol(p.id)}
-                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified ≠  enabled).` : undefined}
+                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled).` : undefined}
                       className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-card text-gray-600 border-border cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
                     >
                       {p.label}
-                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying…)</span>}
+                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying"¦)</span>}
                       {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
                     </button>
                   );
@@ -1945,41 +1876,11 @@ export default function MyAgentDetailPage() {
               )}
               {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Protocols are recognized but not yet verified for autonomous execution (verified ≠  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
+                  Protocols are recognized but not yet verified for autonomous execution (verified â‰  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
             </div>
-
-            {/* Allowed functions */}
-            {agent.type === 'grid' && (
-              <div className="space-y-3 rounded-lg border border-border bg-background/40 p-3">
-                <label className="block text-xs font-black text-muted-foreground mb-1.5">Grid configuration (USD) — optional</label>
-                <p className="text-[10px] text-muted-foreground">
-                  Leave blank to auto-configure: your initial deposit becomes the trading capital, bounds are set to the live price ±25%, 10 levels, equal-sized orders. Any value you enter overrides the auto setup.
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="number" min="0.01" step="any" placeholder="Lower price (auto ±25%)" value={sessionForm.gridLowerPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridLowerPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Upper price (auto ±25%)" value={sessionForm.gridUpperPriceUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridUpperPriceUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="2" step="1" placeholder="Grid count (auto 10)" value={sessionForm.gridCount} onChange={(e) => setSessionForm({ ...sessionForm, gridCount: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Capital (auto = deposit)" value={sessionForm.gridCapitalUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridCapitalUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                  <input type="number" min="0.01" step="any" placeholder="Max order (auto = cap/levels)" value={sessionForm.gridMaxOrderUsd} onChange={(e) => setSessionForm({ ...sessionForm, gridMaxOrderUsd: e.target.value })} className="w-full bg-background border border-border px-3 py-2.5 text-xs font-mono text-foreground rounded-lg" />
-                </div>
-                <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <input type="checkbox" checked={sessionForm.autoRecenterOnBreak} onChange={(e) => setSessionForm({ ...sessionForm, autoRecenterOnBreak: e.target.checked })} />
-                  Recenter automatically when price leaves the configured range
-                </label>
-                <p className="text-[10px] text-muted-foreground">The live BNB price is used for the initial range check. No $500-$600 fallback is used when these fields are provided.</p>
-              </div>
-            )}
-
-            {agent.type === 'lp' && (
-              <div>
-                <label className="block text-xs font-black text-muted-foreground mb-1.5">PancakeSwap V3 pool address</label>
-                <input type="text" value={sessionForm.poolAddress} onChange={(e) => setSessionForm({ ...sessionForm, poolAddress: e.target.value })} placeholder="0x..." className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg" />
-                <p className="text-[10px] text-muted-foreground mt-1">Required for live LP observation. BAN will not guess a pool from a protocol name.</p>
-              </div>
-            )}
 
             {/* Allowed functions */}
             <div>
@@ -2061,120 +1962,25 @@ export default function MyAgentDetailPage() {
         onClose={() => { setShowTaskConfirm(false); setTaskConfirmData(null); }}
       />
 
-      {/* TOP UP MODAL — USD amount input */}
-      {topupOpen && (
-        <div className="fixed inset-0 z-[200] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#F0B90B]/15 border border-[#F0B90B]/40 flex items-center justify-center shrink-0">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-black text-[#F0B90B] uppercase tracking-wider">Top Up Agent</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">BNB Smart Chain (chain 56)</p>
-              </div>
-              <button type="button" onClick={() => setTopupOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Amount (USD)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0.50"
-                    step="0.50"
-                    value={topupAmount}
-                    onChange={(e) => setTopupAmount(e.target.value)}
-                    placeholder="10.00"
-                    className="w-full bg-background border border-border rounded-lg px-3 py-3 text-lg font-black text-foreground font-mono focus:border-[#F0B90B] outline-none"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">$ USD</span>
-                </div>
-                {bnbUsdPrice != null && topupAmount && Number(topupAmount) > 0 && (
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    ≈ {(Number(topupAmount) / bnbUsdPrice).toFixed(6)} BNB @ ${bnbUsdPrice.toFixed(2)}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5">Quick amounts</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[0.50, 1.50, 2.50, 5].map((usd) => (
-                    <button
-                      key={usd}
-                      type="button"
-                      onClick={() => setTopupAmount(String(usd))}
-                      className={`px-2 py-2.5 text-[10px] font-black rounded border transition ${
-                        topupAmount === String(usd)
-                          ? 'bg-[#F0B90B] text-black border-[#F0B90B]'
-                          : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'
-                      }`}
-                    >
-                      ${usd.toFixed(2)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-background/40 border border-border rounded-lg p-3 space-y-2.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Recipient</span>
-                  <span className="font-mono text-[#F0B90B] font-black truncate ml-2 max-w-[200px]">{agent.walletAddress ?? '—'}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Network</span>
-                  <span className="font-mono text-gray-200 font-black">BNB Smart Chain (56)</span>
-                </div>
-                {bnbUsdPrice != null && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">BNB price</span>
-                    <span className="font-mono text-gray-200 font-black">${bnbUsdPrice.toFixed(2)}</span>
-                  </div>
-                )}
-                {topupAmount && Number(topupAmount) > 0 && bnbUsdPrice != null && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">You'll receive</span>
-                    <span className="font-mono text-[#F0B90B] font-black">{(Number(topupAmount) / bnbUsdPrice).toFixed(6)} BNB</span>
-                  </div>
-                )}
-              </div>
-
-              <p className="text-[11px] text-muted-foreground leading-relaxed border border-border bg-muted/40 rounded-lg px-3 py-2.5">
-                <span className="font-black text-foreground uppercase tracking-wider text-[9px] block mb-1">Important</span>
-                Sending BNB to the agent's wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that. Minimum $0.50.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => setTopupOpen(false)}
-                disabled={topupLoading}
-                className="w-full bg-[#1A1A1A] border border-border text-gray-300 text-xs font-black py-3 uppercase tracking-wider rounded-lg disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <LoadingButton
-                onClick={handleTopupConfirm}
-                loading={topupLoading}
-                loadingLabel="Sending..."
-                variant="primary"
-                disabled={!topupAmount || Number(topupAmount) < 0.50}
-              >
-                {topupAmount && bnbUsdPrice != null && Number(topupAmount) >= 0.50
-                  ? `Send ${(Number(topupAmount) / bnbUsdPrice).toFixed(6)} BNB`
-                  : 'Send BNB'}
-              </LoadingButton>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* TRANSACTION CONFIRMATION — shown before any wallet top-up */}
+      <TransactionConfirmModal
+        open={topupOpen}
+        title="Confirm Top Up"
+        subtitle={`Top up the agent wallet on BNB Smart Chain (chain 56)`}
+        lines={[
+          { label: 'Agent', value: agent.name, tone: 'gold' },
+          { label: 'Recipient', value: agent.walletAddress ?? '—', mono: true },
+          { label: 'Amount', value: `${topupAmount || '0'} BNB`, tone: 'gold', mono: true },
+          { label: 'Network', value: 'BNB Smart Chain (56)', mono: true },
+          { label: 'Fee', value: 'Network gas applies (BNB)', tone: 'default' },
+        ]}
+        warning="Sending BNB to the agent's dedicated wallet. BAN only counts the funds after the deposit is confirmed on-chain — no balance change is assumed before that."
+        confirmLabel="Confirm Top Up"
+        confirmLoadingLabel="Sending..."
+        confirmLoading={topupLoading}
+        onConfirm={handleTopupConfirm}
+        onClose={() => setTopupOpen(false)}
+      />
 
       {/* WITHDRAW MODAL — withdraw funds from agent wallet to user */}
       {withdrawOpen && (
@@ -2217,16 +2023,6 @@ export default function MyAgentDetailPage() {
                     className="w-full bg-background border border-border rounded-lg px-3 py-3 text-lg font-black text-foreground font-mono focus:border-[#F0B90B] outline-none"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">{withdrawToken}</span>
-                </div>
-                <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground">
-                  <span>Available</span>
-                  <span className="font-mono font-black text-foreground">
-                    {withdrawToken === 'BNB'
-                      ? `${formatToken(Math.max(0, balanceBnb ?? 0), 6)} BNB`
-                      : withdrawToken === 'USDT'
-                        ? `${formatToken(balanceUsdt, 6)} USDT`
-                        : `${formatToken(balanceUsdc, 6)} USDC`}
-                  </span>
                 </div>
               </div>
 

@@ -80,9 +80,15 @@ function detailFor(e: TerminalEvent): string {
     }
     case 'AGENT_TICK': {
       const cr = (p.cycleResult ?? {}) as Record<string, unknown>;
-      const stage = String(cr.stage ?? '?');
-      const note = typeof cr.note === 'string' ? ` note=${cr.note.slice(0, 70)}` : '';
-      return `stage=${stage}${note}`;
+      if (cr && typeof cr === 'object') {
+        const stage = typeof cr.stage === 'string' ? cr.stage : null;
+        const note = typeof cr.note === 'string' ? ` note=${cr.note.slice(0, 70)}` : '';
+        if (stage) return `stage=${stage}${note}`;
+        // Failure shape (no stage): surface the real reason inline.
+        const reason = typeof cr.reason === 'string' ? cr.reason : '';
+        return reason ? `failed: ${reason.slice(0, 120)}` : 'cycle completed';
+      }
+      return 'cycle completed';
     }
     default: {
       const keys = Object.keys(p).filter((k) => !['correlationId', 'agentId'].includes(k));

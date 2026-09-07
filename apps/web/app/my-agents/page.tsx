@@ -242,7 +242,7 @@ export default function MyAgentsPage() {
         </div>
 
         {activeTab === 'DEPLOYED' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {loading && (
               <div className="py-12 text-center text-muted-foreground text-sm">
                 <div className="inline-block w-6 h-6 border-2 border-[#F0B90B] border-t-transparent rounded-full animate-spin mb-2" />
@@ -286,7 +286,7 @@ export default function MyAgentsPage() {
                   <Link
                     key={agent.id}
                     href={`/my-agents/${agent.id}`}
-                    className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 rounded-xl p-4 transition-all relative isolate min-w-0 overflow-hidden group"
+                    className="dark:bg-card bg-gray-50 hover:bg-gray-100 dark:hover:bg-card/80 border dark:border-border border-gray-200 hover:border-[#F0B90B]/50 rounded-xl p-5 transition-all relative isolate min-w-0 overflow-hidden group shadow-sm hover:shadow-md"
                   >
                     <div className="relative z-10 flex min-w-0 items-start justify-between mb-3">
                       <div className="flex min-w-0 items-center gap-3">
@@ -330,7 +330,7 @@ export default function MyAgentsPage() {
                       </p>
                     )}
 
-                    <div className="relative z-10 grid min-w-0 grid-cols-3 gap-2 bg-background/60 rounded-xl p-2.5 border border-border text-center mb-3">
+                    <div className="relative z-10 grid min-w-0 grid-cols-3 gap-3 bg-background/60 rounded-xl p-3 border border-border text-center mb-4">
                       <div>
                         <div className="text-[10px] text-muted-foreground uppercase">Executions</div>
                         <div className="text-xs font-bold text-foreground">{agent.executionCount ?? 0}</div>
