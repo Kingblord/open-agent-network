@@ -78,6 +78,8 @@ export class OpenRouterBrainAdapter implements BrainAdapter {
       'You produce ONLY a strict JSON decision object. You may not invent capabilities, tools, or contracts.',
       'Allowed capabilities for THIS agent: ' + input.capabilities.join(', ') + '.',
       "A proposal's capabilityId MUST be one of the allowed capabilities; otherwise do NOT emit an action.",
+      'proposal.action MUST be EXACTLY one of: SWAP, TRANSFER, DEPOSIT, WITHDRAW, STAKE, UNSTAKE, MINT, BURN, APPROVE, REBALANCE, CUSTOM. Never use any other value.',
+      'Directional trading vocabulary is NOT an action: for grid_trading candidates labeled BUY or SELL, use action "SWAP" and put the side in params.side ("BUY" or "SELL") plus params.levelIndex. STOP/HOLD/WAIT are NOT actions — they mean status "PASS" with no proposal.',
       'Respond with JSON exactly of the form:',
       '{"status":"ACT"|"PASS","reasoning":string,"deniedReason"?:string,"proposal"?:{proposalId,agentId,userId,strategyId,sessionId,protocol,contract,function,action,capabilityId,token,amount,estimatedValue,asset,idempotencyKey,riskLevel,createdAt}}',
       'When status is PASS, never include proposal. When status is ACT, the proposal MUST be complete and valid.',
@@ -161,7 +163,18 @@ export class OpenRouterBrainAdapter implements BrainAdapter {
     };
 
     if (statusRaw === 'ACT' && proposalRaw) {
-      decisionInput.proposal = proposalRaw;
+      const normalized = normalizeProposalAction(proposalRaw);
+      if (normalized === null) {
+        // The model emitted a non-executable directive (STOP/HOLD/WAIT).
+        // Honest semantics: that is a decision to NOT trade → PASS, no proposal.
+        decisionInput.status = 'PASS';
+        decisionInput.reasoning =
+          typeof raw.reasoning === 'string' && raw.reasoning.trim()
+            ? raw.reasoning
+            : 'Strategy directive (STOP/HOLD/WAIT) — no onchain action.';
+      } else {
+        decisionInput.proposal = normalized;
+      }
     }
 
     // Validate strictly. Any decision must satisfy StrategyDecisionSchema.
@@ -188,6 +201,51 @@ export class OpenRouterBrainAdapter implements BrainAdapter {
 
     return parsed.data as StrategyDecision;
   }
+}
+
+/**
+ * Canonical onchain action vocabulary (mirrors @ban/schemas ActionTypeSchema).
+ * Strategies that use directional trading vocabulary (BUY/SELL) are mapped to
+ * the executable SWAP action with the direction preserved in params.side —
+ * an LLM emitting `action: "BUY"` must not hard-fail the whole cycle.
+ */
+const CANONICAL_ACTIONS = new Set([
+  'SWAP', 'TRANSFER', 'DEPOSIT', 'WITHDRAW', 'STAKE', 'UNSTAKE',
+  'MINT', 'BURN', 'APPROVE', 'REBALANCE', 'CUSTOM',
+]);
+
+/**
+ * Normalize a raw model-authored proposal:
+ *  - uppercases/whitespace-trims the action,
+ *  - maps BUY/SELL → SWAP with params.side (+ params.requestedAction for audit),
+ *  - maps STOP/HOLD/WAIT → null (the caller converts the decision to PASS),
+ *  - leaves unknown values untouched so schema validation still fails closed.
+ */
+export function normalizeProposalAction(
+  proposal: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const rawAction =
+    typeof proposal.action === 'string' ? proposal.action.trim().toUpperCase() : '';
+
+  // Non-executable directives are decisions to not trade, not onchain actions.
+  if (rawAction === 'STOP' || rawAction === 'HOLD' || rawAction === 'WAIT') return null;
+
+  const params = {
+    ...((proposal.params as Record<string, unknown> | undefined) ?? {}),
+  };
+
+  if (rawAction === 'BUY' || rawAction === 'SELL') {
+    if (params.side == null) params.side = rawAction;
+    if (params.requestedAction == null) params.requestedAction = rawAction;
+    return { ...proposal, action: 'SWAP', params };
+  }
+
+  if (CANONICAL_ACTIONS.has(rawAction)) {
+    return { ...proposal, action: rawAction, params };
+  }
+
+  // Unrecognized — return untouched; StrategyDecisionSchema fails closed below.
+  return proposal;
 }
 
 function extractContent(data: unknown): string | null {

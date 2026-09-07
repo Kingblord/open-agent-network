@@ -22,6 +22,13 @@ export interface ExecutionAggregate {
 /** Aggregate metrics derived from Position records. */
 export interface PositionAggregate {
     hasPositions: boolean;
+    /**
+     * Total USD cents of OPEN positions (currentValueUsd > 0) — both
+     * agent-wallet funding buckets and deployed protocol positions. This is the
+     * honest capital-managed figure: funded-but-idle capital counts, because the
+     * agent controls it.
+     */
+    managedCapitalUsd: string;
     realizedPnlUsd: string | null;
     unrealizedPnlUsd: string | null;
     maxDrawdownUsd: string | null;

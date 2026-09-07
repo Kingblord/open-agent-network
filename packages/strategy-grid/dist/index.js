@@ -1,3 +1,9 @@
+/**
+ * M12 — @ban/strategy-grid entry point.
+ *
+ * Exports all public types and classes for the grid trading strategy.
+ */
+export * from './constants.js';
 export { GridCalculator } from './grid-calculator.js';
 export { GridDataProvider } from './grid-data-provider.js';
 export { GridRiskModel } from './grid-risk-model.js';

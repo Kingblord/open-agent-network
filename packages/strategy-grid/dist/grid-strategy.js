@@ -5,6 +5,7 @@ import { GridDataProvider } from './grid-data-provider.js';
 import { GridRiskModel } from './grid-risk-model.js';
 import { GridCandidateSelector } from './grid-candidate-selector.js';
 import { GridObservationBuilder } from './observation-builder.js';
+import { BSC_USDT, BSC_WBNB, BSC_PANCAKE_V3_SMART_ROUTER, GRID_FEE_TIER_DEFAULT, GRID_SLIPPAGE_BPS_DEFAULT, GRID_SWAP_FUNCTION, GRID_EXEC_KIND, PANCAKE_V3_FEE_TIERS, } from './constants.js';
 export class GridStrategy {
     strategyId;
     brain;
@@ -149,7 +150,79 @@ export class GridStrategy {
         if (!proposal.success) {
             throw new BANError(ErrorCode.INTERNAL, `Grid strategy brain produced an invalid proposal.`, { retryable: false });
         }
-        return proposal.data;
+        // Execution-critical fields are canonicalized from grid state — the LLM's
+        // role is the ACT/PASS gate + side/level choice only. Returns null when the
+        // decision does not correspond to an executable grid signal.
+        return this.canonicalizeGridProposal(proposal.data, observation);
+    }
+    /**
+     * Deterministically author the execution-critical fields of a grid swap
+     * proposal from the matched observation candidate (real-funds safety):
+     * contract, function, token path, amount and estimatedValue come from grid
+     * state — NEVER from model-authored values, which could be hallucinated.
+     *
+     * Matching: params.levelIndex → params.side → first trade candidate. A
+     * decision with no trade candidates (BUY/SELL) in the observation is treated
+     * as no-op (null).
+     */
+    canonicalizeGridProposal(proposal, observation) {
+        const obsData = observation.data;
+        const candidates = (obsData?.candidates ?? []).filter((c) => c.action === 'BUY' || c.action === 'SELL');
+        if (candidates.length === 0)
+            return null; // no executable grid signal — honest no-op
+        const params = { ...(proposal.params ?? {}) };
+        const requestedSide = typeof params.side === 'string' ? params.side.trim().toUpperCase() : '';
+        const requestedLevel = typeof params.levelIndex === 'number' ? params.levelIndex : undefined;
+        const candidate = candidates.find((c) => requestedLevel != null && c.levelIndex === requestedLevel) ??
+            candidates.find((c) => (c.action ?? '') === requestedSide) ??
+            candidates[0];
+        const side = candidate.action === 'SELL' ? 'SELL' : 'BUY';
+        const sizeCents = Math.max(1, Math.floor(Number(candidate.maxSizeCents ?? 0) || 0));
+        // USD cents → wei (18-decimal USDT/WBNB): (cents / 100) × 1e18 = cents × 1e16.
+        const amountInWei = (BigInt(sizeCents) * 10n ** 16n).toString();
+        const levelPriceUsd = Number(candidate.priceCents ?? 0) / 100;
+        const tokenIn = side === 'BUY' ? BSC_USDT : BSC_WBNB;
+        const tokenOut = side === 'BUY' ? BSC_WBNB : BSC_USDT;
+        const feeTierRaw = Number(params.feeTier);
+        const feeTier = PANCAKE_V3_FEE_TIERS.includes(feeTierRaw)
+            ? feeTierRaw
+            : GRID_FEE_TIER_DEFAULT;
+        const slippageRaw = Number(params.slippageBps);
+        const slippageBps = Number.isFinite(slippageRaw) && slippageRaw > 0 && slippageRaw < 9000
+            ? Math.floor(slippageRaw)
+            : GRID_SLIPPAGE_BPS_DEFAULT;
+        const enriched = {
+            ...proposal,
+            action: 'SWAP',
+            protocol: 'pancakeswap',
+            contract: BSC_PANCAKE_V3_SMART_ROUTER,
+            function: GRID_SWAP_FUNCTION,
+            token: tokenIn,
+            amount: amountInWei,
+            // Worst-case spend is the exact amountIn (source wei) — integer wei string.
+            estimatedValue: amountInWei,
+            asset: side === 'BUY' ? 'WBNB' : 'USDT',
+            capabilityId: proposal.capabilityId ?? 'PROPOSE_GRID_ORDER',
+            params: {
+                ...params,
+                execKind: GRID_EXEC_KIND,
+                side,
+                levelIndex: candidate.levelIndex ?? 0,
+                levelPriceUsd,
+                tokenIn,
+                tokenOut,
+                amountIn: amountInWei,
+                slippageBps,
+                feeTier,
+                requestedAction: params.requestedAction ?? side,
+            },
+            riskLevel: proposal.riskLevel ?? (candidate.riskLevel === 'HIGH' ? 'HIGH' : 'MEDIUM'),
+        };
+        const revalidated = ActionProposalSchema.safeParse(enriched);
+        if (!revalidated.success) {
+            throw new BANError(ErrorCode.INTERNAL, `Grid strategy produced an invalid canonical proposal: ${revalidated.error.message}`, { retryable: false });
+        }
+        return revalidated.data;
     }
     /** Expose grid state for testing. */
     getState() {

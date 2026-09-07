@@ -522,7 +522,7 @@ describe('GridStrategy end-to-end', () => {
     expect(state.lastPriceCents).toBe(74768);
   });
 
-  it('decide() returns a schema-valid ActionProposal', async () => {
+  it('decide() returns a schema-valid canonical ActionProposal when a grid signal exists', async () => {
     const { GridStrategy } = await import('../src/grid-strategy.js');
     const { GridDataProvider } = await import('../src/grid-data-provider.js');
 
@@ -535,10 +535,49 @@ describe('GridStrategy end-to-end', () => {
       },
     });
     const strat = new GridStrategy({ brain: brain as never, data });
+    // Prime the grid, then force a DOWN crossing through level 3 ($550) on the
+    // next observation so the observation carries a real BUY candidate (a fresh
+    // grid holds no inventory, so an UP/SELL crossing has zero order size).
+    const obs0 = await strat.observe(agent as never, 'corr_1');
+    expect(obs0.length).toBe(1);
+    const state = strat.getState()!;
+    strat.setState({ ...state, lastPriceCents: 56000 });
     const obs = await strat.observe(agent as never, 'corr_1');
+    const obsData = (obs[0] as unknown as { data: { candidates: Array<{ action: string }> } }).data;
+    expect(obsData.candidates.length).toBeGreaterThan(0);
+
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();
-    expect(ActionProposalSchema.safeParse(proposal).success).toBe(true);
+    const parsedOk = ActionProposalSchema.safeParse(proposal);
+    expect(parsedOk.success).toBe(true);
+    // Canonical fields are strategy-authored — never the brain's mock values.
+    expect(proposal!.action).toBe('SWAP');
+    expect(proposal!.protocol).toBe('pancakeswap');
+    expect(proposal!.function).toBe('exactInputSingle');
+    expect(proposal!.amount).toMatch(/^\d+$/);
+    expect(proposal!.estimatedValue).toMatch(/^\d+$/);
+    expect((proposal!.params as Record<string, unknown>).execKind).toBe('PANCAKE_V3_SWAP');
+    expect(['BUY', 'SELL']).toContain((proposal!.params as Record<string, unknown>).side);
+  });
+
+  it('returns null when the brain ACTs but the observation carries no grid signal (honest no-op)', async () => {
+    const { GridStrategy } = await import('../src/grid-strategy.js');
+    const { GridDataProvider } = await import('../src/grid-data-provider.js');
+
+    const brain = new RecordingBrain();
+    const data = new GridDataProvider({
+      price: {
+        async getTokenPrice(token: string) {
+          return { asset: token, priceUsd: '550.00', timestamp: new Date().toISOString() };
+        },
+      },
+    });
+    const strat = new GridStrategy({ brain: brain as never, data });
+    // First observation: no crossing (price at the grid midpoint) → no
+    // candidates. Even though the brain ACTs, decide() must honestly no-op.
+    const obs = await strat.observe(agent as never, 'corr_1');
+    const proposal = await strat.decide(obs[0], agent as never);
+    expect(proposal).toBeNull();
   });
 
   it('returns null when the brain decides PASS', async () => {
@@ -599,10 +638,15 @@ describe('GridStrategy end-to-end', () => {
       },
     });
     const strat = new GridStrategy({ brain: brain as never, data });
+    // Force a DOWN crossing (56000 → 55000) so the observation carries a
+    // tradeable BUY candidate (fresh grid has no inventory for SELL sizing).
+    await strat.observe(agent as never, 'corr_1');
+    const state = strat.getState()!;
+    strat.setState({ ...state, lastPriceCents: 56000 });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();
-    expect(brain.calls.length).toBe(1);
+    expect(brain.calls.length).toBe(1); // decide() is the only brain touchpoint
     expect(ActionProposalSchema.safeParse(proposal).success).toBe(true);
   });
 });

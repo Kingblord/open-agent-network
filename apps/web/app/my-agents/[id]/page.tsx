@@ -421,6 +421,17 @@ export default function MyAgentDetailPage() {
 
   useEffect(() => { fetchProtocolSnapshot(); }, []);
 
+  // REALTIME: poll agent activity so audit events (decisions, policy results,
+  // executions) appear live without a manual refresh. Light poll — Firestore
+  // reads stay well within free-tier quotas.
+  useEffect(() => {
+    if (!user || !params.id) return;
+    const t = setInterval(() => { fetchActivity(); }, 15000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, params.id]);
+
+
   const fetchAgent = async () => {
     try {
       const response = await fetch(`/api/agents/${params.id}`);

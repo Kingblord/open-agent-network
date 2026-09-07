@@ -9,9 +9,13 @@
  * PnL is computed ONLY from valid Position records; returns null when
  * positions are unavailable — never fabricated.
  *
- * Capital managed is a conservative estimate (sum of proposal estimatedValue
- * from executions that the policy approved). In the live loop (M18) this
- * should be replaced with onchain position data.
+ * Capital managed is computed from OPEN Position records (USD cents): both
+ * `agent-wallet` funding buckets (capital deposited by the user and controlled
+ * by the agent) and deployed protocol positions. Owner withdrawals and
+ * protocol DEPOSIT moves decrement the funding bucket, so the same dollars are
+ * never double-counted. The previous "100 cents per confirmed execution"
+ * placeholder was fabricated data and has been removed (Rule 7: no fake data
+ * in production paths).
  */
 export class PerformanceCalculator {
     /**
@@ -41,7 +45,6 @@ export class PerformanceCalculator {
         let totalDurationMs = 0;
         let durationCount = 0;
         let lastExecutedAt = null;
-        let totalCapitalUsd = 0;
         for (const exec of executions) {
             const status = exec.status ?? 'UNKNOWN';
             byStatus[status] = (byStatus[status] ?? 0) + 1;
@@ -69,18 +72,10 @@ export class PerformanceCalculator {
                     durationCount++;
                 }
             }
-            // Capital managed: sum of estimated proposal value
-            // In live loop, replace with onchain position data.
-            // For now, use a conservative estimate from the execution record.
-            // (estimatedValue is stored in the proposal, not the execution record,
-            //  so we use a placeholder approach — in production this comes from the
-            //  linked proposal's estimatedValue field.)
-            if (status === 'CONFIRMED' && exec.chainId) {
-                // Conservative: each confirmed execution represents at minimum
-                // a small base capital of 100 USD cents. In live loop this
-                // should be replaced with actual position value.
-                totalCapitalUsd += 100; // placeholder: 100 cents per confirmed exec
-            }
+            // Capital managed is NOT derived from executions — it comes from open
+            // Position records (see aggregatePositions). Executions only carry
+            // operational metrics. (The previous 100-cents-per-confirmed-exec
+            // placeholder was fabricated data and is removed.)
         }
         const totalTrades = confirmedCount;
         const denominator = confirmedCount + failedCount;
@@ -103,25 +98,36 @@ export class PerformanceCalculator {
             avgExecutionMs,
             lastExecutedAt,
             byStatus,
-            capitalManagedUsd: totalCapitalUsd.toString(),
+            // Superseded by position-based capital in summarize(); kept on the
+            // interface for compatibility and reported as 0 without positions.
+            capitalManagedUsd: '0',
         };
     }
     /**
-     * Aggregate position records into PnL metrics.
+     * Aggregate position records into managed-capital and PnL metrics.
      *
-     * PnL is computed ONLY from valid Position records.
-     * If no positions are available, returns null for realized/unrealized PnL
-     * and max drawdown — never fabricated.
+     * Capital managed = sum of OPEN positions' currentValueUsd (USD cents),
+     * including `agent-wallet` funding buckets — funds deposited to an agent
+     * are capital the agent controls even before its first swap.
+     *
+     * PnL is computed ONLY from deployed protocol positions. `agent-wallet`
+     * funding records are capital trackers, NOT PnL-bearing positions, so a
+     * funding bucket decremented to 0 (moved into protocols / withdrawn) must
+     * never surface as a "realized loss".
+     *
+     * If no positions are available, PnL fields are null — never fabricated.
      */
     aggregatePositions(positions) {
         if (!positions || positions.length === 0) {
             return {
                 hasPositions: false,
+                managedCapitalUsd: '0',
                 realizedPnlUsd: null,
                 unrealizedPnlUsd: null,
                 maxDrawdownUsd: null,
             };
         }
+        let managedCapital = 0;
         let realizedPnl = 0;
         let unrealizedPnl = 0;
         let maxDrawdown = 0;
@@ -129,6 +135,15 @@ export class PerformanceCalculator {
             const entry = Number(pos.entryValueUsd || '0');
             const current = Number(pos.currentValueUsd || '0');
             if (isNaN(entry) || isNaN(current))
+                continue;
+            // Managed capital: every OPEN position (wallet funding buckets AND
+            // deployed protocol positions) is capital the agent controls.
+            if (current > 0)
+                managedCapital += current;
+            // `agent-wallet` funding records are capital trackers, not PnL-bearing
+            // positions — skip them in the PnL math so a funded bucket moved into
+            // protocols (current → 0) never registers as a realized loss.
+            if (pos.protocol === 'agent-wallet')
                 continue;
             // A closed position (current === 0) contributes to realized PnL
             if (current === 0) {
@@ -145,6 +160,7 @@ export class PerformanceCalculator {
         }
         return {
             hasPositions: true,
+            managedCapitalUsd: managedCapital.toFixed(0),
             realizedPnlUsd: realizedPnl.toFixed(2),
             unrealizedPnlUsd: unrealizedPnl.toFixed(2),
             maxDrawdownUsd: maxDrawdown.toFixed(2),
@@ -152,10 +168,22 @@ export class PerformanceCalculator {
     }
     /**
      * Combine execution and position aggregates into a single performance summary.
+     *
+     * `opts.walletCapitalUsd` (optional, decimal USD string) lets callers pass a
+     * live on-chain reading of the agent wallet's current capital. When present it
+     * wins over the position-based `managedCapitalUsd`, because a user's task
+     * funding is capital the agent controls the moment it lands in the wallet —
+     * whether or not any execution has happened yet. When absent, position-based
+     * capital is used (the fallback used by unit tests and historical data).
      */
-    summarize(executions, positions) {
+    summarize(executions, positions, opts) {
         const execAgg = this.aggregateExecutions(executions);
         const posAgg = this.aggregatePositions(positions);
+        // Prefer LIVE on-chain wallet capital (USD dollars) when the caller passed
+        // a positive reading; otherwise fall back to open position values (cents).
+        const walletCapitalUsd = opts?.walletCapitalUsd != null && Number(opts.walletCapitalUsd) > 0
+            ? opts.walletCapitalUsd
+            : undefined;
         return {
             totalTrades: execAgg.totalTrades,
             confirmedCount: execAgg.confirmedCount,
@@ -165,7 +193,8 @@ export class PerformanceCalculator {
             avgExecutionMs: execAgg.avgExecutionMs,
             lastExecutedAt: execAgg.lastExecutedAt,
             byStatus: execAgg.byStatus,
-            capitalManagedUsd: execAgg.capitalManagedUsd,
+            // Realtime wallet capital when known; else open position values (cents).
+            capitalManagedUsd: walletCapitalUsd ?? posAgg.managedCapitalUsd,
             hasPositions: posAgg.hasPositions,
             realizedPnlUsd: posAgg.realizedPnlUsd,
             unrealizedPnlUsd: posAgg.unrealizedPnlUsd,

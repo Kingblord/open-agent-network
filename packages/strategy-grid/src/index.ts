@@ -3,6 +3,8 @@
  *
  * Exports all public types and classes for the grid trading strategy.
  */
+export * from './constants.js';
+
 export type {
   GridConfig,
   GridLevel,

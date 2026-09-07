@@ -2,6 +2,8 @@ import 'server-only';
 import type { ActionProposal } from '@ban/schemas';
 import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import type { SignedTransaction, SigningBackend, SignRequest } from '@ban/signers';
+import type { Address } from 'viem';
+import { buildPancakeV3SwapCalls, type ExecutableCall } from './execution/pancake-v3';
 import {
   getAltanaStoreDir,
   hasAgentKeystore,
@@ -184,18 +186,53 @@ export async function createAltanaSigningBackend(
 
     const value = (proposal.params?.value as string | bigint | undefined) ?? 0n;
 
+    // Build the executable call list. Strategy-authored `execKind` params
+    // produce DETERMINISTIC protocol calls (approve+swap) — a real-funds guard:
+    // the signer never broadcasts a transaction it cannot fully construct, and
+    // a proposal with neither calldata nor a recognized execKind FAILS CLOSED
+    // instead of broadcasting an empty/garbage call to a contract.
+    let calls: ExecutableCall[];
+    const execKind = (proposal.params?.execKind as string | undefined) ?? '';
+    const trimmedCalldata = typeof calldata === 'string' ? calldata.trim() : '';
+
+    if (execKind === 'PANCAKE_V3_SWAP') {
+      const p = (proposal.params ?? {}) as Record<string, unknown>;
+      const amountIn = BigInt(String(p.amountIn ?? proposal.amount ?? '0'));
+      calls = buildPancakeV3SwapCalls(
+        {
+          side: p.side === 'SELL' ? 'SELL' : 'BUY',
+          tokenIn: p.tokenIn as Address,
+          tokenOut: p.tokenOut as Address,
+          amountIn,
+          levelPriceUsd: Number(p.levelPriceUsd),
+          slippageBps: Number(p.slippageBps ?? undefined),
+          feeTier: Number(p.feeTier ?? undefined),
+        },
+        wallet.address as Address,
+        to as Address,
+      );
+    } else if (trimmedCalldata) {
+      calls = [
+        {
+          to: to as `0x${string}`,
+          data: trimmedCalldata as `0x${string}`,
+          value: typeof value === 'bigint' ? value : BigInt(value),
+        },
+      ];
+    } else {
+      throw new BANError(
+        ErrorCode.EXECUTION_FAILED,
+        `Refusing to broadcast: proposal ${proposal.proposalId} has no calldata and no recognized execKind (params.execKind). The strategy must build executable call data before a real transaction can be sent. Nothing was broadcast.`,
+        { retryable: false },
+      );
+    }
+
     try {
       const result = await client.execute({
         wallet,
         signer,
         chainId,
-        calls: [
-          {
-            to: to as `0x${string}`,
-            data: (calldata || undefined) as `0x${string}` | undefined,
-            value: typeof value === 'bigint' ? value : BigInt(value),
-          },
-        ],
+        calls,
       });
 
       if (result.status === 'FAILED') {

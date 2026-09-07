@@ -98,6 +98,14 @@ export default function AuditTrailPage() {
     if (mounted && user) loadEvents();
   }, [mounted, user, loadEvents]);
 
+  // REALTIME: keep the audit trail live with a light poll (pagination-safe:
+  // the interval always reloads the first page; explicit "load more" is manual).
+  useEffect(() => {
+    if (!mounted || !user) return;
+    const t = setInterval(() => { loadEvents(); }, 20000);
+    return () => clearInterval(t);
+  }, [mounted, user, loadEvents]);
+
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     const now = new Date();

@@ -149,6 +149,14 @@ export default function DashboardPage() {
     if (user) loadDashboard();
   }, [user, loadDashboard]);
 
+  // REALTIME: light poll so capital allocation, activity and agent balances
+  // stay live without manual refresh. 30s keeps Firestore/RPC reads modest.
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => { loadDashboard(); }, 30000);
+    return () => clearInterval(t);
+  }, [user, loadDashboard]);
+
   const activeAgentCount = agents.filter((a) => a.status === 'ACTIVE').length;
   const deployedCount = agents.filter((a) => a.status !== 'REVOKED').length;
 

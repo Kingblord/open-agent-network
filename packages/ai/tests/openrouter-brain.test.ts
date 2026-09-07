@@ -117,4 +117,122 @@ describe('M7 OpenRouterBrainAdapter (live provider — network/API-gated)', () =
     expect(err).not.toBeNull();
     expect(err.code).toBe('ERR_PROVIDER_UNAVAILABLE');
   });
+
+  it('NORMALIZES a model-authored BUY action to SWAP with params.side (grid vocabulary)', async () => {
+    const proposal = {
+      proposalId: 'prop_grid_buy',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'swap',
+      action: 'BUY',
+      capabilityId: 'PROPOSE_GRID_ORDER',
+      token: '0x55d398326f99059fF775485246999027B3197955',
+      amount: '1000000000000000000',
+      estimatedValue: '1000000000000000000',
+      asset: 'BNB',
+      idempotencyKey: 'ik_grid_buy',
+      params: { levelIndex: 2 },
+      riskLevel: 'MEDIUM',
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'level crossed', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const decision = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities });
+    expect(decision.status).toBe('ACT');
+    expect(decision.proposal).toBeDefined();
+    expect(decision.proposal?.action).toBe('SWAP');
+    expect((decision.proposal?.params as Record<string, unknown>).side).toBe('BUY');
+    expect((decision.proposal?.params as Record<string, unknown>).requestedAction).toBe('BUY');
+    expect(ActionProposalSchema.safeParse(decision.proposal).success).toBe(true);
+  });
+
+  it('NORMALIZES a model-authored SELL action to SWAP with params.side', async () => {
+    const proposal = {
+      proposalId: 'prop_grid_sell',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'swap',
+      action: 'sell', // lowercase — must be case-normalized
+      capabilityId: 'PROPOSE_GRID_ORDER',
+      token: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+      amount: '1000000000000000000',
+      estimatedValue: '1000000000000000000',
+      asset: 'USDT',
+      idempotencyKey: 'ik_grid_sell',
+      riskLevel: 'MEDIUM',
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'level crossed up', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const decision = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities });
+    expect(decision.status).toBe('ACT');
+    expect(decision.proposal?.action).toBe('SWAP');
+    expect((decision.proposal?.params as Record<string, unknown>).side).toBe('SELL');
+  });
+
+  it('converts a model-authored STOP directive to an honest PASS (no proposal)', async () => {
+    const proposal = {
+      proposalId: 'prop_grid_stop',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'stop',
+      action: 'STOP',
+      token: 'BNB',
+      amount: '0',
+      estimatedValue: '0',
+      asset: 'BNB',
+      idempotencyKey: 'ik_grid_stop',
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'out of bounds', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const decision = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities });
+    expect(decision.status).toBe('PASS');
+    expect(decision.proposal).toBeUndefined();
+    expect(StrategyDecisionSchema.safeParse(decision).success).toBe(true);
+  });
+
+  it('STILL FAILS CLOSED on an unrecognized action (e.g. GALACTIC_BUY)', async () => {
+    const proposal = {
+      proposalId: 'prop_bad',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'swap',
+      action: 'GALACTIC_BUY',
+      token: 'BNB',
+      amount: '1000000000000000000',
+      estimatedValue: '1000000000000000000',
+      asset: 'BNB',
+      idempotencyKey: 'ik_bad',
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'x', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const err = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities }).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).not.toBeNull();
+    expect(err.code).toBe('ERR_POLICY_DENIED');
+  });
 });

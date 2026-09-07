@@ -63,6 +63,17 @@ export declare class GridStrategy implements StrategyEngine {
     decide(observation: Observation, agent: Agent, hooks?: {
         onDecision?: (decision: StrategyDecision) => void;
     }): Promise<ActionProposal | null>;
+    /**
+     * Deterministically author the execution-critical fields of a grid swap
+     * proposal from the matched observation candidate (real-funds safety):
+     * contract, function, token path, amount and estimatedValue come from grid
+     * state — NEVER from model-authored values, which could be hallucinated.
+     *
+     * Matching: params.levelIndex → params.side → first trade candidate. A
+     * decision with no trade candidates (BUY/SELL) in the observation is treated
+     * as no-op (null).
+     */
+    private canonicalizeGridProposal;
     /** Expose grid state for testing. */
     getState(): GridState | null;
     /** Allow tests to inject a custom state. */

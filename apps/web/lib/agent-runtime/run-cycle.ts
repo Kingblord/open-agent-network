@@ -63,7 +63,7 @@ import { PermissionResolver } from '@ban/eip7702';
 const logger = createLogger('agent-runtime');
 
 export type CycleResult =
-  | { ok: true; stage: 'observed' | 'decided' | 'awaited' | 'confirmed'; executionId?: string; note?: string }
+  | { ok: true; stage: 'observed' | 'decided' | 'awaited' | 'submitted' | 'confirmed'; executionId?: string; note?: string }
   | { ok: false; reason: string; code: ErrorCode };
 
 export interface RunCycleOptions {
@@ -427,8 +427,51 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       return { ok: false, reason: 'execution_no_hash', code: ErrorCode.EXECUTION_FAILED };
     }
 
-    const confirmedAt = new Date().toISOString();
     const executionId = `exec_${proposal.proposalId.slice(-24)}`;
+
+    // Honesty guard: only a tx-hash-shaped id (0x + 64 hex) is a real broadcast
+    // transaction. Altana may return a `callsId` (batch id) — that is SUBMITTED,
+    // not confirmed. Marking those CONFIRMED would fabricate success.
+    const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+    const isBroadcastTx = TX_HASH_RE.test(submitted.transactionHash);
+
+    if (!isBroadcastTx) {
+      await persistExecution({
+        executionId,
+        proposalId: proposal.proposalId,
+        agentId: agent.id,
+        userId,
+        protocol: proposal.protocol,
+        contract: proposal.contract,
+        function: proposal.function,
+        parametersHash: JSON.stringify(proposal.params ?? {}),
+        transactionHash: submitted.transactionHash,
+        chainId: 56,
+        gasUsed: null,
+        status: 'EXECUTING',
+        errorCode: null,
+        createdAt: new Date().toISOString(),
+        confirmedAt: null,
+      });
+      await persistAuditEvent({
+        type: 'AGENT_EXECUTION_PENDING',
+        correlationId,
+        agentId,
+        userId,
+        proposalId: proposal.proposalId,
+        sessionId: proposal.sessionId,
+        executionId,
+        severity: 'INFO',
+        detail: {
+          note: `Submitted via execution backend (id ${submitted.transactionHash}); awaiting on-chain confirmation before recording a position.`,
+        },
+      });
+      // Honest intermediate state: submitted, not yet confirmed. No position,
+      // no performance rollup — those are only written on real confirmation.
+      return { ok: true, stage: 'submitted', executionId };
+    }
+
+    const confirmedAt = new Date().toISOString();
     const execution: Execution = {
       executionId,
       proposalId: proposal.proposalId,

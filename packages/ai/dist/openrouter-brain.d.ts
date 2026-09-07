@@ -45,4 +45,12 @@ export declare class OpenRouterBrainAdapter implements BrainAdapter {
         capabilities: string[];
     }): Promise<StrategyDecision>;
 }
+/**
+ * Normalize a raw model-authored proposal:
+ *  - uppercases/whitespace-trims the action,
+ *  - maps BUY/SELL → SWAP with params.side (+ params.requestedAction for audit),
+ *  - maps STOP/HOLD/WAIT → null (the caller converts the decision to PASS),
+ *  - leaves unknown values untouched so schema validation still fails closed.
+ */
+export declare function normalizeProposalAction(proposal: Record<string, unknown>): Record<string, unknown> | null;
 //# sourceMappingURL=openrouter-brain.d.ts.map

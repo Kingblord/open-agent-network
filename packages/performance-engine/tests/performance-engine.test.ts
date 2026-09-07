@@ -75,7 +75,7 @@ describe('PerformanceCalculator', () => {
       expect(result.avgExecutionMs).toBeGreaterThanOrEqual(5000);
       expect(result.lastExecutedAt).toBe('2025-01-01T00:00:00Z');
       expect(result.byStatus['CONFIRMED']).toBe(1);
-      expect(result.capitalManagedUsd).toBe('100'); // 100 cents per confirmed on chainId
+      expect(result.capitalManagedUsd).toBe('0'); // capital comes from positions, not executions
     });
   });
 
@@ -98,14 +98,42 @@ describe('PerformanceCalculator', () => {
   });
 
   describe('aggregateExecutions — capital managed', () => {
-    it('adds 100 cents per confirmed execution with a chainId', () => {
+    it('never derives capital from executions (position-based only — no fabricated data)', () => {
       const execs = [
         makeExecution({ status: 'CONFIRMED', chainId: 56 }),
         makeExecution({ status: 'CONFIRMED', chainId: 97 }),
         makeExecution({ status: 'FAILED', chainId: 56 }),
       ];
       const result = calc.aggregateExecutions(execs);
-      expect(result.capitalManagedUsd).toBe('200'); // 2 confirmed × 100
+      expect(result.capitalManagedUsd).toBe('0'); // capital comes from positions, not executions
+    });
+  });
+
+  describe('aggregatePositions — managed capital', () => {
+    it('counts open wallet funding buckets as capital the agent controls', () => {
+      const pos = makePosition({
+        protocol: 'agent-wallet',
+        entryValueUsd: '5000',   // $50 funded
+        currentValueUsd: '5000', // still under agent control, untouched
+      });
+      const result = calc.aggregatePositions([pos]);
+      expect(result.hasPositions).toBe(true);
+      expect(result.managedCapitalUsd).toBe('5000');
+      // Funding buckets are capital trackers — never PnL-bearing.
+      expect(result.realizedPnlUsd).toBe('0.00');
+      expect(result.unrealizedPnlUsd).toBe('0.00');
+    });
+
+    it('sums wallet + deployed protocol positions without double-counting closed buckets', () => {
+      const funding = makePosition({
+        protocol: 'agent-wallet', entryValueUsd: '5000', currentValueUsd: '2000', // 30 moved out
+      });
+      const deployed = makePosition({
+        protocol: 'venus', entryValueUsd: '3000', currentValueUsd: '3150', // +150 gain
+      });
+      const result = calc.aggregatePositions([funding, deployed]);
+      expect(result.managedCapitalUsd).toBe('5150'); // 2000 wallet + 3150 venus
+      expect(result.unrealizedPnlUsd).toBe('150.00'); // only the protocol position counts
     });
   });
 

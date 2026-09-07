@@ -3,6 +3,7 @@ import { handleError, errorResponse } from '@/lib/core/errors';
 import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
+import { getAgentWalletCapitalUsd } from '@/lib/agent-wallet-capital';
 import { ErrorCode } from '@ban/shared';
 import { PerformanceCalculator, classifyExecutionMode } from '@ban/performance-engine';
 
@@ -17,9 +18,13 @@ const calculator = new PerformanceCalculator();
  *
  * Includes operational metrics (trades, success rate, fees, gas, timing),
  * position-based PnL (only when valid Position records exist — never fabricated),
- * capital managed (estimated), and LIVE/TESTNET/SIMULATED mode classification.
+ * capital managed, and LIVE/TESTNET/SIMULATED mode classification.
  *
- * No fabricated values: summary is computed only from real Execution/Position docs.
+ * Capital managed is LIVE: every task funding is capital the agent controls from
+ * the moment it lands in the agent wallet, so the primary reading is the wallet's
+ * on-chain balance (BNB + tracked stablecoins, USD). When the chain is
+ * unreachable, it falls back to the sum of open position values — never a
+ * fabricated number.
  */
 const sortByCreatedDesc = (docs: { createdAt?: unknown }[]) =>
   docs.slice().sort((a, b) => {
@@ -36,10 +41,16 @@ export async function GET(
     const { id } = await params;
     const db = getAdminDb();
 
-    // Fetch agent for chainId detection
+    // Fetch agent for chainId detection + live wallet-capital read.
     const agentDoc = await db.collection(collections.agents).doc(id).get();
     const agentData = agentDoc.data();
     const chainId = agentData?.chainId ? Number(agentData.chainId) : null;
+    const walletAddress = agentData?.walletAddress as string | undefined;
+
+    // Capital the agent actually controls right now, read from the chain.
+    // Runs concurrently with the document reads below; null on RPC failure
+    // (summarize() then falls back to position-based capital).
+    const walletCapitalPromise = getAgentWalletCapitalUsd(walletAddress);
 
     // Fetch executions (last 500). Single-field equality only — no composite
     // orderBy, so no manual Firestore index is required. Sort in-memory below.
@@ -65,13 +76,19 @@ export async function GET(
       positionId: d.id,
     })) as any[];
 
+    const walletCapitalUsd = await walletCapitalPromise;
+
     // Use the deterministic calculator to aggregate
-    const summary = calculator.summarize(executions, positions);
+    const summary = calculator.summarize(executions, positions, {
+      walletCapitalUsd,
+    });
     const modeResult = classifyExecutionMode(chainId, summary.confirmedCount);
 
     logger.info('performance_fetched', {
       agentId: id,
       totalTrades: summary.totalTrades,
+      capitalManagedUsd: summary.capitalManagedUsd,
+      capitalSource: walletCapitalUsd != null ? 'wallet-live' : 'positions',
       mode: modeResult.mode,
       correlationId: getCorrelationId(),
     });
