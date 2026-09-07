@@ -301,9 +301,19 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       } catch { /* persistence unavailable — use in-memory only */ }
     }
 
+    // Resolve the OWNER's wallet once (used both for the health strategy's
+    // authoritative snapshot and for observation enrichment below).
+    const ownerWalletAddress = opts.userWalletAddress ?? (await resolveOwnerWallet(agent.ownerId));
+
     // 3) Preflight: validate the strategy config before the first cycle.
     const strategy: import('@ban/agent-core').StrategyEngine =
-      opts.strategy ?? (await resolveStrategy(agent, opts.strategyConfig, { volatilityBps, persistedGridState, saveGridState }));
+      opts.strategy ??
+      (await resolveStrategy(agent, opts.strategyConfig, {
+        volatilityBps,
+        persistedGridState,
+        saveGridState,
+        userWalletAddress: ownerWalletAddress ?? undefined,
+      }));
     if (strategy.preflight) {
       const preflightResult = await strategy.preflight(agent);
       if (!preflightResult.ok) {
@@ -328,7 +338,6 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // agent wallet. Resolved from the owner's developer record (the address
     // they linked in Settings); a missing link degrades to strategy-only
     // observations, never a failure.
-    const ownerWalletAddress = opts.userWalletAddress ?? (await resolveOwnerWallet(agent.ownerId));
     const enrichedObs = ownerWalletAddress
       ? await enrichObservationsWithUserPositions(observations, ownerWalletAddress, agent)
       : observations;
@@ -839,7 +848,12 @@ function resolveGridConfigFromTask(taskConfig?: Record<string, unknown>): Record
 async function resolveStrategy(
   agent: Agent,
   taskConfig?: Record<string, unknown>,
-  extra?: { volatilityBps?: number; persistedGridState?: Record<string, unknown>; saveGridState?: (state: Record<string, unknown>) => void },
+  extra?: {
+    volatilityBps?: number;
+    persistedGridState?: Record<string, unknown>;
+    saveGridState?: (state: Record<string, unknown>) => void;
+    userWalletAddress?: string;
+  },
 ): Promise<import('@ban/agent-core').StrategyEngine> {
   const brain = resolveBrainProvider(); // deterministic or real AI per env
   const type = agent.type ?? '';
@@ -870,7 +884,13 @@ async function resolveStrategy(
     return new HealthStrategy({
       brain,
       data: new HealthDataProvider(dev.lending, dev.price),
-      config: taskConfig,
+      // The health monitor reads the OWNER's personal wallet (authoritative
+      // collateral/debt snapshot), falling back to the agent wallet when the
+      // owner has no linked address.
+      config: {
+        ...(taskConfig ?? {}),
+        userWalletAddress: extra?.userWalletAddress ?? undefined,
+      },
     });
   }
   if (type === 'lp') {

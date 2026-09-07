@@ -44,26 +44,53 @@ export function canonicalizeHealthProposal(proposal, observation) {
         return null;
     const rawAction = typeof proposal.params?.requestedAction === 'string'
         ? proposal.params.requestedAction.toUpperCase()
-        : proposal.action.toUpperCase();
-    const healthAction = VTOKEN_FUNCTIONS[rawAction] ? rawAction : 'ADD_COLLATERAL';
+        : '';
     const candidates = readObservationCandidates(observation);
+    // When the model sent a CANONICAL action (DEPOSIT) with no requestedAction,
+    // derive the intent from the corrected candidate list (deterministic) —
+    // never from the model's canonical enum, which cannot distinguish REPAY
+    // from ADD_COLLATERAL.
+    const fallbackAction = candidates.find((c) => {
+        const a = typeof c.action === 'string' ? c.action.toUpperCase() : '';
+        return a === 'REPAY' || a === 'ADD_COLLATERAL';
+    })?.action?.toUpperCase() ?? '';
+    const healthActionRaw = rawAction || fallbackAction || 'ADD_COLLATERAL';
+    const healthAction = VTOKEN_FUNCTIONS[healthActionRaw] ? healthActionRaw : 'ADD_COLLATERAL';
     const tradeActions = ['REPAY', 'ADD_COLLATERAL'];
-    const requestedSide = rawAction;
+    // Match the candidate by the DETERMINED health action so a REPAY when the
+    // wallet holds no REPAY candidate can never be invented (ADD_COLLATERAL
+    // would be the deterministic alternative).
+    const requestedSide = healthAction;
     const candidate = pickCandidate(candidates, {
         side: requestedSide,
         tradeActions,
     });
     if (!candidate)
         return null; // no corrective candidate — honest no-op
+    // The candidate's action is authoritative for the executor function — a
+    // REPAY decision with only an ADD_COLLATERAL candidate stays ADD_COLLATERAL
+    // (deterministic; the model's side hint was already consumed above).
+    const finalHealthAction = typeof candidate.action === 'string' && VTOKEN_FUNCTIONS[candidate.action.toUpperCase()]
+        ? candidate.action.toUpperCase()
+        : healthAction;
     const protocol = typeof candidate.protocol === 'string' && candidate.protocol
         ? candidate.protocol.toLowerCase()
         : 'venus';
     if (protocol !== 'venus')
         return null; // unverified protocol → fail closed
-    // Asset: prefer the proposal's asset symbol; fall back to USDT only when the
-    // model named none (the vToken choice must still be a verified mapping).
-    const assetRaw = typeof proposal.asset === 'string' ? proposal.asset.trim().toUpperCase() : '';
-    const asset = HEALTH_VTOKENS[assetRaw] ? assetRaw : '';
+    // Asset: authoritative from the DETERMINISTIC candidate (the debt token for
+    // REPAY / the collateral market for ADD_COLLATERAL) — never from the model,
+    // which invents symbols like "collateral" that would silently fail the cycle
+    // or, worse, could send funds to the wrong vToken.
+    const candidateDenom = typeof candidate.denomination === 'string' ? candidate.denomination.trim().toUpperCase() : '';
+    const modelAsset = typeof proposal.asset === 'string' ? proposal.asset.trim().toUpperCase() : '';
+    // Accept the model's asset ONLY when it names a verified underlying that
+    // exists in the debt breakdown (or adds collateral on a verified market);
+    // otherwise use the candidate's deterministic denomination.
+    const asset = (HEALTH_VTOKENS[modelAsset] &&
+        (finalHealthAction === 'ADD_COLLATERAL' || !candidateDenom || modelAsset === candidateDenom))
+        ? modelAsset
+        : (HEALTH_VTOKENS[candidateDenom] ? candidateDenom : '');
     if (!asset)
         return null; // cannot deterministically pick a vToken — fail closed
     const vToken = HEALTH_VTOKENS[asset];
@@ -83,7 +110,7 @@ export function canonicalizeHealthProposal(proposal, observation) {
         action: 'DEPOSIT',
         protocol,
         contract: vToken,
-        function: VTOKEN_FUNCTIONS[healthAction],
+        function: VTOKEN_FUNCTIONS[finalHealthAction],
         token: UNDERLYING[asset],
         amount,
         estimatedValue: amount,
@@ -91,7 +118,7 @@ export function canonicalizeHealthProposal(proposal, observation) {
         params: {
             ...(proposal.params ?? {}),
             execKind: 'VENUS_LENDING',
-            healthAction,
+            healthAction: finalHealthAction,
             vToken,
             underlying: UNDERLYING[asset],
             requestedAction: rawAction,

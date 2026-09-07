@@ -37,6 +37,9 @@ export class ObservationBuilder {
           targetState: c.targetState,
           fromState: c.fromState,
           amountCentsUsd: c.amountCentsUsd,
+          // NEW: the underline the corrective action moves — the model should
+          // echo this instead of inventing an asset symbol.
+          denomination: c.denomination,
           rank: c.rank,
         })),
         basis: 'Integer cents USD / integer bps; HF = collateral*threshold/debt.',

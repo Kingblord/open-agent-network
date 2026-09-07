@@ -20,6 +20,24 @@ import { HEALTH_THRESHOLDS } from './health-risk-model.js';
 const REPAY_SAFE_TARGET_CENTS = 250; // HF 2.50 primary REPAY target
 const COLLATERAL_MIN_TARGET_CENTS = HEALTH_THRESHOLDS.WARNING_MIN; // HF 1.50
 const BPS = 10000n;
+/** The underlying with the LARGEST borrow balance — the deterministic REPAY target. */
+function dominantDebtToken(debtByToken) {
+    if (!debtByToken)
+        return undefined;
+    let best;
+    let bestWei = 0n;
+    for (const [symbol, wei] of Object.entries(debtByToken)) {
+        try {
+            const w = BigInt(wei || '0');
+            if (w > bestWei) {
+                bestWei = w;
+                best = symbol;
+            }
+        }
+        catch { /* skip malformed */ }
+    }
+    return best;
+}
 export class HealthCandidateSelector {
     calculator;
     constructor(calculator = new HealthFactorCalculator()) {
@@ -39,6 +57,9 @@ export class HealthCandidateSelector {
                     address: snapshot.address,
                     targetState: 'HEALTHY',
                     amountCentsUsd: repay,
+                    // Repay the LARGEST debt market — the deterministic, safest vToken
+                    // to pay down when the lender carries multiple borrow balances.
+                    denomination: dominantDebtToken(snapshot.debtByToken),
                     fromState,
                     rank: 1,
                 });

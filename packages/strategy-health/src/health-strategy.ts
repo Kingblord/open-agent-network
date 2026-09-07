@@ -69,7 +69,15 @@ export class HealthStrategy implements StrategyEngine {
     const allowedTokens = Array.isArray(this.config?.allowedTokens)
       ? (this.config!.allowedTokens as string[])
       : [];
-    const snapshot = await this.data.fetch(agent.walletAddress ?? '', agent.protocols[0] ?? '', allowedContracts, allowedTokens);
+    // REAL-FUNDS visibility: the health monitor watches the OWNER's personal
+    // wallet (the one holding their vUSDT collateral / Venus debt), never the
+    // agent's own (usually empty) operational wallet. run-cycle threads the
+    // owner's linked address in via config.userWalletAddress.
+    const watchAddress =
+      (typeof this.config?.userWalletAddress === 'string' && this.config!.userWalletAddress) ||
+      agent.walletAddress ||
+      '';
+    const snapshot = await this.data.fetch(watchAddress, agent.protocols[0] ?? '', allowedContracts, allowedTokens);
     const candidates = this.selector.select(snapshot);
     return [this.observationBuilder.build(agent, snapshot, candidates)];
   }

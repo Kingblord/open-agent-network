@@ -39,6 +39,8 @@ export interface HealthSnapshot {
     currentLtvBps: number;
     liquidationThresholdAppliedBps: number;
     timestamp: string;
+    /** Per-underlying debt (wei) so a REPAY can target the correct vToken. */
+    debtByToken?: Record<string, string>;
 }
 /** A deterministic corrective-action candidate surfaced to the AI (bounded set). */
 export interface HealthCandidate {
@@ -49,6 +51,8 @@ export interface HealthCandidate {
     targetState: HealthRiskState;
     /** Integer cents needed to reach the target (REPAY) or added as collateral (ADD_COLLATERAL). */
     amountCentsUsd: string;
+    /** The underlying token this corrective action must move (debt token for REPAY). */
+    denomination?: string;
     /** Which risk state this candidate is meant to escape. */
     fromState: HealthRiskState;
     rank: number;

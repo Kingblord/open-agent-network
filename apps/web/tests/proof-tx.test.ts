@@ -28,7 +28,10 @@ import { bsc } from 'viem/chains';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const RPC_URL = process.env.BAN_RPC_URL || 'https://bsc-dataseed.binance.org/';
-const DEV_KEY = process.env.DEV_PRIVATE_KEY as `0x${string}` | undefined;
+// Accept 0x-prefixed or bare 64-hex keys (the .env.local sample uses bare hex).
+const DEV_KEY = (process.env.DEV_PRIVATE_KEY
+  ? (`0x${process.env.DEV_PRIVATE_KEY.replace(/^0x/, '')}` as `0x${string}`)
+  : undefined);
 const LIVE = process.env.BAN_LIVE_DATA === '1' && DEV_KEY;
 
 // Skip entire suite when not in live mode

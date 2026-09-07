@@ -230,8 +230,12 @@ export class LiveDataProvider {
                         throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, 'Live Venus lending requires registered vToken deployments (deployment registry roles venus.vToken.* / vBNB etc.); none configured', { retryable: true });
                     }
                     // Real per-vToken reads: supply + borrow in underlying units (1e18).
+                    // Kept per-symbol so a REPAY candidate can target the RIGHT vToken —
+                    // Venus borrow balances are per-underlying; repaying the wrong
+                    // vToken would send funds to the wrong market (real-funds hazard).
                     let collateralUnits = 0n;
                     let borrowedUnits = 0n;
+                    const borrowedByToken = {};
                     for (const vToken of vTokens) {
                         const addr = vToken.address;
                         try {
@@ -243,6 +247,8 @@ export class LiveDataProvider {
                             // supply in underlying = vtBalance * exchangeRate / 1e18.
                             collateralUnits += (BigInt(vtBalance) * BigInt(exchangeRate)) / ONE_E18;
                             borrowedUnits += BigInt(borrow);
+                            if (BigInt(borrow) > 0n)
+                                borrowedByToken[vToken.symbol] = borrow.toString();
                         }
                         catch (err) {
                             logger.warn('venus_vtoken_read_skipped', {
@@ -257,6 +263,9 @@ export class LiveDataProvider {
                     return {
                         collateral: collateralUnits.toString(),
                         borrowed: borrowedUnits.toString(), // same underlying units — ratio math valid
+                        // NEW: per-underlying debt so the health strategy can deterministically
+                        // pick WHICH vToken to repay (repoBorrow accepts that underlying).
+                        borrowedByToken,
                         ltv,
                         liquidationThreshold,
                         healthFactor: Number.isFinite(healthFactor) ? healthFactor : 1.8,

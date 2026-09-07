@@ -21,6 +21,8 @@ export interface LendingAdapter {
   getLendingPosition(address: string, protocol: string): Promise<{
     collateral: string;
     borrowed: string;
+    /** Per-underlying debt (wei), symbol-keyed — lets a REPAY candidate target the correct vToken. */
+    borrowedByToken?: Record<string, string>;
     ltv: number;
     liquidationThreshold: number;
     healthFactor: number;

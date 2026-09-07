@@ -53,6 +53,7 @@ export class HealthDataProvider {
       protocol,
       collateralCentsUsd: collateralCents.toString(),
       debtCentsUsd: debtCents.toString(),
+      debtByToken: raw.borrowedByToken,
       ltvBps: Math.round(raw.ltv * 10000),
       liquidationThresholdBps,
       healthFactorCents,

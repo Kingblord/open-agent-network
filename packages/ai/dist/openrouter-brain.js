@@ -150,12 +150,59 @@ export class OpenRouterBrainAdapter {
     }
 }
 /**
+ * Canonical risk levels the schema accepts. LLMs routinely emit edge-case
+ * spellings ("moderate", "medium", "low risk") which would otherwise fail
+ * schema validation and hard-kill every cycle with ERR_POLICY_DENIED.
+ */
+const RISK_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
+const RISK_ALIASES = {
+    LOW: 'LOW',
+    L: 'LOW',
+    LOWRISK: 'LOW',
+    LOW_RISK: 'LOW',
+    'LOW-RISK': 'LOW',
+    LOWER: 'LOW',
+    CONSERVATIVE: 'LOW',
+    SAFE: 'LOW',
+    MEDIUM: 'MEDIUM',
+    MODERATE: 'MEDIUM',
+    M: 'MEDIUM',
+    MEDIUMRISK: 'MEDIUM',
+    MEDIUM_RISK: 'MEDIUM',
+    'MEDIUM-RISK': 'MEDIUM',
+    BALANCED: 'MEDIUM',
+    NORMAL: 'MEDIUM',
+    HIGH: 'HIGH',
+    H: 'HIGH',
+    HIGHRISK: 'HIGH',
+    HIGH_RISK: 'HIGH',
+    'HIGH-RISK': 'HIGH',
+    AGGRESSIVE: 'HIGH',
+    CRITICAL: 'HIGH',
+};
+/** Normalize a model-authored riskLevel to the exact schema enum (or strip it so the strategy falls back to its own rank). */
+export function normalizeRiskLevel(value) {
+    if (typeof value !== 'string')
+        return value;
+    const key = value.trim().toUpperCase().replace(/\s+/g, '');
+    const alias = RISK_ALIASES[key];
+    if (alias)
+        return alias;
+    if (RISK_LEVELS.has(value.trim().toUpperCase()))
+        return value.trim().toUpperCase();
+    // Unrecognized → remove so strategies fall back to a deterministic rank
+    // derived from their candidate (never invent a value).
+    return undefined;
+}
+/**
  * Normalize a raw model-authored proposal using the SHARED strategy-vocabulary
  * map (@ban/agent-core): BUY/SELL → SWAP (+ params.side), REPAY/ADD_COLLATERAL
  * → DEPOSIT (+ params.healthAction), REMOVE/CREATE/REPOSITION →
  * BURN/MINT/REBALANCE, and STOP/HOLD/WAIT/NONE → null (caller converts the
- * decision to an honest PASS). Unknown values remain untouched so strict
- * schema validation still fails closed.
+ * decision to an honest PASS). Also normalizes sloppy riskLevel spellings —
+ * the #1 cause of model-valid decisions hard-failing as ERR_POLICY_DENIED.
+ * Unknown values remain untouched so strict schema validation still fails
+ * closed.
  */
 export function normalizeProposalAction(proposal) {
     // A proposal without a string action is malformed, not a directive — leave
@@ -177,7 +224,37 @@ export function normalizeProposalAction(proposal) {
     if ((rawAction === 'BUY' || rawAction === 'SELL') && params.side == null) {
         params.side = rawAction;
     }
-    return { ...proposal, action: canonical, params };
+    // Sloppy riskLevel wording → schema-exact enum (or undefined → strategy
+    // fallback). Fixes ERR_POLICY_DENIED on every model spelling variant.
+    const riskLevel = normalizeRiskLevel(proposal.riskLevel);
+    const out = { ...proposal, action: canonical, params };
+    if (riskLevel === undefined) {
+        delete out.riskLevel; // let the strategy derive its deterministic rank
+    }
+    else {
+        out.riskLevel = riskLevel;
+    }
+    // LLMs routinely return amount/estimatedValue as BARE NUMBERS (2000,
+    // 739.62). The schema requires DECIMAL STRINGS (wei). Coerce them
+    // losslessly — this is the #2 cause of ERR_POLICY_DENIED after riskLevel.
+    for (const k of ['amount', 'estimatedValue']) {
+        const v = out[k];
+        if (v == null)
+            continue;
+        if (typeof v === 'number') {
+            if (!Number.isFinite(v) || v < 0)
+                return proposal; // keep → fail closed
+            out[k] = v.toFixed(0); // integer wei string; flooring keeps it exact
+        }
+        else if (typeof v === 'string' && v.trim() && !Number.isNaN(Number(v))) {
+            // Trim whitespace so " 1000 " validates; keep big-int wei strings exact.
+            out[k] = /^[0-9]+$/.test(v.trim()) ? v.trim() : v.trim();
+        }
+    }
+    // Model-invented protocol/contract/function/token never pass through: the
+    // strategy canonicalization below republishes verified addresses, but keep
+    // the schema contract honest at the boundary too.
+    return out;
 }
 function extractContent(data) {
     if (data && typeof data === 'object') {

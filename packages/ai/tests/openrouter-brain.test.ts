@@ -235,4 +235,62 @@ describe('M7 OpenRouterBrainAdapter (live provider — network/API-gated)', () =
     expect(err).not.toBeNull();
     expect(err.code).toBe('ERR_POLICY_DENIED');
   });
+
+  it('NORMALIZES sloppy riskLevel spellings (the ERR_POLICY_DENIED cause) to LOW|MEDIUM|HIGH', async () => {
+    const proposal = {
+      proposalId: 'prop_risk',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'swap',
+      action: 'SWAP',
+      capabilityId: 'PROPOSE_SWAP',
+      token: 'BNB',
+      amount: '1000000000000000000',
+      estimatedValue: '1000000000000000000',
+      asset: 'BNB',
+      idempotencyKey: 'ik_risk',
+      riskLevel: 'moderate', // model edge-case spelling → must become MEDIUM
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'x', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const decision = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities });
+    expect(decision.status).toBe('ACT');
+    expect(decision.proposal?.riskLevel).toBe('MEDIUM');
+    expect(ActionProposalSchema.safeParse(decision.proposal).success).toBe(true);
+  });
+
+  it('strips an unparseable riskLevel so the strategy derives its deterministic rank (no invented value)', async () => {
+    const proposal = {
+      proposalId: 'prop_risk2',
+      agentId: 'agent_1',
+      userId: 'user_1',
+      sessionId: 'sess_1',
+      protocol: 'pancakeswap',
+      contract: '0x0000000000000000000000000000000000000001',
+      function: 'swap',
+      action: 'SWAP',
+      capabilityId: 'PROPOSE_SWAP',
+      token: 'BNB',
+      amount: '1000000000000000000',
+      estimatedValue: '1000000000000000000',
+      asset: 'BNB',
+      idempotencyKey: 'ik_risk2',
+      riskLevel: 'quite_risky_but_profitably', // nonsense → stripped
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const fetchMock = makeFetch({
+      choices: [{ message: { content: JSON.stringify({ status: 'ACT', reasoning: 'x', proposal }) } }],
+    });
+    const brain = new OpenRouterBrainAdapter({ apiKey: 'sk-test', fetch: fetchMock });
+    const decision = await brain.decide({ agentId: 'agent_1', observations: [observation], capabilities });
+    expect(decision.status).toBe('ACT');
+    expect(decision.proposal?.riskLevel).toBeUndefined();
+    expect(ActionProposalSchema.safeParse(decision.proposal).success).toBe(true);
+  });
 });

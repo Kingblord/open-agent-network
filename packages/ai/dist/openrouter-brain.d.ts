@@ -45,13 +45,17 @@ export declare class OpenRouterBrainAdapter implements BrainAdapter {
         capabilities: string[];
     }): Promise<StrategyDecision>;
 }
+/** Normalize a model-authored riskLevel to the exact schema enum (or strip it so the strategy falls back to its own rank). */
+export declare function normalizeRiskLevel(value: unknown): unknown;
 /**
  * Normalize a raw model-authored proposal using the SHARED strategy-vocabulary
  * map (@ban/agent-core): BUY/SELL → SWAP (+ params.side), REPAY/ADD_COLLATERAL
  * → DEPOSIT (+ params.healthAction), REMOVE/CREATE/REPOSITION →
  * BURN/MINT/REBALANCE, and STOP/HOLD/WAIT/NONE → null (caller converts the
- * decision to an honest PASS). Unknown values remain untouched so strict
- * schema validation still fails closed.
+ * decision to an honest PASS). Also normalizes sloppy riskLevel spellings —
+ * the #1 cause of model-valid decisions hard-failing as ERR_POLICY_DENIED.
+ * Unknown values remain untouched so strict schema validation still fails
+ * closed.
  */
 export declare function normalizeProposalAction(proposal: Record<string, unknown>): Record<string, unknown> | null;
 //# sourceMappingURL=openrouter-brain.d.ts.map
