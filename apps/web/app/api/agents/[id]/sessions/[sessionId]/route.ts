@@ -6,7 +6,7 @@ import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { sessionManagerFactory } from '@/lib/session-manager-factory';
-import { resolveAllowedContracts, resolveAllowedTokens } from '@/lib/session-resolution';
+import { resolveAllowedContracts, resolveAllowedTokens, canonicalizeAllowedFunctions } from '@/lib/session-resolution';
 import { BANError, ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.agents.sessions.session');
@@ -203,9 +203,11 @@ export async function PATCH(
       }
     }
     if (b.allowedFunctions !== undefined) {
-      allowedFunctions = Array.isArray(b.allowedFunctions)
-        ? (b.allowedFunctions as string[]).map((s) => String(s).trim()).filter(Boolean)
-        : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : []);
+      allowedFunctions = canonicalizeAllowedFunctions(
+        Array.isArray(b.allowedFunctions)
+          ? (b.allowedFunctions as string[]).map((s) => String(s).trim()).filter(Boolean)
+          : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : [])
+      );
     }
 
     const spendCap = typeof b.spendCap === 'string' && b.spendCap ? b.spendCap : undefined;

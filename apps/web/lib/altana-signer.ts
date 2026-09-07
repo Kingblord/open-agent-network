@@ -4,6 +4,7 @@ import { BANError, ErrorCode, createLogger } from '@ban/shared';
 import type { SignedTransaction, SigningBackend, SignRequest } from '@ban/signers';
 import type { Address } from 'viem';
 import { buildPancakeV3SwapCalls, type ExecutableCall } from './execution/pancake-v3';
+import { buildVenusCalls, buildAaveCalls } from './execution/lending';
 import {
   getAltanaStoreDir,
   hasAgentKeystore,
@@ -45,6 +46,21 @@ export interface ProvisionedWallet {
 }
 
 const logger = createLogger('altana-signer');
+
+/**
+ * Map a lending proposal's strategy vocabulary to the builder intent.
+ * Health proposals carry params.healthAction (mint/repayBorrow live in the
+ * canonical proposal's `function`); yield proposals carry params.yieldAction
+ * (DEPOSIT/WITHDRAW). Withdrawals redeem; deposits and repays fund.
+ */
+function lendingIntentOf(proposal: ActionProposal): 'DEPOSIT' | 'WITHDRAW' | 'REPAY' {
+  const params = (proposal.params ?? {}) as Record<string, unknown>;
+  const yieldAction = typeof params.yieldAction === 'string' ? params.yieldAction.toUpperCase() : '';
+  if (yieldAction === 'WITHDRAW') return 'WITHDRAW';
+  const healthAction = typeof params.healthAction === 'string' ? params.healthAction.toUpperCase() : '';
+  if (healthAction === 'REPAY' || proposal.function === 'repayBorrow') return 'REPAY';
+  return 'DEPOSIT';
+}
 
 export function getAltanaSignerConfig(): AltanaSignerConfig {
   return {
@@ -211,6 +227,24 @@ export async function createAltanaSigningBackend(
         wallet.address as Address,
         to as Address,
       );
+    } else if (execKind === 'VENUS_LENDING') {
+      const intent = lendingIntentOf(proposal);
+      calls = buildVenusCalls({
+        target: to as Address,
+        underlying: (proposal.params?.underlying ?? proposal.token) as Address,
+        amount: BigInt(proposal.amount),
+        wallet: wallet.address as Address,
+        intent,
+      });
+    } else if (execKind === 'AAVE_V3') {
+      const intent = lendingIntentOf(proposal);
+      calls = buildAaveCalls({
+        target: to as Address,
+        underlying: proposal.token as Address,
+        amount: BigInt(proposal.amount),
+        wallet: wallet.address as Address,
+        intent,
+      });
     } else if (trimmedCalldata) {
       calls = [
         {

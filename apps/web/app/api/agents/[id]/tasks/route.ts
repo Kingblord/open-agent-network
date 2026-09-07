@@ -45,7 +45,7 @@ import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { sessionManagerFactory } from '@/lib/session-manager-factory';
 import { getAdminDb, collections } from '@/lib/firebase-admin';
-import { resolveAllowedContracts, resolveAllowedTokens } from '@/lib/session-resolution';
+import { resolveAllowedContracts, resolveAllowedTokens, canonicalizeAllowedFunctions } from '@/lib/session-resolution';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
 import { BANError, ErrorCode } from '@ban/shared';
 
@@ -233,9 +233,11 @@ export async function POST(
       });
     }
 
-    const allowedFunctions = Array.isArray(b.allowedFunctions)
-      ? (b.allowedFunctions as string[]).map((s) => String(s).trim()).filter(Boolean)
-      : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : []);
+    const allowedFunctions = canonicalizeAllowedFunctions(
+      Array.isArray(b.allowedFunctions)
+        ? (b.allowedFunctions as string[]).map((s) => String(s).trim()).filter(Boolean)
+        : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : [])
+    );
     const riskLevel = typeof b.riskLevel === 'string' ? b.riskLevel : 'LOW';
     const expiresAtMs = typeof b.expiresAtMs === 'number' && b.expiresAtMs > Date.now() ? b.expiresAtMs : Date.now() + 30 * 24 * 60 * 60 * 1000;
     const rawFunding = b.funding && typeof b.funding === 'object' ? b.funding as Record<string, unknown> : null;

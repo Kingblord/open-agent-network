@@ -25,6 +25,7 @@ import { PerformanceCalculator, classifyExecutionMode } from '@ban/performance-e
 import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-signer';
 import { findActivePermissionForJob } from '@/lib/permissions/permission-repo';
 import { PermissionResolver } from '@ban/eip7702';
+import { getBnbUsdPrice } from '@/lib/bnb-price';
 
 /**
  * BAN Agent Runtime — closed-loop orchestration (Batch C).
@@ -100,9 +101,48 @@ async function getSessionForAgent(agentId: string): Promise<Session | null> {
   return found;
 }
 
+/**
+ * Stablecoin ERC-20 addresses (BSC mainnet, 18 decimals) whose wei value is
+ * USD-denominated. Proposals SPENDING these tokens carry estimatedValue in
+ * token wei (≈ USD × 1e18), which must be converted to a BNB-wei equivalent
+ * before comparison against BNB-wei-denominated session caps.
+ */
+const STABLECOIN_ADDRESSES = new Set([
+  '0x55d398326f99059fF775485246999027B3197955', // USDT
+  '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+]);
+
+/**
+ * Convert a stablecoin estimatedValue to its BNB-wei equivalent so the
+ * policy caps (denominated in BNB wei) and the spend ledger stay coherent.
+ * Fixed-point: bnbWei = tokenWei × 1e6 / (priceUsd × 1e6). Fails closed
+ * (throws) when the price feed is unavailable — never guesses a rate.
+ */
+async function normalizeProposalValueForCaps(
+  proposal: ActionProposal,
+  correlationId: string,
+): Promise<ActionProposal> {
+  const token = (proposal.token ?? '').toLowerCase();
+  if (!STABLECOIN_ADDRESSES.has(token)) return proposal; // BNB/WBNB-wei already
+
+  const price = await getBnbUsdPrice();
+  if (price == null || price <= 0) {
+    throw new BANError(
+      ErrorCode.POLICY_DENIED,
+      'BNB/USD price unavailable — cannot value a stablecoin spend against the BNB-denominated session caps (fail-closed). No transaction was attempted.',
+      { correlationId },
+    );
+  }
+
+  const priceScaled = BigInt(Math.round(price * 1e6)); // USD × 1e6
+  const tokenWei = BigInt(proposal.estimatedValue);
+  const bnbWeiEquivalent = (tokenWei * 1000000n) / priceScaled;
+
+  return { ...proposal, estimatedValue: bnbWeiEquivalent.toString() };
+}
+
 /** List CONFIRMED executions for a given agent (performance rollup input). */
-async function listConfirmedExecutions(agentId: string): Promise<Execution[]> {
-  const db = getAdminDb();
+async function listConfirmedExecutions(agentId: string): Promise<Execution[]> {  const db = getAdminDb();
   // Single-field equality (no composite index / orderBy).
   const snap = await db
     .collection(collections.executions)
@@ -327,8 +367,21 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       detail: { action: proposal.action, contract: proposal.contract, function: proposal.function },
     });
 
-    // 4) Policy gate (validate + reserve) — M5. Fails closed.
-    const policy = await policyEngine.validateAction(proposal, {
+    // 3b) REAL-FUNDS CAP COHERENCE: session spend caps are denominated in BNB
+    // wei (the task form converts USD inputs at the BNB price), but stablecoin
+    // proposals carry estimatedValue in token wei (USDT wei ≈ dollars × 1e18 —
+    // ~600× a BNB-wei equivalent at $600). Comparing raw token wei against a
+    // BNB-wei cap denies virtually every legitimate stablecoin action. Convert
+    // stablecoin estimatedValue to its BNB-wei equivalent (price from the same
+    // cached CoinGecko feed the task form used). Keyed on the SPENT token
+    // address (proposal.token = tokenIn) — a WBNB-in sell is already BNB-wei
+    // and is never converted. Fail closed when the price is unavailable.
+    const policyProposal = await normalizeProposalValueForCaps(proposal, correlationId);
+
+    // 4) Policy gate (validate + reserve) — M5. Fails closed. The normalized
+    // proposal carries a BNB-wei-equivalent estimatedValue so caps/ledger stay
+    // coherent; execution uses the ORIGINAL proposal (amounts untouched).
+    const policy = await policyEngine.validateAction(policyProposal, {
       agentId: agent.id,
       userId,
       sessionId: proposal.sessionId,

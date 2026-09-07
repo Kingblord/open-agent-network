@@ -27,6 +27,7 @@ import { BANError, ErrorCode } from '@ban/shared';
 export const PROTOCOL_ROLES: Record<string, string> = {
   pancakeswap: 'v3SwapRouter',
   venus: 'comptroller',
+  aave: 'v3Pool',
 };
 
 /**
@@ -81,9 +82,49 @@ export function resolveAllowedContracts(
         { correlationId: getCorrelationId() }
       );
     }
-    contracts.add(banDeployments.requireAddress(id, role));
+    // REAL-FUNDS EXECUTION: the strategies execute against MORE than the
+    // protocol's primary role — Venus supply/repay target the vTokens, not the
+    // comptroller. Allowlist EVERY verified contract address of the deployment
+    // (each was on-chain verified when the seed was promoted). Without this,
+    // correct proposals are denied by checkContractAllowed.
+    for (const address of Object.values(deployment.contracts)) {
+      const trimmed = String(address ?? '').trim();
+      if (trimmed) contracts.add(trimmed);
+    }
   }
   return [...contracts];
+}
+
+/**
+ * User-typed function words → the canonical contract function names strategies
+ * actually execute, ADDITIVE (originals are kept). Without this, a session
+ * created from the UI's "e.g. swap, deposit, withdraw" hint would DENY every
+ * real proposal (router/lending functions are exactInputSingle/mint/
+ * repayBorrow/…). Unknown words pass through untouched (fail-closed policy).
+ */
+const FUNCTION_ALIASES: Record<string, string[]> = {
+  swap: ['exactInputSingle', 'exactInput'],
+  buy: ['exactInputSingle', 'exactInput'],
+  sell: ['exactInputSingle', 'exactInput'],
+  deposit: ['mint', 'supply'],
+  invest: ['mint', 'supply'],
+  lend: ['mint', 'supply'],
+  repay: ['repayBorrow'],
+  withdraw: ['redeemUnderlying', 'withdraw', 'redeem'],
+  unstake: ['redeemUnderlying', 'withdraw', 'redeem'],
+  harvest: ['redeemUnderlying', 'withdraw', 'redeem'],
+  liquidity: ['mint', 'decreaseLiquidity'],
+};
+
+export function canonicalizeAllowedFunctions(functions: string[]): string[] {
+  const out = new Set<string>();
+  for (const raw of functions ?? []) {
+    const key = String(raw).trim().toLowerCase();
+    if (!key) continue;
+    out.add(String(raw).trim());
+    for (const alias of FUNCTION_ALIASES[key] ?? []) out.add(alias);
+  }
+  return [...out];
 }
 
 /** Resolve client-supplied token symbols/ids/addresses (+ legacy raw list) → canonical addresses. */
