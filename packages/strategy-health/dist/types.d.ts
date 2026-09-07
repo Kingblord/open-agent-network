@@ -41,6 +41,8 @@ export interface HealthSnapshot {
     timestamp: string;
     /** Per-underlying debt (wei) so a REPAY can target the correct vToken. */
     debtByToken?: Record<string, string>;
+    /** USD price per underlying token (integer cents), keyed by symbol — lets a REPAY candidate compute the exact debt-token WEI amount. */
+    positionPricesCentsUsd?: Record<string, string>;
 }
 /** A deterministic corrective-action candidate surfaced to the AI (bounded set). */
 export interface HealthCandidate {
@@ -51,6 +53,8 @@ export interface HealthCandidate {
     targetState: HealthRiskState;
     /** Integer cents needed to reach the target (REPAY) or added as collateral (ADD_COLLATERAL). */
     amountCentsUsd: string;
+    /** EXACT debt-token wei for the REPAY call — deterministic, price-adjusted (repayBorrow needs the underlying amount, not cents). */
+    amountWei?: string;
     /** The underlying token this corrective action must move (debt token for REPAY). */
     denomination?: string;
     /** Which risk state this candidate is meant to escape. */

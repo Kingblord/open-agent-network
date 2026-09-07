@@ -96,13 +96,15 @@ export function canonicalizeHealthProposal(proposal, observation) {
     const vToken = HEALTH_VTOKENS[asset];
     if (!isHexAddress(vToken))
         return null;
-    // Deterministic amount: candidate's USD cents → 18-decimal wei (cents × 1e16).
-    // Falls back to the model's amount only when it is already a clean integer
-    // wei string (never a float the policy BigInt would crash on).
+    // Deterministic amount: the candidate's EXACT debt-token wei (price-adjusted
+    // at the boundary) is authoritative — repayBorrow takes the underlying
+    // amount, never a cents estimate. Falls back to cents × 1e16 (the $1
+    // stablecoin peg) only when no price was available, and to the model's
+    // amount only when it is already a clean integer wei string.
+    const exactWei = toWeiIntegerString(typeof candidate.amountWei === 'string' ? candidate.amountWei : undefined);
     const cents = toWeiIntegerString(candidate.amountCentsUsd);
-    const amount = cents != null
-        ? (BigInt(cents) * 10n ** 16n).toString()
-        : toWeiIntegerString(proposal.amount);
+    const amount = exactWei ??
+        (cents != null ? (BigInt(cents) * 10n ** 16n).toString() : toWeiIntegerString(proposal.amount));
     if (amount == null)
         return null; // no sane amount — refuse to spend blindly
     const enriched = {

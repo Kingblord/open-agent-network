@@ -40,6 +40,20 @@ function dominantDebtToken(debtByToken: Record<string, string> | undefined): str
   return best;
 }
 
+/** USD price (integer cents) of a debt token for the amountWei conversion. */
+function debtTokenPriceCents(
+  prices: Record<string, string> | undefined,
+  token: string | undefined,
+): bigint {
+  if (!prices || !token) return 0n;
+  try {
+    const c = BigInt(prices[token] ?? '0');
+    return c > 0n ? c : 0n;
+  } catch {
+    return 0n;
+  }
+}
+
 export class HealthCandidateSelector {
   private readonly calculator: HealthFactorCalculator;
 
@@ -61,15 +75,22 @@ export class HealthCandidateSelector {
         REPAY_SAFE_TARGET_CENTS,
       );
       if (BigInt(repay || '0') > 0n) {
+        const denomination = dominantDebtToken(snapshot.debtByToken);
+        const priceCents = debtTokenPriceCents(snapshot.positionPricesCentsUsd, denomination);
         candidates.push({
           action: 'REPAY',
           protocol: snapshot.protocol,
           address: snapshot.address,
           targetState: 'HEALTHY',
           amountCentsUsd: repay,
+          // EXACT debt-token wei: wei = cents×1e18 / tokenPriceCents.
+          // A $2.96 repayment of USDC debt is 2.96e18 wei; of a $600 BNB debt
+          // it is 4.93e15 wei. Deterministic, price-adjusted at the boundary.
+          amountWei:
+            priceCents > 0n ? (BigInt(repay) * 10n ** 18n / priceCents).toString() : undefined,
           // Repay the LARGEST debt market — the deterministic, safest vToken
           // to pay down when the lender carries multiple borrow balances.
-          denomination: dominantDebtToken(snapshot.debtByToken),
+          denomination,
           fromState,
           rank: 1,
         });

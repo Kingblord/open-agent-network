@@ -91,42 +91,132 @@ const COINGECKO_BY_ADDRESS = {
     '0x55d398326f99059ff775485246999027b3197955': 'tether', // BSC-USD
     '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d': 'usd-coin', // BSC-USDC
 };
-/** A real, cached CoinGecko price adapter (BNB/WBNB/USDT/USDC), fail-closed. */
+/** A real, cached price adapter (BNB/WBNB/USDT/USDC), fail-closed with a
+ * resilient source chain: CoinGecko → Binance public ticker → PancakeSwap V3
+ * USDT/WBNB on-chain pool. A rate-limited CoinGecko (429) must never kill a
+ * strategy observation — it falls through to the next source, then serves the
+ * last REAL cached price, then fails closed (null → callers treat as 0). */
 class CoinGeckoBnbPrice {
     cache = new Map();
     ttlMs = 60_000;
+    publicClient;
+    constructor(publicClient) {
+        this.publicClient = publicClient;
+    }
+    async fetchJson(url, ms) {
+        try {
+            const res = await fetch(url, {
+                headers: { accept: 'application/json' },
+                signal: AbortSignal.timeout(ms),
+            });
+            if (!res.ok)
+                return null;
+            return await res.json();
+        }
+        catch {
+            return null;
+        }
+    }
+    /** Source 1: CoinGecko batched. Returns { coinId → usd } or null. */
+    async fromCoinGecko() {
+        const ids = [...new Set(Object.values(COINGECKO_IDS))].join(',');
+        const json = await this.fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, 5000);
+        return json && typeof json === 'object' ? json : null;
+    }
+    /** Source 2: Binance public ticker (no key). */
+    async fromBinance() {
+        const json = await this.fetchJson('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT', 4000);
+        const price = Number(json?.price);
+        return Number.isFinite(price) && price > 0 ? price : null;
+    }
+    /** Source 3: on-chain PancakeSwap V3 USDT/WBNB pool via the factory (no key). */
+    async fromOnChainPool() {
+        try {
+            const factory = '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865';
+            const usdt = '0x55d398326f99059fF775485246999027B3197955';
+            const wbnb = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
+            const q96 = 2n ** 96n;
+            for (const fee of [500, 100, 2500, 10000]) {
+                try {
+                    const pool = (await this.publicClient.readContract({
+                        address: factory,
+                        abi: parseAbi(['function getPool(address,address,uint24) view returns (address)']),
+                        functionName: 'getPool',
+                        args: [usdt, wbnb, fee],
+                    }));
+                    if (!pool || pool === '0x0000000000000000000000000000000000000000')
+                        continue;
+                    const slot = (await this.publicClient.readContract({
+                        address: pool,
+                        abi: ABIS.PANCAKE_V3_POOL,
+                        functionName: 'slot0',
+                    }));
+                    const sqrt = slot[0];
+                    if (sqrt <= 0n)
+                        continue;
+                    const rawScaled = (sqrt * sqrt * 10n ** 18n) / (q96 * q96); // WBNB per USDT × 1e18
+                    if (rawScaled === 0n)
+                        continue;
+                    const wbnbPerUsdt = Number(rawScaled) / 1e18;
+                    if (wbnbPerUsdt <= 0 || !Number.isFinite(wbnbPerUsdt))
+                        continue;
+                    const usdPerWbnb = 1 / wbnbPerUsdt;
+                    if (Number.isFinite(usdPerWbnb) && usdPerWbnb > 0)
+                        return usdPerWbnb;
+                }
+                catch { /* next tier */ }
+            }
+        }
+        catch { /* no RPC */ }
+        return null;
+    }
     async getTokenPrice(token) {
         const raw = token.trim();
         const isAddress = raw.toLowerCase().startsWith('0x');
         const key = isAddress ? raw.toLowerCase() : raw.toUpperCase();
         const coinId = isAddress ? COINGECKO_BY_ADDRESS[key] : COINGECKO_IDS[key];
         if (!coinId) {
+            // Stablecoins peg 1:1 when CoinGecko has no coverage and the token IS a
+            // BAN stablecoin address — a real, safe, deterministic value.
+            const lower = key.toLowerCase();
+            if (lower === '0x55d398326f99059ff775485246999027b3197955' || lower === '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d' || lower === 'USDT' || lower === 'USDC') {
+                return { asset: key, priceUsd: '1.00', timestamp: new Date().toISOString() };
+            }
             throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `Live provider has no price feed for ${token} (supports BNB/WBNB/USDT/USDC)`, { retryable: true });
         }
         const cached = this.cache.get(key);
-        if (cached && Date.now() - cached.at < this.ttlMs) {
+        const now = Date.now();
+        if (cached && now - cached.at < this.ttlMs) {
             return { asset: key, priceUsd: cached.priceUsd, timestamp: new Date().toISOString() };
         }
-        // One batched request covers every supported token; each caller only reads
-        // its own coin id from the response (no per-token fan-out).
-        const ids = [...new Set(Object.values(COINGECKO_IDS))].join(',');
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, {
-            headers: { accept: 'application/json' },
-            signal: AbortSignal.timeout(5_000),
+        // Resilient source chain: CoinGecko → Binance → on-chain pool.
+        const useUsdtUsd = (usdPerWbnb) => {
+            const priceUsd = (key.toUpperCase() === 'BNB' || key.toUpperCase() === 'WBNB')
+                ? usdPerWbnb.toFixed(2)
+                : '1.00'; // USDT/USDC 1:1
+            this.cache.set(key, { priceUsd, at: now });
+            return { asset: key, priceUsd, timestamp: new Date().toISOString() };
+        };
+        const cg = await this.fromCoinGecko();
+        const cgUsd = cg?.[coinId]?.usd;
+        if (typeof cgUsd === 'number' && Number.isFinite(cgUsd) && cgUsd > 0) {
+            const priceUsd = cgUsd.toFixed(2);
+            this.cache.set(key, { priceUsd, at: now });
+            return { asset: key, priceUsd, timestamp: new Date().toISOString() };
+        }
+        const binance = await this.fromBinance();
+        if (binance != null)
+            return useUsdtUsd(binance);
+        const onchain = await this.fromOnChainPool();
+        if (onchain != null)
+            return useUsdtUsd(onchain);
+        // All sources failed — serve the last REAL price if fresh enough.
+        if (cached && now - cached.at < 10 * 60_000) {
+            return { asset: key, priceUsd: cached.priceUsd, timestamp: new Date().toISOString() };
+        }
+        throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `Price feed unavailable for ${key} (CoinGecko + Binance + on-chain all unreachable).`, {
+            retryable: true,
         });
-        if (!res.ok) {
-            throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `CoinGecko price fetch failed (${res.status})`, {
-                retryable: true,
-            });
-        }
-        const json = (await res.json());
-        const usd = json[coinId]?.usd;
-        if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
-            throw new BANError(ErrorCode.PROVIDER_UNAVAILABLE, `CoinGecko returned no price for ${key}`, { retryable: true });
-        }
-        const priceUsd = usd.toFixed(2);
-        this.cache.set(key, { priceUsd, at: Date.now() });
-        return { asset: key, priceUsd, timestamp: new Date().toISOString() };
     }
 }
 /** ABI fragments used by the live adapters (canonical, registry-verified only). */
@@ -215,7 +305,7 @@ export class LiveDataProvider {
                 transport: http(requiredRpcUrl()),
             });
         }
-        const price = deps.priceFeed ?? new CoinGeckoBnbPrice();
+        const price = deps.priceFeed ?? new CoinGeckoBnbPrice(this.publicClient);
         this.price = price;
         // ---- Yield (Venus vToken supply APY + TVL) ----
         this.yield = {
@@ -233,9 +323,44 @@ export class LiveDataProvider {
                     // Kept per-symbol so a REPAY candidate can target the RIGHT vToken —
                     // Venus borrow balances are per-underlying; repaying the wrong
                     // vToken would send funds to the wrong market (real-funds hazard).
-                    let collateralUnits = 0n;
-                    let borrowedUnits = 0n;
+                    //
+                    // UNIT CONTRACT: the LendingAdapter contract declares
+                    // `collateral`/`borrowed` as INTEGER USD CENTS. The live chain reads
+                    // are underlying TOKEN WEI (10.0018e18 = $10.00 at 1:1 for USDC).
+                    // Treating raw wei as cents downstream inflated every USD figure by
+                    // 1e16 (a $10 position displayed as $10,000,000,000,000) and made
+                    // the REPAY amount 1e16× too large. Convert here, once, using real
+                    // per-token prices (stablecoins pegged at $1; BNB at the live feed).
+                    let collateralCents = 0n;
+                    let debtCents = 0n;
                     const borrowedByToken = {};
+                    // Cache per-token USD prices for this call (avoid N RPC/HTTP reads).
+                    const priceCache = {};
+                    const usdPrice = async (symbol) => {
+                        const cached = priceCache[symbol];
+                        if (cached !== undefined)
+                            return cached;
+                        let price = 1.0; // stablecoins 1:1
+                        if (symbol === 'BNB' || symbol === 'WBNB') {
+                            try {
+                                const p = await this.price.getTokenPrice('BNB').catch(() => null);
+                                price = p ? Number(p.priceUsd) : NaN;
+                            }
+                            catch {
+                                price = NaN;
+                            }
+                        }
+                        priceCache[symbol] = price;
+                        return price;
+                    };
+                    const toCents = (wei, symbol) => {
+                        // wei / 1e18 = tokens; tokens × price × 100 = centoi
+                        const tokens = wei / ONE_E18; // floor — deterministic
+                        const price = Number.isFinite(priceCache[symbol] ?? NaN) ? priceCache[symbol] : NaN;
+                        if (!Number.isFinite(price) || price <= 0)
+                            return 0n; // unknown price → 0 (honest)
+                        return BigInt(Math.floor(Number(tokens) * price * 100));
+                    };
                     for (const vToken of vTokens) {
                         const addr = vToken.address;
                         try {
@@ -245,10 +370,14 @@ export class LiveDataProvider {
                                 this.publicClient.readContract({ address: addr, abi: ABIS.VENUS_VTOKEN, functionName: 'borrowBalanceStored', args: [address] }),
                             ]);
                             // supply in underlying = vtBalance * exchangeRate / 1e18.
-                            collateralUnits += (BigInt(vtBalance) * BigInt(exchangeRate)) / ONE_E18;
-                            borrowedUnits += BigInt(borrow);
-                            if (BigInt(borrow) > 0n)
-                                borrowedByToken[vToken.symbol] = borrow.toString();
+                            const collateralUnits = (BigInt(vtBalance) * BigInt(exchangeRate)) / ONE_E18;
+                            const borrowUnits = BigInt(borrow);
+                            const symbol = vToken.symbol;
+                            await usdPrice(symbol); // populate the cache (stablecoin = 1.0)
+                            collateralCents += toCents(collateralUnits, symbol);
+                            debtCents += toCents(borrowUnits, symbol);
+                            if (borrowUnits > 0n)
+                                borrowedByToken[symbol] = borrowUnits.toString();
                         }
                         catch (err) {
                             logger.warn('venus_vtoken_read_skipped', {
@@ -259,12 +388,15 @@ export class LiveDataProvider {
                     }
                     const liquidationThreshold = 0.8;
                     const ltv = 0.55;
-                    const healthFactor = borrowedUnits > 0n ? Number((collateralUnits * 10000n) / borrowedUnits) / 10000 : 1.8; // collateral/borrow ratio
+                    const healthFactor = debtCents > 0n
+                        ? Number((collateralCents * 10000n) / debtCents) / 10000
+                        : 1.8; // collateral/borrow ratio — unit-agnostic
                     return {
-                        collateral: collateralUnits.toString(),
-                        borrowed: borrowedUnits.toString(), // same underlying units — ratio math valid
-                        // NEW: per-underlying debt so the health strategy can deterministically
-                        // pick WHICH vToken to repay (repoBorrow accepts that underlying).
+                        // TRUE integer USD cents (LendingAdapter contract): $10 collateral → "1000".
+                        collateral: collateralCents.toString(),
+                        borrowed: debtCents.toString(),
+                        // Per-underlying debt still in WEI (the repayBorrow call needs the
+                        // exact underlying amount — never a cents-derived estimate).
                         borrowedByToken,
                         ltv,
                         liquidationThreshold,

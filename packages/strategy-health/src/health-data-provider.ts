@@ -41,11 +41,25 @@ export class HealthDataProvider {
     );
     const riskState = this.riskModel.stateFor(healthFactorCents);
 
-    // Context-only prices (integer cents) for observability.
+    // Context-only prices (integer cents) for observability, INCLUDING every
+    // debt market the adapter reported — the REPAY candidate needs each
+    // debt token's price to compute its EXACT repayment in that token's wei.
+    const priceSymbols = new Set([
+      ...collateralAssets,
+      ...debtAssets,
+      ...Object.keys(raw.borrowedByToken ?? {}),
+    ]);
     const prices: Record<string, string> = {};
-    for (const asset of new Set([...collateralAssets, ...debtAssets])) {
-      const p = await this.price.getTokenPrice(asset);
-      prices[asset] = usdToCents(p.priceUsd);
+    // Stablecoin pegs are 1:1 → 100 cents; a live feed overrides when known.
+    prices.USDT = '100';
+    prices.USDC = '100';
+    for (const asset of priceSymbols) {
+      try {
+        const p = await this.price.getTokenPrice(asset);
+        prices[asset] = usdToCents(p.priceUsd);
+      } catch {
+        // keep the 1:1 stablecoin peg for stablecoins; others stay unset → 0
+      }
     }
 
     return {
@@ -54,6 +68,7 @@ export class HealthDataProvider {
       collateralCentsUsd: collateralCents.toString(),
       debtCentsUsd: debtCents.toString(),
       debtByToken: raw.borrowedByToken,
+      positionPricesCentsUsd: prices,
       ltvBps: Math.round(raw.ltv * 10000),
       liquidationThresholdBps,
       healthFactorCents,

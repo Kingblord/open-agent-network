@@ -37,6 +37,7 @@ export class ObservationBuilder {
           targetState: c.targetState,
           fromState: c.fromState,
           amountCentsUsd: c.amountCentsUsd,
+          amountWei: c.amountWei,
           // NEW: the underline the corrective action moves — the model should
           // echo this instead of inventing an asset symbol.
           denomination: c.denomination,
