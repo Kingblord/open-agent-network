@@ -16,7 +16,11 @@ import type { JobType } from '@ban/schemas';
  */
 
 // Allowed Inngest concurrency values for a single execution mode constraint.
-export type InngestConcurrencyLimit = 1 | 2 | 3 | 4 | 6;
+// NOTE: values are capped at 4 — the Inngest plan enforces a maximum
+// concurrency of 5 per function, and 6 was rejected at deploy time
+// ("ban-job-market-data has higher concurrency limits (6) than your plan
+// limit of 5"). Keeping ≤4 leaves headroom under the plan cap.
+export type InngestConcurrencyLimit = 1 | 2 | 3 | 4;
 
 export interface QueueConfig {
   /** Stable queue id, one of the M2 JobType values. */
@@ -53,7 +57,7 @@ export const QUEUES: QueueConfig[] = [
     backoffSeconds: 5,
     concurrencyLimit: 1,
   },
-  { queue: Q.market,      event: 'ban/job.market-data',        maxAttempts: 4, backoffSeconds: 2, concurrencyLimit: 6 },
+  { queue: Q.market,      event: 'ban/job.market-data',        maxAttempts: 4, backoffSeconds: 2, concurrencyLimit: 4 },
   { queue: Q.positionSync,event: 'ban/job.position-sync',      maxAttempts: 3, backoffSeconds: 3, concurrencyLimit: 3 },
   { queue: Q.performance, event: 'ban/job.performance',        maxAttempts: 3, backoffSeconds: 3, concurrencyLimit: 2 },
 ];

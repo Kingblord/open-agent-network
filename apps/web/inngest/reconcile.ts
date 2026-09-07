@@ -9,11 +9,13 @@ const logger = createStructuredLogger('inngest.reconcile');
 /**
  * Reconciliation — only runs Inngest when monitoring is actively needed.
  *
- * 1. banTaskReconcile:
- *    Every 2 minutes, checks for ACTIVE agents that have BOTH an active task
- *    AND an active session. Only then kicks the agent loop. This prevents
- *    unnecessary tick-loop events when no session exists (user hasn't hired
- *    the agent yet, or session is expired/revoked).
+ * 1. banTaskReconcile (SAFETY NET, every 5 min): re-kicks the self-chaining
+ *    agent loop for ACTIVE agents that have BOTH an active task AND an active
+ *    session. It never runs cycles itself — ban-agent-loop is the single
+ *    cycle driver. This heals chains lost to redeploys/missed deliveries.
+ *
+ * 2. banExecutionReconcile (CONFIRM-WATCHER, every 2 min): reconciles
+ *    EXECUTING executions against real on-chain receipts (see below).
  */
 
 interface TaskLike {
@@ -56,7 +58,10 @@ export const banTaskReconcile = inngest.createFunction(
   {
     id: 'ban-task-reconcile',
     retries: 1,
-    triggers: [{ cron: '*/2 * * * *' }],
+    // Safety net only — the self-chaining ban-agent-loop is the SINGLE cycle
+    // driver. This re-kicks chains lost to redeploys/missed deliveries; it
+    // never runs cycles itself. 5-minute cadence is plenty for that.
+    triggers: [{ cron: '*/5 * * * *' }],
     concurrency: 1,
   },
   async ({ step }) => {

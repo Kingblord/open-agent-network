@@ -165,93 +165,15 @@ export const queueWorkers = QUEUES.map((cfg) =>
 );
 
 // ---------------------------------------------------------------------------
-// M1/M9-M12 — Autonomous agent tick (scheduled closed-loop runner)
+// M9-M12 — Autonomous agent loop (self-chaining closed-loop runner)
 //
-// Runs every 2 minutes (Inngest `cron` trigger — NOT GitHub Actions cron, NOT
-// a local timer, NOT Firestore-as-queue: all forbidden by the automation stack
-// table). For each ACTIVE agent (with a provisioned wallet), it enqueues a
-// single closed-loop cycle via runAgentCycle as a durable step.
-//
-// The tick itself is idempotent at the loop level: runAgentCycle persists its
-// own idempotency/reservation and never blindly re-broadcasts a financial
-// action (Rule 5). Concurrency is capped so we never fan out more than a few
-// agents per tick in dev.
+// The self-chaining `ban-agent-loop` event chain is the SINGLE driver of
+// agent cycles (one event per agent, ~2-minute cadence via step.sleep).
+// The legacy every-2-minutes cron broadcast was removed: it raced the loop
+// and produced duplicate heartbeats ~25s apart. `ban-task-reconcile`
+// re-kicks the chain for agents with an active task+session, so a lost
+// event (redeploy, missed delivery) self-heals without a second scheduler.
 // ---------------------------------------------------------------------------
-
-export const banAgentTick = inngest.createFunction(
-  {
-    id: 'ban-agent-tick',
-    retries: 1,
-    // Every 2 minutes, aligned for health-factor reaction windows (M1).
-    triggers: [{ cron: '*/2 * * * *' }],
-    concurrency: 1,
-  },
-  async ({ step }) => {
-    const correlationId = `tick_${Date.now()}`;
-    logger.info('agent_tick_started', { correlationId });
-
-    // Any ACTIVE agent (registry state machine guarantees ownership/wallet).
-    const agents = await agentRegistry.list({ status: 'ACTIVE', limit: 50 });
-
-    let ran = 0;
-    for (const agent of agents) {
-      await step.run(`cycle-${agent.id}`, async () => {
-        const strategyConfig = await loadLatestTaskConfig(agent.id);
-        const result = await runAgentCycle({
-          agentId: agent.id,
-          userId: agent.ownerId,
-          correlationId,
-          strategyConfig,
-        });
-
-        // Heartbeat: proves the Inngest cron reached THIS agent and records
-        // the real cycle outcome (observability, Rule 10). Written through
-        // persistAuditEvent so it lands in the same `audit_events` collection
-        // /activity reads (the route maps stored `type`/`detail` -> the
-        // `eventType`/`payload` response shape). The stage is NEVER
-        // fabricated — it is the literal CycleResult from runAgentCycle
-        // (observed|decided|awaited|confirmed).
-        // Heartbeat write is best-effort observability (Rule 10): a failure
-        // here must NEVER abort the tick (it is not a transaction outcome) —
-        // the loop continues even if the audit write is down.
-        try {
-          await persistAuditEvent({
-            type: 'AGENT_TICK',
-            correlationId,
-            agentId: agent.id,
-            detail: {
-              source: 'inngest-cron',
-              schedule: '*/2 * * * *',
-              cycleResult: result,
-            },
-          });
-          logger.info('agent_tick_heartbeat_written', {
-            agentId: agent.id,
-            correlationId,
-            cycleStage: result.ok ? result.stage : result.reason,
-          });
-        } catch (hbErr) {
-          logger.error('agent_tick_heartbeat_failed', {
-            agentId: agent.id,
-            correlationId,
-            error: hbErr instanceof Error ? hbErr.message : String(hbErr),
-          });
-        }
-
-        logger.info('agent_tick_cycle', {
-          agentId: agent.id,
-          result: result,
-          correlationId,
-        });
-        return result;
-      });
-      ran += 1;
-    }
-
-    logger.info('agent_tick_finished', { correlationId, agents: agents.length, ran });
-    return { ok: true, agents: agents.length, ran };
-  }
-);
 
 // ---------------------------------------------------------------------------
 // M1/M9-M12 — Self-sustaining per-agent loop (ban/agent.tick-loop)
@@ -348,4 +270,4 @@ export const banAgentLoop = inngest.createFunction(
   }
 );
 
-export const functions = [banPing, banAgentTick, banAgentLoop, ...queueWorkers, ...reconcileFunctions];
+export const functions = [banPing, banAgentLoop, ...queueWorkers, ...reconcileFunctions];
