@@ -274,3 +274,52 @@ describe('HealthStrategy end-to-end (hermetic, in-memory brain)', () => {
     expect(ActionProposalSchema.safeParse(proposal).success).toBe(true);
   });
 });
+
+describe('RiskLevel is deterministic — never the LLM word (regression)', () => {
+  it('REPAY proposal riskLevel is LOW regardless of a model-invented HIGH/CRITICAL', async () => {
+    const { canonicalizeHealthProposal } = await import('../src/canonical-proposal.js');
+    const obs = {
+      data: {
+        candidates: [
+          {
+            action: 'REPAY',
+            protocol: 'venus',
+            address: '0xaaC9A2dEf0Ec845F81AD760b2D95cD5059Cc8cF5',
+            targetState: 'HEALTHY',
+            fromState: 'CRITICAL',
+            amountCentsUsd: '280',
+            amountWei: '2800000000000000000',
+            denomination: 'USDC',
+            rank: 1,
+          },
+        ],
+      },
+    };
+    // Model labeled the POSITION "CRITICAL" — normalizeRiskLevel mapped it to
+    // HIGH. That must NOT reach policy: a protective repayment on a LOW-risk
+    // agent would be wrongly denied ('Risk HIGH incompatible with agent risk
+    // LOW' was the production failure).
+    const modelProposal = {
+      proposalId: 'prop_risk',
+      agentId: 'ag_test',
+      userId: 'user_test',
+      sessionId: 'sess_test',
+      protocol: 'venus',
+      contract: '0xecA88125a5ADbe82614ffC12D0DB554E2e2867C8',
+      function: 'repayBorrow',
+      action: 'DEPOSIT',
+      capabilityId: 'PROPOSE_REPAY',
+      token: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+      amount: '2800000000000000000',
+      estimatedValue: '2800000000000000000',
+      asset: 'USDC',
+      params: { requestedAction: 'REPAY' },
+      idempotencyKey: 'ik_risk',
+      riskLevel: 'HIGH',
+      createdAt: new Date().toISOString(),
+    };
+    const out = canonicalizeHealthProposal(modelProposal, obs as never);
+    expect(out).not.toBeNull();
+    expect(out!.riskLevel).toBe('LOW'); // deterministic — REPAY is protective
+  });
+});

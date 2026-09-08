@@ -78,6 +78,10 @@ export function canonicalizeYieldProposal(proposal, observation) {
     const amount = toWeiIntegerString(proposal.amount);
     if (amount == null)
         return null; // no sane amount — refuse to spend blindly
+    const candidateRisk = typeof candidate.risk === 'string' ? candidate.risk.trim().toUpperCase() : '';
+    const deterministicRisk = candidateRisk === 'LOW' || candidateRisk === 'MEDIUM' || candidateRisk === 'HIGH'
+        ? candidateRisk
+        : 'MEDIUM';
     const enriched = {
         ...proposal,
         action: intent,
@@ -88,6 +92,10 @@ export function canonicalizeYieldProposal(proposal, observation) {
         amount,
         estimatedValue: amount,
         asset,
+        // REAL-FUNDS SAFETY: riskLevel is an EXECUTION-AUTHORITY field gated by
+        // the policy risk matrix — deterministic from the candidate's risk tier,
+        // never the LLM's vocabulary.
+        riskLevel: deterministicRisk,
         params: {
             ...(proposal.params ?? {}),
             execKind: target.execKind,

@@ -149,6 +149,13 @@ export function canonicalizeHealthProposal(
     amount,
     estimatedValue: amount,
     asset,
+    // REAL-FUNDS SAFETY: riskLevel is an EXECUTION-AUTHORITY field gated by
+    // the policy risk matrix. It MUST be deterministic from the corrective
+    // action, never the LLM's word — the model labels the POSITION state
+    // ("CRITICAL") which is not the trade's risk, and would wrongly deny a
+    // protective repayment on a LOW-risk agent (the 'Risk HIGH incompatible
+    // with agent risk LOW' denial you saw was exactly this).
+    riskLevel: finalHealthAction === 'REPAY' ? 'LOW' : 'MEDIUM',
     params: {
       ...(proposal.params ?? {}),
       execKind: 'VENUS_LENDING',

@@ -352,8 +352,17 @@ export class GridStrategy implements StrategyEngine {
         feeTier,
         requestedAction: (params.requestedAction as string | undefined) ?? side,
       },
+      // REAL-FUNDS SAFETY: riskLevel is an EXECUTION-AUTHORITY field gated by
+      // the policy risk matrix. It MUST come from the strategy's deterministic
+      // risk model (candidate.riskLevel) — never from the LLM, which describes
+      // market/position states with the same vocabulary ("CRITICAL") and would
+      // get a LOW-risk agent wrongly denied (or worse, a HIGH-risk action
+      // passed on a HIGH-risk agent the user never consented to). The model's
+      // value is archived in params.requestedAction for audit only.
       riskLevel:
-        proposal.riskLevel ?? (candidate.riskLevel === 'HIGH' ? 'HIGH' : 'MEDIUM'),
+        candidate?.riskLevel === 'HIGH' || candidate?.riskLevel === 'MEDIUM' || candidate?.riskLevel === 'LOW'
+          ? candidate.riskLevel
+          : 'MEDIUM',
     };
 
     const revalidated = ActionProposalSchema.safeParse(enriched);
