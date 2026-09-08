@@ -1076,6 +1076,25 @@ export default function MyAgentDetailPage() {
     return `${Math.floor(hrs / 24)}d ago`;
   };
 
+  // Render a task's last-run result as a HUMAN message, never raw JSON.
+  // Handles every shape the run path can store: {ok:true,stage} |
+  // {ok:false,reason} | nested {ok,result:{...}} | anything else → 'recorded'.
+  const formatLastRun = (lr: { at: string; result: Record<string, unknown> }): string => {
+    if (!lr?.result) return 'Last run recorded';
+    const r = lr.result as Record<string, unknown>;
+    // Nested shape from the manual /run route: { ok, result: {...} }.
+    const inner =
+      r.result && typeof r.result === 'object'
+        ? (r.result as Record<string, unknown>)
+        : null;
+    const ok = inner ? inner.ok : r.ok;
+    const stage = inner ? inner.stage : r.stage;
+    const reason = inner ? inner.reason : r.reason;
+    if (ok === true || stage != null) return `Last run: ${String(stage ?? 'ok')}`;
+    if (ok === false) return `Last run failed: ${String(reason ?? '')}`;
+    return 'Last run recorded';
+  };
+
   if (loading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
@@ -1444,13 +1463,7 @@ export default function MyAgentDetailPage() {
 
                   {task.lastRun && (
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span className="font-mono">
-                        {task.lastRun.result?.ok === true || (task.lastRun.result && 'stage' in task.lastRun.result)
-                          ? `Last run: ${String(task.lastRun.result.stage ?? 'ok')}`
-                          : task.lastRun.result?.ok === false
-                            ? `Last run failed: ${String(task.lastRun.result.reason ?? '')}`
-                            : 'Last run recorded'}
-                      </span>
+                      <span className="font-mono">{formatLastRun(task.lastRun)}</span>
                       <span>{timeAgo(task.lastRun.at)}</span>
                     </div>
                   )}

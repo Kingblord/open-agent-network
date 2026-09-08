@@ -1,0 +1,4 @@
+﻿
+> ban-web@0.1.0 typecheck C:\Users\≡ƒæ╖ WORK\open-agent-network\apps\web
+> tsc --noEmit
+
