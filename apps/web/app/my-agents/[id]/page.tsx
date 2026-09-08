@@ -14,6 +14,7 @@ import { getThirdwebClient, bnbChainDef } from '@/lib/thirdweb';
 import { useWallet } from '@/lib/wallet-context';
 import { LiveRuntimeTerminal } from '@/components/live-runtime-terminal';
 import { PermissionCards } from '@/components/permission-cards';
+import { Line, Doughnut, Bar } from 'react-chartjs-2';
 
 interface Session {
   sessionId: string;
@@ -310,7 +311,7 @@ export default function MyAgentDetailPage() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
-  const [activeViewTab, setActiveViewTab] = useState<'overview' | 'analytics'>('overview');
+  const [activeViewTab, setActiveViewTab] = useState<'overview' | 'analytics' | 'charts'>('overview');
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -1191,9 +1192,20 @@ export default function MyAgentDetailPage() {
           </svg>
         </button>
         <h1 className="text-sm font-black tracking-[0.2em] uppercase text-foreground">AGENT DETAILS</h1>
-        <button onClick={() => setActiveViewTab(activeViewTab === 'overview' ? 'analytics' : 'overview')} className="text-[10px] font-black text-[#F0B90B] border border-border px-2.5 py-1.5 bg-card">
-          {activeViewTab === 'overview' ? 'ANALYTICS' : 'OVERVIEW'}
-        </button>
+        {agent && (
+          <div className="flex items-center gap-1.5 bg-background/60 border border-border rounded-lg p-1">
+            {(['overview', 'analytics', 'charts'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setActiveViewTab(t)}
+                className={`px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded transition-colors ${activeViewTab === t ? 'bg-[#F0B90B] text-black' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {t === 'overview' ? 'OVERVIEW' : t === 'analytics' ? 'ANALYTICS' : 'CHARTS'}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="px-5 pt-4 space-y-4">
@@ -1839,10 +1851,134 @@ export default function MyAgentDetailPage() {
       )}
 
 
+      {activeViewTab === 'charts' && (
+        <div className="fixed inset-0 z-[70] bg-background overflow-y-auto pb-28">
+          <div className="sticky top-0 bg-background/95 backdrop-blur px-5 py-4 flex items-center justify-between border-b border-[#1A1A1A]">
+            <button onClick={() => setActiveViewTab('overview')} className="text-foreground hover:text-[#F0B90B] transition" aria-label="Back">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+            <h1 className="text-sm font-black tracking-[0.2em] uppercase text-foreground">CHARTS</h1>
+            <button onClick={() => setActiveViewTab('overview')} className="text-[10px] font-black text-[#F0B90B] border border-border px-2.5 py-1.5 bg-card">BACK</button>
+          </div>
+
+          <div className="px-5 pt-4 space-y-4">
+            <p className="text-[10px] font-mono text-muted-foreground">
+              Live data: Etherscan V2 (chainid 56) for this agent wallet + on-chain audit events.
+              {onchainTxs.length === 0 ? 'No on-chain transactions yet — charts populate once the agent trades.' : `${onchainTxs.length} on-chain txs loaded.`}
+            </p>
+
+            {/* BNB movement line chart — value over time (IN=deposits, OUT=spends) */}
+            {onchainTxs.length > 0 && (
+            <div className="bg-card rounded-xl p-5 border border-border">
+              <span className="text-[10px] font-black text-foreground tracking-widest uppercase block mb-4">BNB &amp; TOKEN MOVEMENT (on-chain)</span>
+              <div className="h-56">
+              <Line
+                data={{
+                  labels: onchainTxs.slice().sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                    .map((tx) => new Date(tx.timestamp).toLocaleTimeString([], { hour12: false, minute: '2-digit' })),
+                  datasets: [
+                    {
+                      label: 'IN (funding/deposits)',
+                      data: onchainTxs.filter((t) => t.direction === 'IN' && t.token === 'BNB').map((t) => Number(t.value) || 0),
+                      borderColor: '#10b981',
+                      backgroundColor: 'rgba(16,185,129,0.15)',
+                      tension: 0.3,
+                      fill: true,
+                    },
+                    {
+                      label: 'OUT (spends/gas)',
+                      data: onchainTxs.filter((t) => t.direction === 'OUT' && t.token === 'BNB').map((t) => Number(t.value) || 0),
+                      borderColor: '#F0B90B',
+                      backgroundColor: 'rgba(240,185,11,0.12)',
+                      tension: 0.3,
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: { legend: { labels: { color: '#d4d4d4', boxWidth: 10 } } },
+                  scales: { x: { ticks: { color: '#737373', maxRotation: 45, autoSkip: true, maxTicksLimit: 10 } }, y: { ticks: { color: '#737373' } } },
+                  maintainAspectRatio: false,
+                }}
+              />
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">BNB in/out for this agent wallet (USDT/USDC rows excluded — they are 1:1 USD but share the axis poorly).</p>
+            </div>
+            )}
+
+            {/* Category doughnut — funding vs execution vs gas vs withdrawal */}
+            {onchainTxs.length > 0 && (
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="bg-card rounded-xl p-5 border border-border">
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase block mb-4">TX MIX</span>
+                <div className="h-56">
+                <Doughnut
+                  data={{
+                    labels: ['FUNDING', 'AGENT EXECUTION', 'GAS', 'WITHDRAWAL'],
+                    datasets: [{
+                      data: [
+                        onchainTxs.filter((t) => t.category === 'FUNDING').length,
+                        onchainTxs.filter((t) => t.category === 'AGENT_EXECUTION').length,
+                        onchainTxs.filter((t) => t.category === 'GAS').length,
+                        onchainTxs.filter((t) => t.category === 'WITHDRAWAL').length,
+                      ],
+                      backgroundColor: ['#10b981', '#F0B90B', '#8b5cf6', '#ef4444'],
+                      borderColor: '#1a1a1a',
+                      borderWidth: 1,
+                    }],
+                  }}
+                  options={{ plugins: { legend: { position: 'bottom', labels: { color: '#d4d4d4', boxWidth: 10 } } }, maintainAspectRatio: false }}
+                />
+                </div>
+              </div>
+
+              {/* Daily activity bar — audit events per day (real) */}
+              <div className="bg-card rounded-xl p-5 border border-border">
+                <span className="text-[10px] font-black text-foreground tracking-widest uppercase block mb-4">ACTIVITY PER DAY</span>
+                <div className="h-56">
+                <Bar
+                  data={(() => {
+                    const buckets: Record<string, number> = {};
+                    for (const ev of events) {
+                      const d = new Date(ev.createdAt).toLocaleDateString([], { month: '2-digit', day: '2-digit' });
+                      buckets[d] = (buckets[d] ?? 0) + 1;
+                    }
+                    const days = Object.keys(buckets).sort();
+                    return {
+                      labels: days,
+                      datasets: [{
+                        label: 'events',
+                        data: days.map((d) => buckets[d]),
+                        backgroundColor: '#F0B90B',
+                        borderRadius: 4,
+                      }],
+                    };
+                  })()}
+                  options={{
+                    plugins: { legend: { display: false } },
+                    scales: { x: { ticks: { color: '#737373' } }, y: { beginAtZero: true, ticks: { color: '#737373' } } },
+                    maintainAspectRatio: false,
+                  }}
+                />
+                </div>
+              </div>
+            </div>
+            )}
+
+            {onchainTxs.length === 0 && events.length === 0 && (
+              <div className="bg-card rounded-xl p-5 border border-border">
+                <p className="text-xs text-muted-foreground">No chartable data yet. Create a task, fund the agent wallet, and the closed loop will appear here in real time (BNB movements from BscScan + activity events).</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* TASK CONFIG MODAL — captures every config the backend consumes */}
       {showTaskModal && (
         <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl p-6 w-full max-w-lg space-y-5 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-black text-[#F0B90B] uppercase">Create Task</h3>
             <h3 className="text-lg font-black text-[#F0B90B] uppercase">Create Task</h3>
             <p className="text-xs text-muted-foreground -mt-2">
               Configure the agent&apos;s bounded authority. A scoped session is created with these exact limits, the agent is activated, and the closed loop runs immediately.

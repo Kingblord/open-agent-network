@@ -156,7 +156,11 @@ async function normalizeProposalValueForCaps(
   proposal: ActionProposal,
   correlationId: string,
 ): Promise<ActionProposal> {
-  const token = (proposal.token ?? '').toLowerCase();
+  // Health/yield canonical proposals set BOTH `token` (underlying spent) and
+  // `params.underlying`. Prefer `token`; fall back to params.underlying so a
+  // strategy that ever sets a vToken as `token` still normalizes correctly.
+  const token = ((proposal.token ?? '').toLowerCase() ||
+    String(proposal.params?.underlying ?? '').toLowerCase());
   if (!STABLECOIN_ADDRESSES.has(token)) return proposal; // BNB/WBNB-wei already
 
   const price = await getBnbUsdPrice();
