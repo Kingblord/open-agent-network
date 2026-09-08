@@ -603,10 +603,9 @@ export default function MyAgentDetailPage() {
       toast.error({ title: 'Price not available', description: 'Unable to convert USD limits to BNB. Try again.' });
       return;
     }
-    if (sessionForm.allowedTokens.length === 0 && sessionForm.allowedProtocols.length === 0) {
-      setTaskError('Select at least one allowed token or protocol so the agent has bounded authority to act.');
-      return;
-    }
+    // Authority is AUTO-SCOPED server-side per strategy (verified registry
+    // tokens/protocols/functions) — the user only sets amounts, risk, duration.
+    // No client-side token/protocol requirement.
 
     const depositUsd = sessionForm.depositUsd;
     const depositToken = sessionForm.depositToken;
@@ -1598,31 +1597,9 @@ export default function MyAgentDetailPage() {
                   <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Daily spend cap (BNB)</label>
                   <input type="number" min="0" step="any" value={editForm.dailyLimitUsd} onChange={(e) => setEditForm((f) => ({ ...f, dailyLimitUsd: e.target.value }))} className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed tokens</label>
-                  <div className="flex flex-wrap gap-2">
-                    {TOKEN_OPTIONS.map((t) => (
-                      <button key={t.symbol} type="button" onClick={() => setEditForm((f) => ({ ...f, allowedTokens: f.allowedTokens.includes(t.symbol) ? f.allowedTokens.filter((x) => x !== t.symbol) : [...f.allowedTokens, t.symbol] }))} className={`px-2.5 py-1 text-[10px] font-black rounded border ${editForm.allowedTokens.includes(t.symbol) ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-muted-foreground border-border'}`}>
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed protocols</label>
-                  <div className="flex flex-wrap gap-2">
-                    {protocolOptions.map((p) => (
-                      <button key={p.id} type="button" onClick={() => setEditForm((f) => ({ ...f, allowedProtocols: f.allowedProtocols.includes(p.id) ? f.allowedProtocols.filter((x) => x !== p.id) : [...f.allowedProtocols, p.id] }))} className={`px-2.5 py-1 text-[10px] font-black rounded border ${editForm.allowedProtocols.includes(p.id) ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : p.verified ? 'bg-[#1A1A1A] text-muted-foreground border-border' : 'bg-[#1A1A1A] text-gray-600 border-border line-through'}`}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1.5">Existing canonical contracts are preserved unless you change protocols here.</p>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Allowed functions (comma separated)</label>
-                  <input type="text" value={editForm.allowedFunctions} onChange={(e) => setEditForm((f) => ({ ...f, allowedFunctions: e.target.value }))} placeholder="deposit, withdraw, swap" className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
-                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  Authority (tokens · protocols · functions) stays as configured by this task — here you only adjust limits, risk and duration.
+                </p>
                 <div>
                   <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Expires in (days)</label>
                   <input type="number" min="1" value={editForm.expiresAtDays} onChange={(e) => setEditForm((f) => ({ ...f, expiresAtDays: Number(e.target.value) }))} className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:border-[#F0B90B]" />
