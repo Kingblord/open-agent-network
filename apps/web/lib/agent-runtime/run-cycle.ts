@@ -92,10 +92,20 @@ export interface RunCycleOptions {
 async function getSessionForAgent(agentId: string): Promise<Session | null> {
   const db = getAdminDb();
   // Avoid composite index: single-field equality + in-memory newest-first.
+  // CRITICAL FIX: pick the newest ACTIVE, non-expired session — NOT merely the
+  // newest doc. Newer sessions can be REVOKED (a later task's cleanup, or a
+  // failed re-registration), while an older ACTIVE one is the real authority.
+  // Returning a REVOKED/PENDING/expired session made every cycle fail policy
+  // with "Session not found"/"Session revoked" even though a valid session
+  // existed (this is the "it always says Session not found" report).
   const snap = await db.collection(collections.agentSessions).where('agentId', '==', agentId).get();
+  const now = Date.now();
   let found: Session | null = null;
   snap.forEach((d) => {
     const s = d.data() as Session;
+    if (s.status !== 'ACTIVE') return;
+    const expires = s.expiresAt ? new Date(s.expiresAt).getTime() : 0;
+    if (expires && expires <= now) return; // expired — not usable
     if (!found || (s.createdAt ?? '') > (found.createdAt ?? '')) found = s;
   });
   return found;
@@ -415,13 +425,24 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // and is never converted. Fail closed when the price is unavailable.
     const policyProposal = await normalizeProposalValueForCaps(proposal, correlationId);
 
-    // 4) Policy gate (validate + reserve) — M5. Fails closed. The normalized
-    // proposal carries a BNB-wei-equivalent estimatedValue so caps/ledger stay
-    // coherent; execution uses the ORIGINAL proposal (amounts untouched).
-    const policy = await policyEngine.validateAction(policyProposal, {
+    // 4) Policy gate (validate + reserve) — M5. Fails closed.
+    //
+    // SESSION ID TRUST (root cause of "Session not found"): the model invents
+    // a `sessionId` in its proposal (`session-456`, etc.). That id is NOT a
+    // real agent_sessions document — it came from the LLM. Policy must
+    // evaluate against the RESOLVED session (line ~288: opts.session ?? the
+    // newest ACTIVE session for this agent), never the model's claim. Using
+    // the model's id made every cycle fail with "Session not found" even when
+    // a real active session existed, and would let a model reference arbitrary
+    // sessions. Stamp the real sessionId onto the policy proposal here.
+    const policyProposalWithSession = session
+      ? { ...policyProposal, sessionId: session.sessionId }
+      : policyProposal;
+
+    const policy = await policyEngine.validateAction(policyProposalWithSession, {
       agentId: agent.id,
       userId,
-      sessionId: proposal.sessionId,
+      sessionId: session?.sessionId ?? proposal.sessionId,
     });
 
     if (policy.decision === 'DENY') {
@@ -431,7 +452,7 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
         agentId,
         userId,
         proposalId: proposal.proposalId,
-        sessionId: proposal.sessionId,
+        sessionId: session?.sessionId ?? proposal.sessionId,
         severity: 'WARN',
         detail: { deniedCheck: policy.deniedCheck ?? 'unknown', reason: policy.reason },
       });

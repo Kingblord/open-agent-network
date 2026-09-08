@@ -314,6 +314,10 @@ export default function MyAgentDetailPage() {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
+  // Retry-failed-task state: tracks which task is running a manual retry.
+  const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
+  // Per-task dropdown: the currently expanded task card + which session pane.
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [gasUsd, setGasUsd] = useState('0.50');
   const [showGasEdit, setShowGasEdit] = useState(false);
   const [showTaskConfirm, setShowTaskConfirm] = useState(false);
@@ -800,8 +804,48 @@ export default function MyAgentDetailPage() {
     }
   };
 
-  const openEditSession = () => {
-    const target = sessions.find((s) => s.status === 'ACTIVE') || sessions[0] || null;
+  // RETRY a failed/stuck task: runs one cycle with the task's real strategy
+  // config (grid bounds, pool address, caps) so a session-not-found or
+  // transient failure gets another honest shot at the closed loop.
+  const retryTask = async (taskId: string) => {
+    if (!agent || retryingTaskId) return;
+    setRetryingTaskId(taskId);
+    try {
+      const response = await fetch(`/api/agents/${params.id}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        const message = typeof data?.error === 'string' ? data.error : 'Retry failed to run a cycle.';
+        toast.error({ title: 'Retry failed', description: message });
+        return;
+      }
+      const stage = data.result?.stage ?? 'cycle';
+      toast.success({
+        title: stage === 'confirmed' ? 'Transaction confirmed' : 'Cycle ran',
+        description: `Retry completed: ${String(stage)}. ${
+          data.result?.note ? String(data.result.note) : 'Check the review terminal for the outcome.'
+        }`,
+      });
+      await fetchTasks();
+      await fetchActivity();
+      fetchBalance(true);
+    } catch (error) {
+      console.error('Retry task error:', error);
+      toast.error({ title: 'Retry failed', description: 'An unexpected error occurred while retrying.' });
+    } finally {
+      setRetryingTaskId(null);
+    }
+  };
+
+  const openEditSession = (sessionId?: string) => {
+    const target =
+      (sessionId && sessions.find((s) => s.sessionId === sessionId)) ||
+      sessions.find((s) => s.status === 'ACTIVE') ||
+      sessions[0] ||
+      null;
     if (!target) {
       toast.error({ title: 'No session', description: 'Create a task first so there is a session to edit.' });
       setTaskError('Create a task first so there is a session to edit.');
@@ -1081,6 +1125,48 @@ export default function MyAgentDetailPage() {
     ? Number(activeSession.perTransactionCap) / 1e18
     : null;
 
+  // ---- Per-task session helpers (dropdown): caps + honest spend bar ----
+  // Spend is derived from REAL on-chain OUT transactions (Etherscan V2) —
+  // USDT/USDC ≈ USD, BNB × live price. NaN/unknown → 0 (never invented).
+  const sessionForTask = (task: TaskRecord): Session | null => {
+    if (task.sessionId) {
+      const direct = sessions.find((s) => s.sessionId === task.sessionId);
+      if (direct) return direct;
+    }
+    return activeSession;
+  };
+  const spentUsdForTask = (task: TaskRecord): number => {
+    const session = sessionForTask(task);
+    if (!session) return 0;
+    const capWei = Number(session.spendCap);
+    if (!Number.isFinite(capWei) || capWei <= 0) return 0;
+    // Real OUT rows from the agent wallet (same session wallet).
+    let spent = 0;
+    for (const tx of onchainTxs) {
+      if (tx.direction !== 'OUT') continue;
+      const val = Number(tx.value);
+      if (!Number.isFinite(val) || val <= 0) continue;
+      const sym = (tx.token || '').toUpperCase();
+      if (sym === 'BNB' || sym === 'WBNB') {
+        const px = bnbUsdPrice ?? 0;
+        if (px && Number.isFinite(px) && px > 0) spent += val * px;
+      } else if (sym === 'USDT' || sym === 'USDC') {
+        spent += val; // 1:1
+      }
+    }
+    return Number.isFinite(spent) ? spent : 0;
+  };
+  const spendPctForTask = (task: TaskRecord): number => {
+    const session = sessionForTask(task);
+    if (!session) return 0;
+    const capWei = Number(session.spendCap);
+    if (!Number.isFinite(capWei) || capWei <= 0) return 0;
+    const capUsd = capWei / 1e18 * (bnbUsdPrice ?? 0); // cap is BNB-wei → USD
+    const spent = spentUsdForTask(task);
+    if (capUsd <= 0 || spent <= 0) return 0;
+    return Math.min(100, Math.round((spent / capUsd) * 100));
+  };
+
   const failedEvents = events.filter((e) => e.eventType === 'TRANSACTION_FAILED' || e.eventType === 'ACTION_DENIED').length;
 
   const latestTick = events.find((e) => e.eventType === 'AGENT_TICK') ?? null;
@@ -1285,14 +1371,29 @@ export default function MyAgentDetailPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {tasks.slice(0, 5).map((task) => (
+              {tasks.slice(0, 5).map((task) => {
+                const tSession = sessionForTask(task);
+                const tSpend = spentUsdForTask(task);
+                const tPct = spendPctForTask(task);
+                const tExpanded = expandedTaskId === task.taskId;
+                return (
                 <div key={task.taskId} className="dark:bg-background/40 bg-white/60 rounded-lg p-3.5 border dark:border-border border-gray-200 space-y-2">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedTaskId(tExpanded ? null : task.taskId)}
+                    className="w-full flex items-center justify-between gap-2 text-left"
+                  >
                     <span className="text-xs font-black text-[#F0B90B] font-mono">{task.taskId.slice(0, 14)}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${task.status === 'COMPLETED' ? 'text-green-400 border-green-500/40 bg-green-500/10' : task.status === 'FAILED' ? 'text-red-400 border-red-500/40 bg-red-500/10' : 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10'}`}>
-                      {task.status}
+                    <span className="flex items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${task.status === 'COMPLETED' ? 'text-green-400 border-green-500/40 bg-green-500/10' : task.status === 'FAILED' ? 'text-red-400 border-red-500/40 bg-red-500/10' : 'text-[#F0B90B] border-[#F0B90B]/40 bg-[#F0B90B]/10'}`}>
+                        {task.status}
+                      </span>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-muted-foreground transition-transform ${tExpanded ? 'rotate-180' : ''}`}>
+                        <polyline points="7 6 17 6 17 16 7 16" />
+                      </svg>
                     </span>
-                  </div>
+                  </button>
+
                   <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-muted-foreground">
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.maxTxUsd} max tx</span>
                     <span className="bg-background/40 border border-border px-1.5 py-0.5">${task.config.dailyLimitUsd}/day</span>
@@ -1304,6 +1405,7 @@ export default function MyAgentDetailPage() {
                       <span className="bg-background/40 border border-border px-1.5 py-0.5">{task.config.allowedProtocols.join(', ')}</span>
                     )}
                   </div>
+
                   {task.lastRun && (
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                       <span className="font-mono">
@@ -1316,8 +1418,74 @@ export default function MyAgentDetailPage() {
                       <span>{timeAgo(task.lastRun.at)}</span>
                     </div>
                   )}
+
+                  {tExpanded && (
+                    <div className="space-y-2 border-t border-border/60 pt-2">
+                      {/* Session caps for THIS task's session (same doc the policy uses) */}
+                      <div className="bg-background/40 border border-border rounded-lg p-2">
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span className="font-black uppercase tracking-wider">Session · {tSession ? tSession.sessionId.slice(0, 10) : '—'}</span>
+                          <span>{tSession ? tSession.status : 'not bound'}</span>
+                        </div>
+                        <div className="mt-1.5 flex justify-between text-xs">
+                          <span className="text-muted-foreground">Spend cap</span>
+                          <span className="font-black font-mono text-foreground">
+                            {tSession && Number(tSession.spendCap) > 0 ? `${Number(tSession.spendCap) / 1e18} BNB` : '—'}
+                          </span>
+                        </div>
+                        {/* Real spend bar (on-chain OUT txs in USD on the BNB cap) */}
+                        <div className="mt-1 h-1.5 bg-[#222] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${tPct >= 90 ? 'bg-red-500' : 'bg-[#F0B90B]'}`}
+                            style={{ width: `${Math.max(3, tPct)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                          <span>spent ≈ ${tSpend.toFixed(2)}</span>
+                          <span>{tPct}% of cap</span>
+                        </div>
+                        <div className="mt-1 flex justify-between text-xs">
+                          <span className="text-muted-foreground">Max tx</span>
+                          <span className="font-black font-mono text-foreground">
+                            {tSession && Number(tSession.perTransactionCap) > 0 ? `${Number(tSession.perTransactionCap) / 1e18} BNB` : '—'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                          <span>Tokens</span>
+                          <span className="font-mono break-all max-w-[40%]">{tSession ? tSession.allowedTokens.join(', ') || '—' : '—'}</span>
+                        </div>
+                        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                          <span>Expires</span>
+                          <span className="font-mono">{tSession ? tSession.expiresAt.slice(0, 10) : '—'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        {/* Pencil: edit THIS task's session */}
+                        <button
+                          type="button"
+                          onClick={() => openEditSession(tSession?.sessionId ?? task.sessionId ?? undefined)}
+                          className="flex-1 py-2 bg-card border border-border text-gray-300 font-black text-[10px] rounded-lg uppercase tracking-wider hover:text-[#F0B90B] transition"
+                        >
+                          ✏️ EDIT SESSION
+                        </button>
+                        {/* Retry: rerun the closed loop for this task */}
+                        {task.status !== 'COMPLETED' && (
+                          <button
+                            type="button"
+                            onClick={() => retryTask(task.taskId)}
+                            disabled={retryingTaskId != null}
+                            className="flex-1 py-2 bg-[#F0B90B] text-black font-black text-[10px] rounded-lg uppercase tracking-wider disabled:opacity-50 transition-colors hover:bg-[#e0a608]"
+                          >
+                            {retryingTaskId === task.taskId ? 'RETRYING…' : '↻ RETRY'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1326,7 +1494,7 @@ export default function MyAgentDetailPage() {
         <div className="bg-card rounded-xl p-5 border border-border space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-foreground tracking-widest uppercase">PERMISSIONS & LIMITS</span>
-            <button type="button" onClick={openEditSession} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-border hover:text-foreground">
+            <button type="button" onClick={() => openEditSession()} className="bg-[#1A1A1A] text-[10px] text-gray-300 font-black px-2.5 py-1 border border-border hover:text-foreground">
               EDIT SESSION
             </button>
           </div>

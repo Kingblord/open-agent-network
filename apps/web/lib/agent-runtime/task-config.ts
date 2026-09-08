@@ -63,3 +63,23 @@ export async function loadLatestTaskConfig(agentId: string): Promise<Record<stri
   if (!latestConfig || typeof latestConfig !== 'object') return undefined;
   return latestConfig as Record<string, unknown>;
 }
+
+/** Load ONE task's config by taskId (the RETRY path) — the exact strategy
+ * params that task created, not the newest task's. Falls back to latest when
+ * the id resolves to nothing (fail-closed: no fabricated bounds). */
+export async function loadTaskConfig(
+  agentId: string,
+  taskId?: string,
+): Promise<Record<string, unknown> | undefined> {
+  if (!taskId) return loadLatestTaskConfig(agentId);
+  try {
+    const db = getAdminDb();
+    const doc = await db.collection(collections.agentTasks ?? 'agent_tasks').doc(taskId).get();
+    const row = doc.data();
+    const cfg = row?.config;
+    if (cfg && typeof cfg === 'object') return cfg as Record<string, unknown>;
+  } catch {
+    // fall through to latest
+  }
+  return loadLatestTaskConfig(agentId);
+}

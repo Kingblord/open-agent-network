@@ -6,6 +6,7 @@ import { createStructuredLogger } from '@/lib/core/logger';
 import { getCorrelationId } from '@/lib/core/request-context';
 import { agentRegistry } from '@/lib/agent-registry';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
+import { loadTaskConfig } from '@/lib/agent-runtime/task-config';
 import { ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.agents.run');
@@ -60,10 +61,20 @@ export async function POST(
     }
 
     const correlationId = getCorrelationId();
+    // Retry-through-path: read the taskId from the body when a task card's
+    // RETRY is used, so the cycle runs with THAT task's user-configured
+    // strategy params (grid bounds, pool address, caps) — not hermetic
+    // defaults and not merely the newest task.
+    const body = await request.json().catch(() => null);
+    const retryTaskId = body && typeof body === 'object' && typeof (body as { taskId?: unknown }).taskId === 'string'
+      ? (body as { taskId: string }).taskId
+      : undefined;
+    const strategyConfig = await loadTaskConfig(agent.id, retryTaskId);
     const result = await runAgentCycle({
       agentId: agent.id,
       userId: actorId,
       correlationId,
+      strategyConfig,
     });
 
     logger.info('agent_cycle_manual', {
