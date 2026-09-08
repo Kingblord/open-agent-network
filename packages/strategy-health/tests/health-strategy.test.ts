@@ -323,3 +323,61 @@ describe('RiskLevel is deterministic — never the LLM word (regression)', () =>
     expect(out!.riskLevel).toBe('LOW'); // deterministic — REPAY is protective
   });
 });
+
+describe('User-wallet-aware execution (repay the OWNER debt, not the agent\'s)', () => {
+  const obs = {
+    data: {
+      candidates: [
+        {
+          action: 'REPAY',
+          protocol: 'venus',
+          address: '0xaaC9A2dEf0Ec845F81AD760b2D95cD5059Cc8cF5',
+          targetState: 'HEALTHY',
+          fromState: 'CRITICAL',
+          amountCentsUsd: '280',
+          amountWei: '2800000000000000000',
+          denomination: 'USDC',
+          rank: 1,
+        },
+      ],
+    },
+  };
+  const modelProposal = {
+    proposalId: 'prop_behalf',
+    agentId: 'ag_test',
+    userId: 'user_test',
+    sessionId: 'sess_test',
+    protocol: 'venus',
+    contract: '0xecA88125a5ADbe82614ffC12D0DB554E2e2867C8',
+    function: 'repayBorrow',
+    action: 'DEPOSIT',
+    capabilityId: 'PROPOSE_REPAY',
+    token: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+    amount: '2800000000000000000',
+    estimatedValue: '2800000000000000000',
+    asset: 'USDC',
+    params: { requestedAction: 'REPAY' },
+    idempotencyKey: 'ik_behalf',
+    riskLevel: 'LOW',
+    createdAt: new Date().toISOString(),
+  };
+
+  it('CRITICAL BUG FIX: with the owner wallet known, REPAY becomes repayBorrowBehalf(owner) + params.userWalletAddress', async () => {
+    const { canonicalizeHealthProposal } = await import('../src/canonical-proposal.js');
+    const ownerWallet = '0x4444444444444444444444444444444444444444';
+    const out = canonicalizeHealthProposal(modelProposal as never, obs as never, ownerWallet);
+    expect(out).not.toBeNull();
+    // The executor must repay the OWNER's debt — repayBorrowBehalf, not
+    // repayBorrow (which would repay the agent's own zero debt).
+    expect(out!.function).toBe('repayBorrowBehalf');
+    expect(out!.params?.userWalletAddress).toBe(ownerWallet);
+  });
+
+  it('without a known owner wallet, behavior is unchanged (repayBorrow, no params.userWalletAddress)', async () => {
+    const { canonicalizeHealthProposal } = await import('../src/canonical-proposal.js');
+    const out = canonicalizeHealthProposal(modelProposal as never, obs as never, null);
+    expect(out).not.toBeNull();
+    expect(out!.function).toBe('repayBorrow');
+    expect(out!.params?.userWalletAddress).toBeUndefined();
+  });
+});

@@ -49,10 +49,23 @@ const VTOKEN_FUNCTIONS: Record<string, string> = {
  *  - params.healthAction / params.execKind = 'VENUS_LENDING'
  * Returns null when there is no executable candidate or the protocol/asset
  * cannot be deterministically resolved (honest no-op, never fabricated).
+ *
+ * USER-WALLET-AWARE EXECUTION (critical correctness fix): the health monitor
+ * watches the OWNER's wallet (config.userWalletAddress / watchAddress), so a
+ * REPAY must target the OWNER's debt. Venus `repayBorrow(amount)` repays the
+ * CALLER's (agent's) debt — which is zero — so the repayment would be a
+ * no-op/revert and the user's debt would never be reduced. When the owner's
+ * wallet is known, the canonical proposal therefore uses
+ * `repayBorrowBehalf(borrower=owner, amount)` (executor pays, owner's debt
+ * decreases) and forwards `params.userWalletAddress` so the signer can build
+ * the behalf call. ADD_COLLATERAL on the owner's behalf uses `mintBehalf`
+ * (agent funds, owner collects the vTokens). Without a known owner wallet the
+ * proposal falls back to the agent's own position (prior behavior).
  */
 export function canonicalizeHealthProposal(
   proposal: ActionProposal,
   observation: Observation,
+  userWalletAddress?: string | null,
 ): ActionProposal | null {
   const { directive } = canonicalizeAction(proposal.action);
   if (directive) return null;
@@ -139,12 +152,27 @@ export function canonicalizeHealthProposal(
     (cents != null ? (BigInt(cents) * 10n ** 16n).toString() : toWeiIntegerString(proposal.amount));
   if (amount == null) return null; // no sane amount — refuse to spend blindly
 
+  // Is the position being corrected the OWNER's (vs the agent's own)? The
+  // wallet must be a valid address before we execute on anyone's behalf —
+  // a fabricated wallet would send the repayment into a revert.
+  const beneficiary =
+    typeof userWalletAddress === 'string' && isHexAddress(userWalletAddress)
+      ? userWalletAddress
+      : null;
+
+  // On-behalf execution uses the vToken's behalf entrypoints (verified
+  // present on the deployed vUSDC/vUSDT runtime code):
+  //   REPAY        → repayBorrowBehalf(borrower=owner)  — agent pays, owner's debt drops
+  //   ADD_COLLATERAL → mintBehalf(minter=owner)          — agent funds, owner gets vTokens
+  const repayFn = beneficiary ? 'repayBorrowBehalf' : 'repayBorrow';
+  const mintFn = beneficiary ? 'mintBehalf' : 'mint';
+
   const enriched: ActionProposal = {
     ...proposal,
     action: 'DEPOSIT',
     protocol,
     contract: vToken as `0x${string}`,
-    function: VTOKEN_FUNCTIONS[finalHealthAction],
+    function: finalHealthAction === 'REPAY' ? repayFn : mintFn,
     token: UNDERLYING[asset],
     amount,
     estimatedValue: amount,
@@ -163,6 +191,11 @@ export function canonicalizeHealthProposal(
       vToken,
       underlying: UNDERLYING[asset],
       requestedAction: rawAction,
+      // The signer needs the OWNER's wallet to build the behalf call
+      // (repayBorrowBehalf / mintBehalf). Stamped here (and again by
+      // run-cycle before execution) so the executor never acts on the wrong
+      // account.
+      ...(beneficiary ? { userWalletAddress: beneficiary } : {}),
     },
   };
 

@@ -243,6 +243,13 @@ export async function createAltanaSigningBackend(
         underlying: (proposal.params?.underlying ?? proposal.token) as Address,
         amount: BigInt(proposal.amount),
         wallet: wallet.address as Address,
+        // When the health strategy repays the USER's debt (watchAddress/user
+        // wallet), the repayment must target the USER's position — NOT the
+        // agent's own (which has no debt). The user's wallet is threaded
+        // through params.userWalletAddress (stamped by run-cycle from the
+        // owner record). Without it the agent can only act on its own
+        // position.
+        beneficiary: (proposal.params?.userWalletAddress as Address | undefined) ?? undefined,
         intent,
       });
     } else if (execKind === 'AAVE_V3') {
@@ -252,6 +259,7 @@ export async function createAltanaSigningBackend(
         underlying: proposal.token as Address,
         amount: BigInt(proposal.amount),
         wallet: wallet.address as Address,
+        beneficiary: (proposal.params?.userWalletAddress as Address | undefined) ?? undefined,
         intent,
       });
     } else if (trimmedCalldata) {

@@ -21,8 +21,10 @@ const ERC20_ABI = parseAbi([
 const VENUS_VTOKEN_ABI = parseAbi([
   'function mint(uint mintAmount) returns (uint)',
   'function mint() payable', // vBNB native supply
+  'function mintBehalf(address minter, uint mintAmount) returns (uint)',
   'function redeemUnderlying(uint redeemAmount) returns (uint)',
   'function repayBorrow(uint repayAmount) returns (uint)',
+  'function repayBorrowBehalf(address borrower, uint repayAmount) returns (uint)',
 ]);
 
 // Aave V3 Pool ABI (subset).
@@ -50,6 +52,14 @@ export interface LendingCallParams {
   amount: bigint;
   /** The agent wallet (recipient / onBehalfOf). */
   wallet: Address;
+  /**
+   * The USER's wallet when the position being acted on belongs to the USER
+   * (health REPAY of the user's debt, collateral on the user's position).
+   * When present, lending executes ON BEHALF of the user (repayBorrowBehalf /
+   * mintBehalf / onBehalfOf) — the agent wallet pays, the USER's position
+   * changes. Absent → the agent acts on its OWN position (default).
+   */
+  beneficiary?: Address;
   /** DEPOSIT (supply/mint) or WITHDRAW (redeem/withdraw) or REPAY. */
   intent: 'DEPOSIT' | 'WITHDRAW' | 'REPAY';
 }
@@ -70,6 +80,15 @@ function assertAmount(amount: bigint): void {
  *  - DEPOSIT (native BNB): [mint() payable with msg.value = amount]
  *  - REPAY (ERC-20):      [approve(vToken, amount), repayBorrow(amount)]
  *  - WITHDRAW:            [redeemUnderlying(amount)]
+ *
+ * When `beneficiary` (the USER's wallet) is present, the position being acted
+ * on belongs to the USER and lending executes ON BEHALF of them:
+ *  - REPAY  : repayBorrowBehalf(borrower=beneficiary, amount) — the agent pays,
+ *             the USER's debt decreases (this is how a health agent can
+ *             actually repay the owner's debt — plain repayBorrow would only
+ *             repay the CALLER's (agent's) own debt, which is zero).
+ *  - DEPOSIT: mintBehalf(minter=beneficiary, amount) — the agent funds, the
+ *             USER receives the vTokens (collateral on their position).
  */
 export function buildVenusCalls(params: LendingCallParams): ExecutableCall[] {
   assertAmount(params.amount);
@@ -111,37 +130,51 @@ export function buildVenusCalls(params: LendingCallParams): ExecutableCall[] {
     value: 0n,
   };
   if (params.intent === 'REPAY') {
-    return [
-      approve,
-      {
-        to: params.target,
-        data: encodeFunctionData({
+    // CRITICAL: repay the USER's debt (beneficiary) NOT the agent's own.
+    // Venus repayBorrow(amount) reduces msg.sender's debt — the agent wallet
+    // has none, so the "repay" would be a no-op/revert. repayBorrowBehalf
+    // pulls the agent's tokens and reduces the USER's borrow balance.
+    const repayCall = params.beneficiary
+      ? encodeFunctionData({
+          abi: VENUS_VTOKEN_ABI,
+          functionName: 'repayBorrowBehalf',
+          args: [params.beneficiary, params.amount],
+        })
+      : encodeFunctionData({
           abi: VENUS_VTOKEN_ABI,
           functionName: 'repayBorrow',
           args: [params.amount],
-        }),
-        value: 0n,
-      },
+        });
+    return [
+      approve,
+      { to: params.target, data: repayCall, value: 0n },
     ];
   }
-  return [
-    approve,
-    {
-      to: params.target,
-      data: encodeFunctionData({
+  const mintCall = params.beneficiary
+    ? encodeFunctionData({
+        abi: VENUS_VTOKEN_ABI,
+        functionName: 'mintBehalf',
+        args: [params.beneficiary, params.amount],
+      })
+    : encodeFunctionData({
         abi: VENUS_VTOKEN_ABI,
         functionName: 'mint',
         args: [params.amount],
-      }),
-      value: 0n,
-    },
+      });
+  return [
+    approve,
+    { to: params.target, data: mintCall, value: 0n },
   ];
 }
 
 /**
  * Build Aave V3 Pool calls for a lending intent.
- *  - DEPOSIT: [approve(pool, amount), supply(asset, amount, wallet, 0)]
- *  - WITHDRAW: [withdraw(asset, amount, wallet)]
+ *  - DEPOSIT: [approve(pool, amount), supply(asset, amount, onBehalfOf, 0)]
+ *  - WITHDRAW: [withdraw(asset, amount, to)]
+ *
+ * `beneficiary` (the USER's wallet) is threaded into Aave's native
+ * `onBehalfOf`/`to` parameters so the position belongs to the USER — the
+ * agent wallet supplies the funds, the USER's aToken balance increases.
  */
 export function buildAaveCalls(params: LendingCallParams): ExecutableCall[] {
   assertAmount(params.amount);
@@ -152,7 +185,7 @@ export function buildAaveCalls(params: LendingCallParams): ExecutableCall[] {
         data: encodeFunctionData({
           abi: AAVE_POOL_ABI,
           functionName: 'withdraw',
-          args: [params.underlying, params.amount, params.wallet],
+          args: [params.underlying, params.amount, params.beneficiary ?? params.wallet],
         }),
         value: 0n,
       },
@@ -173,7 +206,12 @@ export function buildAaveCalls(params: LendingCallParams): ExecutableCall[] {
       data: encodeFunctionData({
         abi: AAVE_POOL_ABI,
         functionName: 'supply',
-        args: [params.underlying, params.amount, params.wallet, 0],
+        args: [
+          params.underlying,
+          params.amount,
+          params.beneficiary ?? params.wallet,
+          0,
+        ],
       }),
       value: 0n,
     },

@@ -13,8 +13,10 @@ const ERC20_ABI = parseAbi(['function approve(address spender, uint256 value) re
 const VENUS_ABI = parseAbi([
   'function mint(uint mintAmount) returns (uint)',
   'function mint() payable',
+  'function mintBehalf(address minter, uint mintAmount) returns (uint)',
   'function redeemUnderlying(uint redeemAmount) returns (uint)',
   'function repayBorrow(uint repayAmount) returns (uint)',
+  'function repayBorrowBehalf(address borrower, uint repayAmount) returns (uint)',
 ]);
 const AAVE_ABI = parseAbi([
   'function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)',
@@ -27,6 +29,7 @@ const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' as const;
 const V_BNB = '0xA07c5b74C9B40447a954e1466938b865b6BBea36' as const;
 const AAVE_POOL = '0x6807dc923806fE8Fd134338EABCA509979a7e0cB' as const;
 const WALLET = '0x1111111111111111111111111111111111111111' as const;
+const USER_WALLET = '0x2222222222222222222222222222222222222222' as const;
 const AMOUNT = 5_000_000_000_000_000_000_000n; // 5000e18
 
 describe('buildVenusCalls', () => {
@@ -68,6 +71,37 @@ describe('buildVenusCalls', () => {
     expect(repay.args).toEqual([AMOUNT]);
   });
 
+  it('CRITICAL: REPAY with beneficiary = repayBorrowBehalf(USER, amount) — repays the USER debt, not the agent\'s', () => {
+    const calls = buildVenusCalls({
+      target: V_TOKEN, underlying: USDT, amount: AMOUNT, wallet: WALLET, beneficiary: USER_WALLET, intent: 'REPAY',
+    });
+    expect(calls.length).toBe(2);
+    expect(calls[0].to).toBe(USDT); // approve stays from the AGENT wallet
+    const repay = decodeFunctionData({ abi: VENUS_ABI, data: calls[1].data });
+    expect(repay.functionName).toBe('repayBorrowBehalf');
+    expect(repay.args).toEqual([USER_WALLET, AMOUNT]);
+  });
+
+  it('DEPOSIT with beneficiary = mintBehalf(USER, amount) — collateral lands on the USER position', () => {
+    const calls = buildVenusCalls({
+      target: V_TOKEN, underlying: USDT, amount: AMOUNT, wallet: WALLET, beneficiary: USER_WALLET, intent: 'DEPOSIT',
+    });
+    expect(calls.length).toBe(2);
+    const mint = decodeFunctionData({ abi: VENUS_ABI, data: calls[1].data });
+    expect(mint.functionName).toBe('mintBehalf');
+    expect(mint.args).toEqual([USER_WALLET, AMOUNT]);
+  });
+
+  it('WITHDRAW stays agent-owned (redeemUnderlying, no beneficiary path)', () => {
+    const calls = buildVenusCalls({
+      target: V_TOKEN, underlying: USDT, amount: AMOUNT, wallet: WALLET, beneficiary: USER_WALLET, intent: 'WITHDRAW',
+    });
+    expect(calls.length).toBe(1);
+    const redeem = decodeFunctionData({ abi: VENUS_ABI, data: calls[0].data });
+    expect(redeem.functionName).toBe('redeemUnderlying');
+    expect(redeem.args).toEqual([AMOUNT]);
+  });
+
   it('WITHDRAW = redeemUnderlying only (no approve)', () => {
     const calls = buildVenusCalls({
       target: V_TOKEN, underlying: USDT, amount: AMOUNT, wallet: WALLET, intent: 'WITHDRAW',
@@ -104,5 +138,25 @@ describe('buildAaveCalls', () => {
     const withdraw = decodeFunctionData({ abi: AAVE_ABI, data: calls[0].data });
     expect(withdraw.functionName).toBe('withdraw');
     expect(withdraw.args).toEqual([USDT, AMOUNT, WALLET]);
+  });
+
+  it('CRITICAL: Aave DEPOSIT with beneficiary = supply(asset, amount, USER, 0) — the USER gets the aTokens', () => {
+    const calls = buildAaveCalls({
+      target: AAVE_POOL, underlying: USDT, amount: AMOUNT, wallet: WALLET, beneficiary: USER_WALLET, intent: 'DEPOSIT',
+    });
+    expect(calls.length).toBe(2);
+    const supply = decodeFunctionData({ abi: AAVE_ABI, data: calls[1].data });
+    expect(supply.functionName).toBe('supply');
+    expect(supply.args).toEqual([USDT, AMOUNT, USER_WALLET, 0]);
+  });
+
+  it('Aave WITHDRAW with beneficiary = withdraw(asset, amount, USER) — proceeds go to the USER', () => {
+    const calls = buildAaveCalls({
+      target: AAVE_POOL, underlying: USDT, amount: AMOUNT, wallet: WALLET, beneficiary: USER_WALLET, intent: 'WITHDRAW',
+    });
+    expect(calls.length).toBe(1);
+    const withdraw = decodeFunctionData({ abi: AAVE_ABI, data: calls[0].data });
+    expect(withdraw.functionName).toBe('withdraw');
+    expect(withdraw.args).toEqual([USDT, AMOUNT, USER_WALLET]);
   });
 });

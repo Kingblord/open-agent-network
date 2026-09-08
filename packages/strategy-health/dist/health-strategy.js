@@ -90,7 +90,15 @@ export class HealthStrategy {
         // Execution-critical fields are canonicalized from verified Venus constants
         // and the observation's candidates — never model-authored values. Returns
         // null when there is no executable corrective candidate (honest no-op).
-        return canonicalizeHealthProposal(proposal.data, observation);
+        //
+        // USER-WALLET-AWARE: when the owner's personal wallet is known (threaded
+        // through config.userWalletAddress by run-cycle), the canonical proposal
+        // repays / adds collateral ON BEHALF of the owner (repayBorrowBehalf /
+        // mintBehalf) — the agent pays, the owner's Venus position changes. This
+        // is what makes a health agent able to actually repay the observed debt.
+        const ownerWallet = (typeof this.config?.userWalletAddress === 'string' && this.config.userWalletAddress) ||
+            null;
+        return canonicalizeHealthProposal(proposal.data, observation, ownerWallet);
     }
     /** Validate health config before first cycle. */
     async preflight(agent) {

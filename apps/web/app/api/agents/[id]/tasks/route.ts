@@ -72,12 +72,12 @@ const STRATEGY_DEFAULTS: Record<string, {
   health: {
     tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
     protocols: ['venus'],
-    functions: ['deposit', 'repay', 'withdraw', 'mint', 'repayBorrow', 'redeemUnderlying'],
+    functions: ['deposit', 'repay', 'withdraw', 'mint', 'repayBorrow', 'repayBorrowBehalf', 'redeemUnderlying'],
   },
   yield: {
     tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
     protocols: ['venus', 'aave'],
-    functions: ['deposit', 'withdraw', 'mint', 'supply', 'redeemUnderlying'],
+    functions: ['deposit', 'withdraw', 'mint', 'mintBehalf', 'supply', 'redeemUnderlying'],
   },
   lp: {
     tokens: ['USDT', 'WBNB'],
@@ -90,7 +90,7 @@ function strategyDefaultsFor(agentType: string) {
   return STRATEGY_DEFAULTS[agentType] ?? {
     tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
     protocols: ['pancakeswap', 'venus'],
-    functions: ['swap', 'deposit', 'withdraw', 'repay', 'mint', 'supply', 'repayBorrow', 'redeemUnderlying', 'exactInputSingle', 'decreaseLiquidity'],
+    functions: ['swap', 'deposit', 'withdraw', 'repay', 'mint', 'supply', 'repayBorrow', 'repayBorrowBehalf', 'mintBehalf', 'redeemUnderlying', 'exactInputSingle', 'decreaseLiquidity'],
   };
 }
 

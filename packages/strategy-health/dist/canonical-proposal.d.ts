@@ -9,6 +9,18 @@ export declare const HEALTH_VTOKENS: Record<string, string>;
  *  - params.healthAction / params.execKind = 'VENUS_LENDING'
  * Returns null when there is no executable candidate or the protocol/asset
  * cannot be deterministically resolved (honest no-op, never fabricated).
+ *
+ * USER-WALLET-AWARE EXECUTION (critical correctness fix): the health monitor
+ * watches the OWNER's wallet (config.userWalletAddress / watchAddress), so a
+ * REPAY must target the OWNER's debt. Venus `repayBorrow(amount)` repays the
+ * CALLER's (agent's) debt — which is zero — so the repayment would be a
+ * no-op/revert and the user's debt would never be reduced. When the owner's
+ * wallet is known, the canonical proposal therefore uses
+ * `repayBorrowBehalf(borrower=owner, amount)` (executor pays, owner's debt
+ * decreases) and forwards `params.userWalletAddress` so the signer can build
+ * the behalf call. ADD_COLLATERAL on the owner's behalf uses `mintBehalf`
+ * (agent funds, owner collects the vTokens). Without a known owner wallet the
+ * proposal falls back to the agent's own position (prior behavior).
  */
-export declare function canonicalizeHealthProposal(proposal: ActionProposal, observation: Observation): ActionProposal | null;
+export declare function canonicalizeHealthProposal(proposal: ActionProposal, observation: Observation, userWalletAddress?: string | null): ActionProposal | null;
 //# sourceMappingURL=canonical-proposal.d.ts.map

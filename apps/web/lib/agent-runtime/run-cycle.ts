@@ -289,7 +289,7 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     }
 
     // 1) Resolve the session (must be ACTIVE for execution).
-    const session = opts.session ?? (await getSessionForAgent(agentId));
+    let session = opts.session ?? (await getSessionForAgent(agentId));
 
     // 2) Load grid state from Firestore and resolve volatility (survives serverless cycles).
     const dev = await resolveDataProvider();
@@ -426,6 +426,87 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // and is never converted. Fail closed when the price is unavailable.
     const policyProposal = await normalizeProposalValueForCaps(proposal, correlationId);
 
+    // 3c) USER-WALLET-AWARE EXECUTION (critical correctness): a health agent
+    // observes the OWNER's wallet, so a REPAY / ADD_COLLATERAL must act ON
+    // BEHALF of the owner (repayBorrowBehalf / mintBehalf / onBehalfOf) —
+    // otherwise the agent "repays" its own (empty) debt and the user's debt
+    // is never touched. Stamp the resolved owner wallet onto the proposal's
+    // params here (in addition to the strategy's own stamp) so the signer can
+    // build the behalf call for ANY strategy, and it flows through policy
+    // unchanged. Policy sees the SAME proposal the executor will sign.
+    const executionProposal = ownerWalletAddress
+      ? {
+          ...policyProposal,
+          params: {
+            ...(policyProposal.params ?? {}),
+            userWalletAddress: ownerWalletAddress,
+          },
+        }
+      : policyProposal;
+
+    // 3d) SESSION ALLOWLIST SELF-HEAL (bounded, additive): the strategy may
+    // now propose the owner-behalf variants (repayBorrowBehalf / mintBehalf)
+    // of a function the session already allows (repayBorrow / mint). Those
+    // are the SAME authority — the behalf variant just targets the owner's
+    // position with the agent paying. Existing ACTIVE sessions (created
+    // before this strategy version) must be extended additively so the
+    // proposal isn't wrongly denied by policy. The extension is strictly
+    // bounded: only the behalf twin of an already-allowed function is added,
+    // never a new protocol/contract/token.
+    if (session && session.status === 'ACTIVE' && session.allowedFunctions) {
+      // Map of behalf variant → the base function it extends. The session
+      // must already allow the BASE before the variant is added.
+      const BEHALF_TWINS: Record<string, readonly string[]> = {
+        repayBorrowBehalf: ['repayBorrow', 'repayBorrowBehalf'],
+        mintBehalf: ['mint', 'mintBehalf'],
+      };
+      const proposedFn = executionProposal.function ?? '';
+      const twin = BEHALF_TWINS[proposedFn];
+      if (twin) {
+        const baseAllowed = twin.some((f) => session!.allowedFunctions!.includes(f));
+        const variantPresent = session.allowedFunctions.includes(proposedFn);
+        if (baseAllowed && !variantPresent) {
+          try {
+            const { sessionManagerFactory } = await import('@/lib/session-manager-factory');
+            const manager = sessionManagerFactory();
+            const patched = await manager.updateSessionConfig(session.sessionId, {
+              allowedFunctions: [
+                ...(session?.allowedFunctions ?? []),
+                proposedFn,
+              ],
+            });
+            session = patched;
+            await persistAuditEvent({
+              type: 'AGENT_SESSION_EXTENDED',
+              correlationId,
+              agentId,
+              userId,
+              sessionId: session.sessionId,
+              severity: 'INFO',
+              detail: {
+                note: `Session allowlist extended with ${proposedFn} for user-wallet-aware execution. Only the behalf variant of an already-allowed function was added.`,
+                function: proposedFn,
+              },
+            });
+            logger.info('session_allowlist_extended', {
+              agentId,
+              sessionId: session.sessionId,
+              added: proposedFn,
+            });
+          } catch (selfHealErr) {
+            // Non-fatal: the cycle continues and policy may deny — the honest
+            // result (denied) is better than silently widening session authority
+            // when the persistence path fails.
+            logger.warn('session_allowlist_selfheal_failed', {
+              agentId,
+              sessionId: session.sessionId,
+              message: selfHealErr instanceof Error ? selfHealErr.message : String(selfHealErr),
+            });
+          }
+        }
+      }
+    }
+
     // 4) Policy gate (validate + reserve) — M5. Fails closed.
     //
     // SESSION ID TRUST (root cause of "Session not found"): the model invents
@@ -437,8 +518,8 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
     // a real active session existed, and would let a model reference arbitrary
     // sessions. Stamp the real sessionId onto the policy proposal here.
     const policyProposalWithSession = session
-      ? { ...policyProposal, sessionId: session.sessionId }
-      : policyProposal;
+      ? { ...executionProposal, sessionId: session.sessionId }
+      : executionProposal;
 
     const policy = await policyEngine.validateAction(policyProposalWithSession, {
       agentId: agent.id,
