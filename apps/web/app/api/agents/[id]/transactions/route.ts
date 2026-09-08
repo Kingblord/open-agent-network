@@ -178,6 +178,13 @@ export async function GET(
       walletAddress,
       transactions: rows.slice(0, limit),
       source: normalTxs.length + tokenTxs.length > 0 ? 'etherscan-v2' : 'empty',
+      // Honest note for the common empty case: distinguish 'no activity yet'
+      // from 'Etherscan unavailable' so the UI can show the actionable reason.
+      note: normalTxs.length + tokenTxs.length === 0
+        ? process.env.ETHERSCAN_API_KEY
+          ? 'No on-chain activity found for this wallet yet. If you expected transactions, Etherscan may be rate-limited — try again shortly.'
+          : 'ETHERSCAN_API_KEY is not configured on this deployment — on-chain history is unavailable until it is set (Settings → Environment Variables).'
+        : undefined,
     });
   } catch (err) {
     logger.error('agent_transactions_failed', {}, err);

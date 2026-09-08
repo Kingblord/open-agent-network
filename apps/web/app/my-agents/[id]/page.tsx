@@ -2004,7 +2004,9 @@ export default function MyAgentDetailPage() {
 
             {onchainTxs.length === 0 && events.length === 0 && (
               <div className="bg-card rounded-xl p-5 border border-border">
-                <p className="text-xs text-muted-foreground">No chartable data yet. Create a task, fund the agent wallet, and the closed loop will appear here in real time (BNB movements from BscScan + activity events).</p>
+                <p className="text-xs text-muted-foreground">
+                  {onchainTxsNote ?? 'No chartable data yet. Create a task, fund the agent wallet, and the closed loop will appear here in real time (BNB movements from BscScan + activity events).'}
+                </p>
               </div>
             )}
           </div>
@@ -2015,7 +2017,6 @@ export default function MyAgentDetailPage() {
       {showTaskModal && (
         <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl p-6 w-full max-w-lg space-y-5 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-black text-[#F0B90B] uppercase">Create Task</h3>
             <h3 className="text-lg font-black text-[#F0B90B] uppercase">Create Task</h3>
             <p className="text-xs text-muted-foreground -mt-2">
               Configure the agent&apos;s bounded authority. A scoped session is created with these exact limits, the agent is activated, and the closed loop runs immediately.

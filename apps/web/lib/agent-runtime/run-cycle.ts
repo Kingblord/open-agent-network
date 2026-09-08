@@ -135,6 +135,47 @@ async function resolveOwnerWallet(ownerId: string | undefined): Promise<string |
   }
 }
 
+/**
+ * Verify a broadcast transaction's receipt ON-CHAIN (BSC mainnet 56) before
+ * anything is ever marked CONFIRMED. Never trust the backend's word: an
+ * Altana `callsId` (batch/queue id) can look like a hash without being a real
+ * broadcast, and marking those CONFIRMED fabricates success — the exact
+ * complaint "it just assumed the transaction was successful".
+ *
+ * Returns:
+ *   'success'  → receipt found, status success (real gasUsed set)
+ *   'reverted' → receipt found, status reverted (honest FAILED)
+ *   'pending'  → receipt not yet mined (EXECUTING; the confirm-watcher
+ *                reconciles later — every 2 min cron)
+ *   'unverifiable' → not a tx-hash shape at all (backend batch id) — EXECUTING
+ *                with a note; only the 24h age-out marks it FAILED
+ */
+async function verifyOnchainReceipt(
+  txId: string,
+): Promise<{ status: 'success' | 'reverted' | 'pending' | 'unverifiable'; gasUsed?: string }> {
+  const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+  if (!TX_HASH_RE.test(txId)) return { status: 'unverifiable' };
+  try {
+    const { createPublicClient, http } = await import('viem');
+    const { bsc } = await import('viem/chains');
+    const client = createPublicClient({
+      chain: bsc,
+      transport: http(process.env.BAN_RPC_URL || 'https://bsc-dataseed1.binance.org'),
+    });
+    const receipt = await client.getTransactionReceipt({ hash: txId as `0x${string}` });
+    if (receipt && receipt.status === 'success') {
+      return { status: 'success', gasUsed: receipt.gasUsed?.toString() ?? undefined };
+    }
+    if (receipt) return { status: 'reverted' };
+    return { status: 'pending' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/not found|pending/i.test(msg)) return { status: 'pending' };
+    // RPC failure — can't verify. Honest: EXECUTING, let the watcher retry.
+    return { status: 'pending' };
+  }
+}
+
 /** List CONFIRMED executions for a given agent (performance rollup input). */
 async function listConfirmedExecutions(agentId: string): Promise<Execution[]> {  const db = getAdminDb();
   // Single-field equality (no composite index / orderBy).
@@ -500,13 +541,20 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
 
     const executionId = `exec_${proposal.proposalId.slice(-24)}`;
 
-    // Honesty guard: only a tx-hash-shaped id (0x + 64 hex) is a real broadcast
-    // transaction. Altana may return a `callsId` (batch id) — that is SUBMITTED,
-    // not confirmed. Marking those CONFIRMED would fabricate success.
-    const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
-    const isBroadcastTx = TX_HASH_RE.test(submitted.transactionHash);
+    // REAL-FUNDS HONESTY: NEVER mark CONFIRMED from the backend's word alone.
+    // An Altana `callsId` (or a not-yet-mined hash) is not proof of on-chain
+    // success. Verify the receipt ON-CHAIN right here; only a mined success
+    // receipt flips CONFIRMED (+ real gasUsed). Anything else is EXECUTING
+    // and the confirm-watcher (every-2-min cron) reconciles the receipt later.
+    const receipt = await verifyOnchainReceipt(submitted.transactionHash);
 
-    if (!isBroadcastTx) {
+    if (receipt.status !== 'success') {
+      const pendingNote =
+        receipt.status === 'unverifiable'
+          ? `Execution backend returned batch id ${submitted.transactionHash} (not a broadcast hash). Nothing is marked CONFIRMED; the confirm-watcher will reconcile or age it out.`
+          : receipt.status === 'reverted'
+            ? `Transaction ${submitted.transactionHash} was REVERTED on-chain. Marked FAILED — no position, no performance write.`
+            : `Transaction ${submitted.transactionHash} submitted; awaiting on-chain confirmation (not yet mined). Confirm-watcher will reconcile.`;
       await persistExecution({
         executionId,
         proposalId: proposal.proposalId,
@@ -519,27 +567,33 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
         transactionHash: submitted.transactionHash,
         chainId: 56,
         gasUsed: null,
-        status: 'EXECUTING',
-        errorCode: null,
+        status: receipt.status === 'reverted' ? 'FAILED' : 'EXECUTING',
+        errorCode: receipt.status === 'reverted' ? 'transaction_reverted_onchain' : null,
         createdAt: new Date().toISOString(),
         confirmedAt: null,
       });
       await persistAuditEvent({
-        type: 'AGENT_EXECUTION_PENDING',
+        type: receipt.status === 'reverted' ? 'TRANSACTION_FAILED' : 'AGENT_EXECUTION_PENDING',
         correlationId,
         agentId,
         userId,
         proposalId: proposal.proposalId,
         sessionId: proposal.sessionId,
         executionId,
-        severity: 'INFO',
+        severity: receipt.status === 'reverted' ? 'ERROR' : 'INFO',
         detail: {
-          note: `Submitted via execution backend (id ${submitted.transactionHash}); awaiting on-chain confirmation before recording a position.`,
+          transactionHash: submitted.transactionHash,
+          note: pendingNote,
+          verified: 'onchain-receipt',
         },
       });
-      // Honest intermediate state: submitted, not yet confirmed. No position,
-      // no performance rollup — those are only written on real confirmation.
-      return { ok: true, stage: 'submitted', executionId };
+      // Honest intermediate: no position, no performance rollup.
+      return {
+        ok: true,
+        stage: receipt.status === 'reverted' ? 'awaited' : 'submitted',
+        note: pendingNote,
+        executionId,
+      };
     }
 
     const confirmedAt = new Date().toISOString();
@@ -554,7 +608,7 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       parametersHash: JSON.stringify(proposal.params ?? {}),
       transactionHash: submitted.transactionHash,
       chainId: 56,
-      gasUsed: null,
+      gasUsed: receipt.gasUsed ?? null,
       status: 'CONFIRMED',
       errorCode: null,
       createdAt: new Date().toISOString(),
@@ -570,7 +624,7 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       proposalId: proposal.proposalId,
       sessionId: proposal.sessionId,
       executionId,
-      detail: { transactionHash: submitted.transactionHash },
+      detail: { transactionHash: submitted.transactionHash, verified: 'onchain-receipt', gasUsed: receipt.gasUsed ?? null },
     });
 
     // 6) Position from real confirmed output (only for position-bearing actions).
