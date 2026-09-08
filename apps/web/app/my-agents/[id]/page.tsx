@@ -651,6 +651,12 @@ export default function MyAgentDetailPage() {
     setShowTaskConfirm(false);
     setTaskLoading(true);
     try {
+      // Hoisted so the funding record below can reference them after the
+      // branch blocks (consts inside if/else would be out of scope).
+      let txHash = '';
+      let gasHash = '';
+      let tokenHash = '';
+
       if (taskConfirmData.depositToken === 'BNB') {
         // Send BNB to agent wallet
         let value: bigint;
@@ -663,7 +669,7 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        const txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
+        txHash = typeof txResult?.transactionHash === 'string' ? txResult.transactionHash : '';
         if (!txHash) {
           setTaskError('Deposit was not confirmed. Task creation cancelled.');
           setTaskLoading(false);
@@ -683,7 +689,7 @@ export default function MyAgentDetailPage() {
             chain: wallet.chain,
             client: thirdwebClient,
           });
-          const gasHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
+          gasHash = typeof gasResult?.transactionHash === 'string' ? gasResult.transactionHash : '';
           if (!gasHash) {
             setTaskError('Gas deposit cancelled.');
             setTaskLoading(false);
@@ -720,7 +726,7 @@ export default function MyAgentDetailPage() {
           chain: wallet.chain,
           client: thirdwebClient,
         });
-        const tokenHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
+        tokenHash = typeof tokenResult?.transactionHash === 'string' ? tokenResult.transactionHash : '';
         if (!tokenHash) {
           setTaskError(`${token} transfer was not confirmed. Task creation cancelled.`);
           setTaskLoading(false);
@@ -733,8 +739,15 @@ export default function MyAgentDetailPage() {
         description: `${taskConfirmData.depositUsd} ${taskConfirmData.depositToken} sent. Creating task now...`,
       });
 
-      // Now create the task
-      await executeCreateTask();
+      // Now create the task, passing the REAL funding txs so the server can
+      // derive grid capital/bounds from the actual deposit.
+      const depositToken = taskConfirmData.depositToken as 'BNB' | 'USDT' | 'USDC';
+      await executeCreateTask({
+        token: depositToken,
+        amount: taskConfirmData.depositUsd,
+        txHash: depositToken === 'BNB' ? txHash : undefined,
+        gasTxHash: depositToken !== 'BNB' ? (typeof gasHash === 'string' ? gasHash : '') : undefined,
+      });
     } catch (error) {
       console.error('Task deposit error:', error);
       setTaskError(error instanceof Error ? error.message : 'Deposit failed');
@@ -743,7 +756,7 @@ export default function MyAgentDetailPage() {
   };
 
   /** Create the task on the server (no deposit) */
-  const executeCreateTask = async () => {
+  const executeCreateTask = async (fundingTx?: { token: 'BNB' | 'USDT' | 'USDC'; amount: string; txHash?: string; gasTxHash?: string }) => {
     setTaskError(null);
     if (!bnbUsdPrice) return;
     setTaskLoading(true);
@@ -764,6 +777,17 @@ export default function MyAgentDetailPage() {
         allowedFunctions: [],
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
+        // FUNDING (capital) — the AUTO GRID SETUP derives capital/bounds from
+        // this exact deposit; without it a grid task fails preflight with
+        // "Grid capital must be positive".
+        funding: fundingTx
+          ? {
+              token: fundingTx.token,
+              amount: fundingTx.amount,
+              txHash: fundingTx.txHash,
+              gasTxHash: fundingTx.gasTxHash,
+            }
+          : undefined,
       };
 
       const response = await fetch(`/api/agents/${params.id}/tasks`, {
