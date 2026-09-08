@@ -47,6 +47,59 @@ export function auditEventType(value: string): AuditEvent['type'] {
   return value as AuditEvent['type'];
 }
 
+// ---------------------------------------------------------------------------
+// AUDIT-WRITE THROTTLE (FIRESTORE 20k/day WRITE quota — "Inngest exhausts it")
+//
+// The Inngest loop writes at least one audit event per cycle per agent and,
+// when an executor is STUCK (e.g. the Altana "Invalid parameters" error),
+// writes AGENT_EXECUTION_PENDING with the SAME note every 2 minutes — dozens
+// of identical rows/hour. With 4 agents that alone can exceed the free-tier
+// 20k writes/day.
+//
+// Policy (bounded in-memory cache, per process instance):
+//   - AGENT_TICK / AGENT_EXECUTION_PENDING: the FIRST occurrence of each
+//     (type, agent, note-signature) is always written; repeats are suppressed
+//     for 5 minutes. A STUCK condition therefore reports once, then stays
+//     quiet instead of duplicating.
+//   - All other event types are ALWAYS written (state changes never lost).
+// ---------------------------------------------------------------------------
+const THROTTLED_TYPES = new Set(['AGENT_TICK', 'AGENT_EXECUTION_PENDING']);
+const THROTTLE_WINDOW_MS = 5 * 60_000;
+const throttleCache = new Map<string, number>();
+
+function throttleSignature(
+  type: string,
+  agentId: string | undefined,
+  detail: Record<string, unknown> | undefined,
+): string {
+  const note = typeof detail?.note === 'string' ? detail.note.slice(0, 120) : '';
+  return `${type}|${agentId ?? ''}|${note}`;
+}
+
+function shouldThrottle(
+  type: string,
+  agentId: string | undefined,
+  detail: Record<string, unknown> | undefined,
+): boolean {
+  if (!THROTTLED_TYPES.has(type)) return false;
+  const key = throttleSignature(type, agentId, detail);
+  const now = Date.now();
+  const last = throttleCache.get(key);
+  if (last && now - last < THROTTLE_WINDOW_MS) return true;
+  if (throttleCache.size > 512) throttleCache.clear();
+  throttleCache.set(key, now);
+  return false;
+}
+
+/** TEST HOOK: export the throttle decision so regression tests can assert it
+ * without hitting Firestore. Not part of the runtime API surface. */
+export const __auditThrottle = {
+  shouldThrottle,
+  THROTTLED_TYPES,
+  THROTTLE_WINDOW_MS,
+  reset: () => throttleCache.clear(),
+};
+
 /** Persist a structured audit event to `audit_events` (Rule 10 / observability). */
 export async function persistAuditEvent(input: {
   type: string;
@@ -60,6 +113,24 @@ export async function persistAuditEvent(input: {
   detail?: Record<string, unknown>;
 }): Promise<AuditEvent> {
   const db = getAdminDb();
+  // Throttle redundant heartbeats + repeated stuck-notes so the loop cannot
+  // exhaust the Firestore write quota; first occurrence always written.
+  if (shouldThrottle(input.type, input.agentId, input.detail)) {
+    const throttled: AuditEvent = {
+      eventId: generateId('evt'),
+      type: auditEventType(input.type),
+      severity: input.severity ?? 'INFO',
+      correlationId: input.correlationId,
+      agentId: input.agentId,
+      userId: input.userId,
+      proposalId: input.proposalId,
+      sessionId: input.sessionId,
+      executionId: input.executionId,
+      detail: input.detail ?? {},
+      createdAt: new Date().toISOString(),
+    };
+    return throttled; // suppressed — callers still get an event shape
+  }
   const event: AuditEvent = {
     eventId: generateId('evt'),
     type: auditEventType(input.type),
