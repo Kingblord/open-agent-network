@@ -756,11 +756,12 @@ export default function MyAgentDetailPage() {
         dailyLimitUsd: sessionForm.dailyLimitUsd,
         maxTxWei,
         dailyWei,
-        allowedTokens: sessionForm.allowedTokens,
-        allowedProtocols: sessionForm.allowedProtocols,
-        allowedFunctions: sessionForm.allowedFunctions
-          ? sessionForm.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
+        // Technical authority (tokens/protocols/functions) is NOT sent from
+        // the client — the server derives the strategy's allowlists. Only
+        // critical values below.
+        allowedTokens: [],
+        allowedProtocols: [],
+        allowedFunctions: [],
         riskLevel: sessionForm.riskLevel,
         expiresAtMs: Date.now() + sessionForm.expiresAtDays * 24 * 60 * 60 * 1000,
       };
@@ -1993,73 +1994,21 @@ export default function MyAgentDetailPage() {
               )}
             </div>
 
-            {/* Allowed tokens */}
+            {/* AUTO-SCOPED AUTHORITY — the server derives tokens/protocols/
+                functions per strategy; users only set CRITICAL values. */}
             <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed tokens</label>
-              <div className="flex flex-wrap gap-1.5">
-                {TOKEN_OPTIONS.map((t) => {
-                  const active = sessionForm.allowedTokens.includes(t.symbol);
-                  return (
-                    <button
-                      key={t.symbol}
-                      type="button"
-                      onClick={() => toggleToken(t.symbol)}
-                      className={`text-xs font-black px-3 py-1.5 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
+              <div className="flex items-start gap-2.5 bg-background/50 border border-border rounded-lg px-3 py-2.5">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F0B90B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black text-foreground uppercase tracking-wider">Auto-scoped authority</p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+                    Tokens, protocols and functions are set automatically for this strategy (swap/repay/mint…).
+                    The server resolves them against the verified BAN registry before any session is created — you only choose amounts, risk and duration.
+                  </p>
+                </div>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN token registry (fail-closed).</p>
-            </div>
-
-            {/* Allowed protocols */}
-            <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed protocols</label>
-              <div className="flex flex-wrap gap-1.5">
-                {protocolOptions.map((p) => {
-                  const active = sessionForm.allowedProtocols.includes(p.id);
-                  const disabled = !p.verified;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => toggleProtocol(p.id)}
-                      title={disabled ? `${p.label} is recognized but not yet verified for autonomous execution (verified â‰  enabled).` : undefined}
-                      className={`text-[10px] font-black px-2.5 py-1 border transition ${active ? 'bg-[#F0B90B] text-black border-[#F0B90B]' : disabled ? 'bg-card text-gray-600 border-border cursor-not-allowed opacity-60' : 'bg-[#1A1A1A] text-gray-300 border-border hover:border-[#F0B90B]/50'}`}
-                    >
-                      {p.label}
-                      {disabled && <span className="ml-1 text-[9px] normal-case">(verifying"¦)</span>}
-                      {!disabled && <span className="ml-1 text-[9px] normal-case text-green-400">(Verified)</span>}
-                    </button>
-                  );
-                })}
-              </div>
-              {protocolSnapshotError && (
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Registry snapshot unavailable — showing last-known verified state; the server still validates fail-closed before any session is created.
-                </p>
-              )}
-              {!protocolOptions.some((p) => p.verified) && !protocolSnapshotError && (
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Protocols are recognized but not yet verified for autonomous execution (verified â‰  enabled). You can create the task with tokens only; protocol selection unlocks once the on-chain verification pipeline confirms their deployments.
-                </p>
-              )}
-              <p className="text-[10px] text-muted-foreground mt-1">Resolved server-side against the BAN deployment registry (fail-closed).</p>
-            </div>
-
-            {/* Allowed functions */}
-            <div>
-              <label className="block text-xs font-black text-muted-foreground mb-1.5">Allowed functions</label>
-              <input
-                type="text"
-                value={sessionForm.allowedFunctions}
-                onChange={(e) => setSessionForm({ ...sessionForm, allowedFunctions: e.target.value })}
-                placeholder="e.g. swap, deposit, withdraw"
-                className="w-full bg-background border border-border px-3 py-3 text-sm font-mono text-foreground rounded-lg"
-              />
             </div>
 
             {/* Risk */}

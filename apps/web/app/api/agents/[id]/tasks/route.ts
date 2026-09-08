@@ -52,6 +52,48 @@ import { BANError, ErrorCode } from '@ban/shared';
 
 const logger = createStructuredLogger('api.agents.tasks');
 
+/**
+ * Strategy-aware technical defaults (UX): the user should only ever set
+ * CRITICAL values (USD caps, risk, duration). Tokens / protocols / functions
+ * are derived HERE per strategy — they are the same allowlists the strategy's
+ * canonical proposals actually need, so a health task can never again fail
+ * with "Function repayBorrow not in session allowlist".
+ */
+const STRATEGY_DEFAULTS: Record<string, {
+  tokens: string[];
+  protocols: string[];
+  functions: string[];
+}> = {
+  grid: {
+    tokens: ['USDT', 'WBNB', 'USDC'],
+    protocols: ['pancakeswap'],
+    functions: ['swap', 'exactInputSingle'],
+  },
+  health: {
+    tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
+    protocols: ['venus'],
+    functions: ['deposit', 'repay', 'withdraw', 'mint', 'repayBorrow', 'redeemUnderlying'],
+  },
+  yield: {
+    tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
+    protocols: ['venus', 'aave'],
+    functions: ['deposit', 'withdraw', 'mint', 'supply', 'redeemUnderlying'],
+  },
+  lp: {
+    tokens: ['USDT', 'WBNB'],
+    protocols: ['pancakeswap'],
+    functions: ['liquidity', 'mint', 'decreaseLiquidity'],
+  },
+};
+
+function strategyDefaultsFor(agentType: string) {
+  return STRATEGY_DEFAULTS[agentType] ?? {
+    tokens: ['USDT', 'USDC', 'BNB', 'WBNB'],
+    protocols: ['pancakeswap', 'venus'],
+    functions: ['swap', 'deposit', 'withdraw', 'repay', 'mint', 'supply', 'repayBorrow', 'redeemUnderlying', 'exactInputSingle', 'decreaseLiquidity'],
+  };
+}
+
 export interface TaskRecord {
   taskId: string;
   agentId: string;
@@ -267,11 +309,20 @@ export async function POST(
     const maxTxWei = typeof b.maxTxWei === 'string' && b.maxTxWei ? b.maxTxWei : '0';
     const dailyWei = typeof b.dailyWei === 'string' && b.dailyWei ? b.dailyWei : '0';
 
+    // UX DEFAULTS: when the client leaves technical fields blank, derive the
+    // strategy's own allowlists server-side. Only CRITICAL values ($ caps,
+    // risk, duration) should come from the user — tokens/protocols/functions
+    // are a technical surface, and a wrong choice silently breaks execution
+    // (e.g. "repayBorrow not in allowlist").
+    const defaults = strategyDefaultsFor(String(agent.type ?? ''));
+
     // Resolve through the fail-closed registries (same path as sessions).
     let allowedContracts: string[];
     try {
       allowedContracts = resolveAllowedContracts(
-        Array.isArray(b.allowedProtocols) ? (b.allowedProtocols as string[]) : [],
+        Array.isArray(b.allowedProtocols) && (b.allowedProtocols as string[]).length > 0
+          ? (b.allowedProtocols as string[])
+          : defaults.protocols,
         Array.isArray(b.allowedContracts) ? (b.allowedContracts as string[]) : []
       );
     } catch (contractErr) {
@@ -285,7 +336,9 @@ export async function POST(
     let allowedTokens: string[];
     try {
       allowedTokens = resolveAllowedTokens(
-        Array.isArray(b.allowedTokens) ? (b.allowedTokens as string[]) : [],
+        Array.isArray(b.allowedTokens) && (b.allowedTokens as string[]).length > 0
+          ? (b.allowedTokens as string[])
+          : defaults.tokens,
         Array.isArray(b.allowedTokensLegacy) ? (b.allowedTokensLegacy as string[]) : []
       );
     } catch (tokenErr) {
@@ -298,9 +351,9 @@ export async function POST(
     }
 
     const allowedFunctions = canonicalizeAllowedFunctions(
-      Array.isArray(b.allowedFunctions)
+      Array.isArray(b.allowedFunctions) && (b.allowedFunctions as string[]).length > 0
         ? (b.allowedFunctions as string[]).map((s) => String(s).trim()).filter(Boolean)
-        : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : [])
+        : (typeof b.allowedFunctions === 'string' && b.allowedFunctions ? b.allowedFunctions.split(',').map((s) => s.trim()).filter(Boolean) : defaults.functions)
     );
     const riskLevel = typeof b.riskLevel === 'string' ? b.riskLevel : 'LOW';
     const expiresAtMs = typeof b.expiresAtMs === 'number' && b.expiresAtMs > Date.now() ? b.expiresAtMs : Date.now() + 30 * 24 * 60 * 60 * 1000;
