@@ -7,6 +7,7 @@ import { updateJobStatus, writeDeadLetter, writeAuditEvent } from '@/lib/jobs/jo
 import { classifyRetry, resolveTestFailure } from '@/lib/jobs/job-common';
 import { BANError, ErrorCode } from '@ban/shared';
 import { agentRegistry } from '@/lib/agent-registry';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { runAgentCycle } from '@/lib/agent-runtime/run-cycle';
 import { persistAuditEvent } from '@/lib/agent-runtime/persistence';
 import { loadLatestTaskConfig } from '@/lib/agent-runtime/task-config';
@@ -221,6 +222,29 @@ export const banAgentLoop = inngest.createFunction(
       correlationId,
       strategyConfig,
     });
+
+    // LOOP-STATUS HEARTBEAT: persist a lightweight liveness document so the
+    // frontend (and ops) can see the loop is ALIVE and what stage it last
+    // reached — a 404/absent doc means the Inngest chain is dead (or never
+    // started, e.g. local dev without `inngest dev`). Best-effort only: a
+    // heartbeat write must never break the loop or the cycle.
+    try {
+      const db = getAdminDb();
+      const loopState = {
+        agentId,
+        lastTickAt: new Date().toISOString(),
+        lastStage: result.ok ? result.stage : `failed:${result.reason}`,
+        schedule: 'self-chaining every ~2m',
+        updatedAt: new Date().toISOString(),
+      };
+      await db.collection('agent_loop_state').doc(agentId).set(loopState);
+      logger.info('loop_state_heartbeat', { agentId, lastStage: loopState.lastStage });
+    } catch (hbStateErr) {
+      logger.warn('loop_state_heartbeat_failed', {
+        agentId,
+        message: hbStateErr instanceof Error ? hbStateErr.message : String(hbStateErr),
+      });
+    }
 
     // Heartbeat: proves the Inngest loop reached THIS agent and records the
     // real cycle outcome. Written through persistAuditEvent so it lands in the

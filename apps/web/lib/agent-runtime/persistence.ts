@@ -144,7 +144,20 @@ export async function persistAuditEvent(input: {
     detail: input.detail ?? {},
     createdAt: new Date().toISOString(),
   };
-  await db.collection(collections.auditEvents).add(toFirestoreSafe(event));
+  try {
+    await db.collection(collections.auditEvents).add(toFirestoreSafe(event));
+  } catch (writeErr) {
+    // Firestore `.add()` generates the document ID client-side; if the first
+    // request landed but the response was lost (timeout/retry), a replayed
+    // retry re-sends the SAME auto-ID and Firestore answers ALREADY_EXISTS.
+    // The event IS persisted — treat the replay as success, never a cycle
+    // failure (Rule 10: observability must not break execution).
+    const message = writeErr instanceof Error ? writeErr.message : String(writeErr);
+    if (message.includes('ALREADY_EXISTS')) {
+      return event; // the duplicate write IS the proof it landed
+    }
+    throw writeErr;
+  }
   return event;
 }
 

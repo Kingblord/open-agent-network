@@ -26,6 +26,7 @@ import { createAgentExecutionBackend, loadAgentKeystore } from '@/lib/altana-sig
 import { findActivePermissionForJob } from '@/lib/permissions/permission-repo';
 import { PermissionResolver } from '@ban/eip7702';
 import { normalizeProposalValueForCaps } from './cap-normalization';
+import type { SpendLedgerRepository } from '@ban/policy-engine';
 
 /**
  * BAN Agent Runtime — closed-loop orchestration (Batch C).
@@ -541,6 +542,39 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       return { ok: false, reason: policy.reason ?? 'policy_denied', code: ErrorCode.POLICY_DENIED };
     }
 
+    // Policy ALLOWED → a spend reservation was atomically created. It MUST be
+    // finalized (commit on confirmed success / release on definitive failure /
+    // hold while the tx state is unknown) or every cycle leaks a RESERVED
+    // entry that grows `reservedAndCommittedTotal` until the session's
+    // cumulative-spend cap is permanently exhausted (the repeated
+    // "cumulative-spend" denials after a few relay-aborted cycles).
+    const reservationId = policy.reservationId ?? null;
+    const ledgerKey = proposal.idempotencyKey; // ledger entries key by idempotencyKey
+    const finalizeReservation = async (
+      action: 'commit' | 'release' | 'hold',
+      note: string,
+    ): Promise<void> => {
+      if (!reservationId || !ledgerKey) return;
+      try {
+        const { policyEngine: pe } = await import('@/lib/policy/policy-engine-provider');
+        const repo = (pe as unknown as { deps?: { spendLedger: SpendLedgerRepository } })
+          ?.deps?.spendLedger;
+        if (!repo) return;
+        if (action === 'commit') await repo.commit(ledgerKey);
+        else if (action === 'release') await repo.release(ledgerKey);
+        else await repo.hold(ledgerKey);
+        logger.info('spend_reservation_finalized', { agentId, reservationId, action, note });
+      } catch (finalizeErr) {
+        // Never fail the cycle because the reservation housekeeping failed.
+        logger.warn('spend_reservation_finalize_failed', {
+          agentId,
+          reservationId,
+          action,
+          message: finalizeErr instanceof Error ? finalizeErr.message : String(finalizeErr),
+        });
+      }
+    };
+
     // 4b) User-funds gate (update-v3 §8–§11): jobs that move the USER's own funds
     // (`requiresUserFunds`) require an ACTIVE EIP-7702-backed permission BEFORE any
     // execution. Operational (Altana) jobs skip this gate. Fails closed: a missing,
@@ -611,12 +645,28 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
             : 'Session not ACTIVE or agent not ACTIVE; awaiting execution. No transaction was broadcast.',
         },
       });
+      // Nothing was broadcast — release the reservation so the cap is not
+      // consumed by a cycle that never executed.
+      await finalizeReservation('release', 'no execute (backend/session/agent gate)');
       return { ok: true, stage: 'awaited' };
     }
 
     // 6) Session-gated sign/execution via this agent's own backend.
-    const submitted = await backend!({ proposal, session: session! });
+    let submitted: Awaited<ReturnType<NonNullable<typeof backend>>> | null = null;
+    try {
+      submitted = await backend!({ proposal, session: session! });
+    } catch (backendErr) {
+      // The signer/builder threw (e.g. relay rejected the batch, SDK error).
+      // NO transaction was broadcast — release the reservation immediately so
+      // the aborted attempt does NOT count against the session's spend caps
+      // (the leak that produced repeated "cumulative-spend" denials).
+      await finalizeReservation('release', 'backend/signer threw before broadcast');
+      const message = backendErr instanceof Error ? backendErr.message : String(backendErr);
+      logger.warn('execution_backend_threw', { agentId, proposalId: proposal.proposalId, message });
+      throw backendErr; // let the outer handler classify + persist honestly
+    }
     if (!submitted?.transactionHash) {
+      await finalizeReservation('release', 'no transaction hash returned');
       return { ok: false, reason: 'execution_no_hash', code: ErrorCode.EXECUTION_FAILED };
     }
 
@@ -636,6 +686,18 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
           : receipt.status === 'reverted'
             ? `Transaction ${submitted.transactionHash} was REVERTED on-chain. Marked FAILED — no position, no performance write.`
             : `Transaction ${submitted.transactionHash} submitted; awaiting on-chain confirmation (not yet mined). Confirm-watcher will reconcile.`;
+
+      // Reservation finalize (REAL-FUNDS honesty):
+      //  - reverted         → the tx failed → definitively RELEASE (money not spent)
+      //  - pending/submitted → tx may still mine → HOLD (watcher reconciles later)
+      //  - unverifiable      → batch id (not a tx hash) → HOLD (confirm-watcher
+      //                        ages it out after the grace period)
+      if (receipt.status === 'reverted') {
+        await finalizeReservation('release', 'on-chain revert');
+      } else {
+        await finalizeReservation('hold', 'tx pending/unverifiable — confirm-watcher reconciles');
+      }
+
       await persistExecution({
         executionId,
         proposalId: proposal.proposalId,
@@ -696,6 +758,11 @@ export async function runAgentCycle(opts: RunCycleOptions): Promise<CycleResult>
       confirmedAt,
     };
     await persistExecution(execution);
+
+    // Reservation finalize: a CONFIRMED on-chain success means the spend is
+    // real — COMMIT it so it counts against the session's cumulative caps
+    // (and the ledger stays an honest record of actual spend).
+    await finalizeReservation('commit', 'confirmed on-chain success');
 
     await persistAuditEvent({
       type: 'TRANSACTION_CONFIRMED',

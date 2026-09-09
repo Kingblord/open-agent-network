@@ -34,7 +34,20 @@ export async function GET(
     // The registry is authoritative; return it as-is so the caller can never
     // confuse a stale marketplace cache with the live record.
     logger.info('agent_fetched', { agentId: agent.id, ownerId: agent.ownerId });
-    return NextResponse.json({ ok: true, agent });
+
+    // Loop-state heartbeat (best-effort): when the Inngest self-chaining loop
+    // last ticked for this agent and the last stage it reached. Absent doc =
+    // the loop never ran (local dev without `inngest dev` / Inngest Cloud
+    // unreachable). Surfaces so the frontend can show loop liveness honestly.
+    let loopState: Record<string, unknown> | null = null;
+    try {
+      const { getAdminDb } = await import('@/lib/firebase-admin');
+      const snap = await getAdminDb().collection('agent_loop_state').doc(agent.id).get();
+      if (snap.exists) loopState = snap.data() as Record<string, unknown>;
+    } catch {
+      loopState = null; // never fail the read for a heartbeat record
+    }
+    return NextResponse.json({ ok: true, agent, loopState });
   } catch (err) {
     logger.error('agent_fetch_failed', {}, err);
     return handleError(err);

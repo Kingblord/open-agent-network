@@ -32,6 +32,22 @@ export class FirebaseSpendLedgerRepository implements SpendLedgerRepository {
       if (snap.exists) {
         const existing = snap.data() as SpendLedgerEntry;
         if (existing.status === 'RESERVED') return existing; // idempotent replay
+        // A RELEASED reservation means the previous attempt never spent
+        // anything (relay/signer failure, backend threw, on-chain revert).
+        // The SAME proposal may be retried legitimately: re-reserve atomically
+        // (this is the "stuck at awaiting" relief — without it, every aborted
+        // attempt permanently poisons its idempotency key and the cycle can
+        // never run again under the same key).
+        if (existing.status === 'RELEASED') {
+          const updated: SpendLedgerEntry = {
+            ...entry,
+            id: existing.id,
+            createdAt: existing.createdAt,
+            status: 'RESERVED',
+          };
+          tx.set(ref, updated);
+          return updated;
+        }
         throw new BANError(
           ErrorCode.DUPLICATE_PROPOSAL,
           `Reservation ${entry.idempotencyKey} already finalized as ${existing.status}`

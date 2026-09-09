@@ -298,6 +298,7 @@ export default function MyAgentDetailPage() {
   const { mutateAsync: sendTransactionTx } = useSendTransaction();
   const [mounted, setMounted] = useState(false);
   const [agent, setAgent] = useState<AgentDetail | null>(null);
+  const [loopState, setLoopState] = useState<{ lastTickAt?: string; lastStage?: string; schedule?: string } | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [performance, setPerformance] = useState<PerformanceData | null>(null);
@@ -421,6 +422,9 @@ export default function MyAgentDetailPage() {
       if (response.ok) {
         const data = await response.json();
         setAgent(data.agent);
+        // Loop-strip liveness: absent loopState = loop never ticked (e.g. no
+        // Inngest Dev Server locally / Cloud unreachable) — shown honestly.
+        setLoopState(data.loopState ?? null);
       } else {
         router.push('/my-agents');
       }
@@ -820,6 +824,7 @@ export default function MyAgentDetailPage() {
       await fetchTasks();
       await fetchSessions();
       await fetchActivity();
+      await fetchAgent(); // refresh loop liveness (loopState) after kick
       fetchBalance(true);
     } catch (error) {
       console.error('Task creation error:', error);
@@ -854,6 +859,9 @@ export default function MyAgentDetailPage() {
           data.result?.note ? String(data.result.note) : 'Check the review terminal for the outcome.'
         }`,
       });
+      // Refresh loop liveness + task list so the UI reflects the kicked loop.
+      if (data.loopState) setLoopState(data.loopState);
+      else await fetchAgent();
       await fetchTasks();
       await fetchActivity();
       fetchBalance(true);
@@ -1266,6 +1274,18 @@ export default function MyAgentDetailPage() {
                 <span className="flex items-center gap-1.5 text-xs font-black text-green-400">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                   {agent.status}
+                </span>
+                {/* Loop liveness — honest: absent loopState = the Inngest
+                    self-chaining loop never ticked (local dev without
+                    `inngest dev`, or Inngest Cloud unreachable). */}
+                <span
+                  className={`flex items-center gap-1.5 text-[9px] font-black tracking-wider uppercase px-2 py-0.5 rounded ${
+                    loopState?.lastTickAt ? 'bg-green-500/10 text-green-400 border border-green-500/40' : 'bg-yellow-500/10 text-[#F0B90B] border border-[#F0B90B]/40'
+                  }`}
+                  title={loopState ? `Last tick ${loopState.lastTickAt} — ${loopState.lastStage ?? ''} ${loopState.schedule ?? ''}` : 'No Inngest heartbeat yet — start `inngest dev` (local) or set INNGEST_* keys (Vercel)'}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${loopState?.lastTickAt ? 'bg-green-400' : 'bg-[#F0B90B]'}`} />
+                  {loopState?.lastTickAt ? `LOOP LIVE · ${loopState.lastStage ?? ''}` : 'LOOP OFFLINE'}
                 </span>
                 {primaryProtocol && <span className="text-xs text-muted-foreground">On {primaryProtocolLabel}</span>}
                 {agent.riskLevel && (

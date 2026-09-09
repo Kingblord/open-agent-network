@@ -77,6 +77,43 @@ export async function POST(
       strategyConfig,
     });
 
+    // Kick the self-sustaining Inngest loop (ban/agent.tick-loop) so a manual
+    // RUN is never a dead end: when the cycle stopped at an honest `awaited`
+    // (e.g. a transient relay hiccup), the loop re-runs it every ~2 min until
+    // it resolves or the agent pauses. Same kick the tasks route does.
+    // Sets the honest flag so the UI can show whether the loop will continue.
+    let loopKicked = false;
+    try {
+      const { inngest } = await import('@/inngest/client');
+      await inngest.send({
+        name: 'ban/agent.tick-loop',
+        data: {
+          agentId: agent.id,
+          userId: actorId,
+          correlationId,
+        },
+      });
+      loopKicked = true;
+      logger.info('run_loop_kicked', { agentId: agent.id, actorId, correlationId });
+    } catch (loopErr) {
+      logger.warn('run_loop_kick_failed', {
+        agentId: agent.id,
+        correlationId,
+        err: loopErr instanceof Error ? loopErr.message : String(loopErr),
+      });
+    }
+
+    // Loop-state heartbeat: surface when the Inngest loop last ticked for this
+    // agent (absent doc = loop never ran / local dev without Inngest serving).
+    let loopState: Record<string, unknown> | null = null;
+    try {
+      const { getAdminDb } = await import('@/lib/firebase-admin');
+      const snap = await getAdminDb().collection('agent_loop_state').doc(agent.id).get();
+      if (snap.exists) loopState = snap.data() as Record<string, unknown>;
+    } catch {
+      loopState = null; // best-effort — never fail the run response
+    }
+
     logger.info('agent_cycle_manual', {
       agentId: agent.id,
       actorId,
@@ -88,6 +125,12 @@ export async function POST(
       ok: result.ok,
       result,
       agentStatus: agent.status,
+      // Honest kick status so callers know whether the autonomous loop is
+      // actually scheduled to continue (e.g. local dev without Inngest Dev
+      // Server tunneled to Cloud CANNOT deliver the event — surfaced here).
+      loopKicked,
+      // Liveness of the self-chaining loop, when it has ticked at all.
+      loopState,
     });
   } catch (err) {
     logger.error('agent_run_failed', {}, err);
