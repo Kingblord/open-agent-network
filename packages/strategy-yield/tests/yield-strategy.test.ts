@@ -205,7 +205,7 @@ describe('YieldStrategy end-to-end (hermetic, in-memory brain)', () => {
   it('decide() returns a schema-valid ActionProposal from a candidate', async () => {
     const brain = new RecordingBrain();
     const dp = new YieldDataProvider(fakeAdapter([{ asset: 'BNB', protocol: 'venus', apy: 5, tvlUsd: '1000', risk: 'LOW', timestamp: 'now' }]));
-    const strat = new YieldStrategy({ brain: brain as never, data: dp });
+    const strat = new YieldStrategy({ brain: brain as never, data: dp, config: { maxTxUsd: '4' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();
@@ -236,12 +236,96 @@ describe('YieldStrategy end-to-end (hermetic, in-memory brain)', () => {
   it('does not invoke PolicyEngine or ExecutionEngine — only the injected brain', async () => {
     const brain = new RecordingBrain();
     const dp = new YieldDataProvider(fakeAdapter([{ asset: 'BNB', protocol: 'venus', apy: 5, tvlUsd: '1000', risk: 'LOW', timestamp: 'now' }]));
-    const strat = new YieldStrategy({ brain: brain as never, data: dp });
+    const strat = new YieldStrategy({ brain: brain as never, data: dp, config: { maxTxUsd: '4' } });
     const obs = await strat.observe(agent as never, 'corr_1');
     const proposal = await strat.decide(obs[0], agent as never);
     expect(proposal).not.toBeNull();
     // The brain was consulted exactly once; no policy/execution engine exists in-path.
     expect(brain.calls.length).toBe(1);
     expect(ActionProposalSchema.safeParse(proposal).success).toBe(true);
+  });
+});
+
+describe('User-wallet-aware yield deposits (parity with health)', () => {
+  const opts = {
+    proposalId: 'prop_yield',
+    agentId: 'ag_test',
+    userId: 'user_test',
+    sessionId: 'sess_test',
+    protocol: 'venus',
+    contract: '0xfD5840Cd36d94D7229439859C0112a4185BC0255',
+    function: 'mint',
+    action: 'DEPOSIT',
+    capabilityId: 'PROPOSE_LENDING_ACTION',
+    token: '0x55d398326f99059fF775485246999027B3197955',
+    amount: '5000000000000000000', // model's claim: 5 USDT — must be IGNORED for DEPOSIT
+    estimatedValue: '5000000000000000000',
+    asset: 'USDT',
+    params: { requestedAction: 'DEPOSIT' },
+    idempotencyKey: 'ik_yield',
+    riskLevel: 'MEDIUM',
+    createdAt: new Date().toISOString(),
+  };
+  const obs = {
+    data: {
+      candidates: [
+        {
+          asset: 'USDT',
+          protocol: 'venus',
+          apy: 8,
+          tvlUsd: '5000000',
+          risk: 'LOW',
+          rank: 1,
+        },
+      ],
+    },
+  };
+  // Task budget: $4 per-tx cap → 400 cents (the deterministic size).
+  const BUDGET_CENTS = 400;
+
+  it('CRITICAL: with the owner wallet known, Venus DEPOSIT becomes mintBehalf(owner) + params.userWalletAddress', async () => {
+    const { canonicalizeYieldProposal } = await import('../src/canonical-proposal.js');
+    const ownerWallet = '0x4444444444444444444444444444444444444444';
+    const out = canonicalizeYieldProposal(opts as never, obs as never, ownerWallet, BUDGET_CENTS);
+    expect(out).not.toBeNull();
+    // The USER's capital must land on the USER's position — mintBehalf, so the
+    // owner receives the vTokens (not the agent).
+    expect(out!.function).toBe('mintBehalf');
+    expect(out!.params?.userWalletAddress).toBe(ownerWallet);
+  });
+
+  it('without a known owner wallet, behavior is unchanged (mint, no params.userWalletAddress)', async () => {
+    const { canonicalizeYieldProposal } = await import('../src/canonical-proposal.js');
+    const out = canonicalizeYieldProposal(opts as never, obs as never, null, BUDGET_CENTS);
+    expect(out).not.toBeNull();
+    expect(out!.function).toBe('mint');
+    expect(out!.params?.userWalletAddress).toBeUndefined();
+  });
+
+  it('CRITICAL AMOUNT FIX: DEPOSIT amount = task budget (cents→wei), NEVER the model\'s raw amount', async () => {
+    const { canonicalizeYieldProposal } = await import('../src/canonical-proposal.js');
+    const out = canonicalizeYieldProposal(opts as never, obs as never, null, BUDGET_CENTS);
+    expect(out).not.toBeNull();
+    // $4 = 400 cents → 400 × 1e16 = 4e18 wei (18-dec stablecoin).
+    expect(out!.amount).toBe('4000000000000000000');
+    expect(out!.estimatedValue).toBe('4000000000000000000');
+    // The model's raw '5000000000000000000' (5 wei-ish claim) is archived but
+    // never broadcast.
+    expect(out!.params?.requestedAmount).toBe('5000000000000000000');
+  });
+
+  it('DEPOSIT fails closed without a task budget (no invented size)', async () => {
+    const { canonicalizeYieldProposal } = await import('../src/canonical-proposal.js');
+    const out = canonicalizeYieldProposal(opts as never, obs as never, null, null);
+    expect(out).toBeNull();
+  });
+
+  it('WITHDRAW stays agent-owned (redeemUnderlying) even with a known owner (no behalf withdraw on verified vTokens)', async () => {
+    const { canonicalizeYieldProposal } = await import('../src/canonical-proposal.js');
+    const withdrawOpts = { ...opts, action: 'WITHDRAW', function: 'redeemUnderlying', params: { requestedAction: 'WITHDRAW' } };
+    const out = canonicalizeYieldProposal(withdrawOpts as never, obs as never, '0x4444444444444444444444444444444444444444');
+    expect(out).not.toBeNull();
+    expect(out!.function).toBe('redeemUnderlying');
+    expect(out!.params?.userWalletAddress).toBe('0x4444444444444444444444444444444444444444');
   });
 });

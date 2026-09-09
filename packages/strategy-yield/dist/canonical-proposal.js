@@ -53,8 +53,18 @@ function resolveTarget(protocol, asset, action) {
  *    crash on)
  *  - params.execKind marks the execution surface the signer expects
  * Returns null when no candidate/protocol/asset resolves deterministically.
+ *
+ * USER-WALLET-AWARE EXECUTION (parity with the health strategy): a deposit of
+ * the USER's capital must land ON THE USER's position — the agent wallet pays,
+ * the USER receives the vTokens/aTokens (mintBehalf / supply onBehalfOf).
+ * Pass the resolved owner wallet (run-cycle threads it via strategy config
+ * `userWalletAddress`, mirroring health). When absent, the deposit targets the
+ * agent's OWN position (prior behavior). WITHDRAW stays agent-owned: the
+ * deployed Venus vTokens expose NO redeemUnderlyingBehalf path (verified
+ * on-chain — "not an approved delegate"), so a harvest only works on a
+ * position the agent itself can redeem.
  */
-export function canonicalizeYieldProposal(proposal, observation) {
+export function canonicalizeYieldProposal(proposal, observation, userWalletAddress, depositUsdCents) {
     const { action: canonical, directive } = canonicalizeAction(proposal.action);
     if (directive)
         return null;
@@ -75,19 +85,50 @@ export function canonicalizeYieldProposal(proposal, observation) {
     const target = resolveTarget(protocol, asset, intent);
     if (!target || !isHexAddress(target.contract))
         return null; // fail closed
-    const amount = toWeiIntegerString(proposal.amount);
+    // DETERMINISTIC AMOUNT (never the LLM's raw number):
+    //  - DEPOSIT  → the TASK BUDGET (depositUsdCents, from the task's maxTxUsd ×
+    //               100) converted to the underlying's integer wei. The model's
+    //               "amount" is an arbitrary number (e.g. '50000' = $5e-14 wei)
+    //               and MUST NOT become the broadcast size — the user's per-tx
+    //               budget is the only honest size authority. Stables peg $1 →
+    //               wei = cents × 1e16. No budget → fail closed (never invent).
+    //  - WITHDRAW → the model's amount is accepted ONLY as clean integer wei
+    //               (a harvest redeems an existing position; the position's
+    //               units are the honest size). Anything else fails closed.
+    const modelAmountRaw = toWeiIntegerString(proposal.amount);
+    let amount = null;
+    if (intent === 'DEPOSIT') {
+        const budgetCents = Number.isFinite(Number(depositUsdCents)) && Number(depositUsdCents) > 0
+            ? BigInt(Math.floor(Number(depositUsdCents)))
+            : null;
+        if (budgetCents == null)
+            return null; // no task budget — refuse to spend blindly
+        amount = (budgetCents * 10n ** 16n).toString(); // cents → 18-dec wei
+    }
+    else {
+        amount = modelAmountRaw; // WITHDRAW: clean wei only, else null → honest no-op
+    }
     if (amount == null)
-        return null; // no sane amount — refuse to spend blindly
+        return null;
     const candidateRisk = typeof candidate.risk === 'string' ? candidate.risk.trim().toUpperCase() : '';
     const deterministicRisk = candidateRisk === 'LOW' || candidateRisk === 'MEDIUM' || candidateRisk === 'HIGH'
         ? candidateRisk
         : 'MEDIUM';
+    // USER-WALLET-AWARE: when the owner's wallet is known, a DEPOSIT of the
+    // user's capital lands ON THE USER's position. Venus uses mintBehalf
+    // (verified present on the deployed vTokens); Aave's supply already takes
+    // onBehalfOf via the signer (fn stays 'supply'). WITHDRAW stays agent-owned
+    // (no redeemUnderlyingBehalf on the deployed vTokens).
+    const beneficiary = typeof userWalletAddress === 'string' && isHexAddress(userWalletAddress)
+        ? userWalletAddress
+        : null;
+    const fn = intent === 'DEPOSIT' && protocol === 'venus' && beneficiary ? 'mintBehalf' : target.fn;
     const enriched = {
         ...proposal,
         action: intent,
         protocol,
         contract: target.contract,
-        function: target.fn,
+        function: fn,
         token: UNDERLYING[asset] ?? '',
         amount,
         estimatedValue: amount,
@@ -103,6 +144,13 @@ export function canonicalizeYieldProposal(proposal, observation) {
             requestedAction: typeof proposal.params?.requestedAction === 'string'
                 ? proposal.params.requestedAction
                 : proposal.action,
+            // The LLM's raw amount is archived (auditability) but NEVER the
+            // broadcast size — the deterministic amount above is.
+            ...(modelAmountRaw ? { requestedAmount: modelAmountRaw } : {}),
+            // The signer needs the OWNER's wallet to build onBehalf calls — stamped
+            // here (and again by run-cycle before policy) so the executor never acts
+            // on the wrong account.
+            ...(beneficiary ? { userWalletAddress: beneficiary } : {}),
         },
     };
     const revalidated = ActionProposalSchema.safeParse(enriched);

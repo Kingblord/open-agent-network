@@ -238,6 +238,12 @@ function isAwaitableConfigGap(err: unknown): boolean {
   // Import / module / provider / signer-runtime gaps (including on serverless).
   if (/import|failed to load|cannot find module|sdk|rpc|provider|keystore/i.test(message)) return true;
 
+  // DRY-RUN hook (BAN_DRY_RUN=1): the signer built + printed every call but
+  // intentionally did NOT broadcast. Classify as awaiting so the cycle reports
+  // an honest `awaited` with the full built-call list as the note — the
+  // operator sees the exact calldata without spending anything.
+  if (/dry.?run|DRY-RUN/i.test(message)) return true;
+
   // Raw network / DNS / timeout / rate-limit failures from viem / fetch.
   if (
     /fetch failed|request failed|failed to fetch|network|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timed out|aborted|rate.?limit|429/i.test(

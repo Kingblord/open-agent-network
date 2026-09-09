@@ -35,6 +35,18 @@ function toString(value: unknown, fallback: string): string {
 }
 
 /**
+ * Normalize the network string the data provider understands. Task configs
+ * store the human label 'BNB Smart Chain' (and the chainId), while the yield
+ * data provider expects the canonical catalog id 'bnb-mainnet'. Accept both
+ * (case/separator-insensitive); anything else fails back to bnb-mainnet.
+ */
+function canonicalNetwork(value: string): string {
+  const cleaned = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (cleaned === 'bnbmainnet' || cleaned === 'bnbsmartchain') return 'bnb-mainnet';
+  return 'bnb-mainnet'; // only BSC mainnet is served — fail closed to catalog id
+}
+
+/**
  * M9 — YieldStrategy (implements @ban/agent-core StrategyEngine).
  *
  * observe()  → deterministic opportunity analysis → curated Observation[]
@@ -76,13 +88,54 @@ export class YieldStrategy implements StrategyEngine {
 
   async observe(agent: Agent, _correlationId: string): Promise<Observation[]> {
     // Task-config knobs (fail-closed): fall back to constructor defaults when
-    // the task row didn't set them — never fabricates a value.
-    const network = this.config ? toString(this.config.network, this.network) : this.network;
+    // the task row didn't set them — never fabricates a value. The network
+    // label from a task ('BNB Smart Chain') is normalized to the canonical
+    // catalog id the data provider serves ('bnb-mainnet').
+    const network = this.config
+      ? canonicalNetwork(toString(this.config.network, this.network))
+      : this.network;
     const topN = this.config ? toNumber(this.config.topN, this.topN) : this.topN;
     const raw = await this.data.fetch(network);
     const normalized = this.normalizer.normalizeAll(raw);
     const riskAdjusted = this.riskModel.apply(normalized, agent.riskLevel);
     const candidates = this.selector.select(riskAdjusted);
+
+    // SIMULATION HOOK (BAN_SIM_YIELD_APR / BAN_SIM_YIELD_TOKEN): injects a
+    // fat, LIVE-price-realistic opportunity into the observation so an
+    // operator can watch the FULL closed loop (observe → decide → policy →
+    // build calldata → dry-run) against a simulated real-time opportunity.
+    // The same pattern as __auditThrottle: a test-only env hook; NEVER set in
+    // production. When the env var is absent the candidates are untouched.
+    const simApr = process.env.BAN_SIM_YIELD_APR;
+    const simToken = process.env.BAN_SIM_YIELD_TOKEN ?? '';
+    if (simApr && Number(simApr) > 0 && simToken) {
+      const token = simToken.toUpperCase();
+      const net = this.network;
+      // The simulated opportunity's risk must MATCH the agent's risk level so
+      // the deterministic risk policy allows it (a LOW agent can only take
+      // LOW-risk actions; MEDIUM would be honestly denied before execution).
+      const agentRisk = String(agent.riskLevel ?? 'LOW').toUpperCase();
+      const simRisk = agentRisk === 'HIGH' ? 'HIGH' : agentRisk === 'MEDIUM' ? 'MEDIUM' : 'LOW';
+      const sim = this.observationBuilder.build(agent, [
+        {
+          asset: token,
+          protocol: 'venus',
+          risk: simRisk as 'LOW' | 'MEDIUM' | 'HIGH',
+          tvlUsd: '1250000000',
+          grossYieldBps: Math.round(Number(simApr) * 100),
+          protocolFeeBps: 5,
+          swapCostBps: 5,
+          gasCostBps: 2,
+          slippageBps: 3,
+          riskAdjustmentBps: 10,
+          effectiveYieldBps: Math.round(Number(simApr) * 100) - 25,
+          rank: 0,
+        },
+      ], { topN });
+      console.warn(`[yield-sim] INJECTED ${token} @ ${simApr}% APR (risk=${simRisk}, matches agent) — TEST HOOK ACTIVE (network=${net})`);
+      return [sim];
+    }
+
     return [this.observationBuilder.build(agent, candidates, { topN })];
   }
 
@@ -117,7 +170,24 @@ export class YieldStrategy implements StrategyEngine {
     // Execution-critical fields are canonicalized from the verified BSC
     // deployment set and the observation's candidates — never model-authored
     // values. Returns null when no target resolves (honest no-op).
-    return canonicalizeYieldProposal(proposal.data, observation);
+    //
+    // USER-WALLET-AWARE: when the owner's personal wallet is known (threaded
+    // through config.userWalletAddress by run-cycle), a DEPOSIT lands ON THE
+    // OWNER's position (mintBehalf / supply onBehalfOf) — the agent pays, the
+    // owner receives the yield-bearing tokens.
+    const ownerWallet =
+      (typeof this.config?.userWalletAddress === 'string' && this.config!.userWalletAddress) ||
+      null;
+
+    // DETERMINISTIC DEPOSIT SIZE: the task's per-transaction USD budget
+    // (maxTxUsd, set by the user on the task form) is the ONLY honest size —
+    // the LLM's raw 'amount' is archived but never broadcast. Converted to
+    // cents for the canonicalizer (which turns cents → underlying wei).
+    const budgetUsd = Number(this.config?.maxTxUsd ?? 0);
+    const depositUsdCents =
+      Number.isFinite(budgetUsd) && budgetUsd > 0 ? Math.round(budgetUsd * 100) : null;
+
+    return canonicalizeYieldProposal(proposal.data, observation, ownerWallet, depositUsdCents);
   }
 
   /** Validate yield config before first cycle. */

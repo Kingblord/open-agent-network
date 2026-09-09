@@ -435,15 +435,67 @@ export async function createAltanaSigningBackend(
           );
         }
 
-        // AUTONOMOUS FUEL REBALANCE: a REPAY spends the DEBT token. If the agent
-        // wallet holds a different stablecoin (user deposited USDT, debt is
-        // USDC), swap first so the repay can complete — the agent rebalances
-        // its own fuel, never the user's. Broadcast the swap calls FIRST,
-        // then the approve+repay (order matters on-chain).
+        // AUTONOMOUS FUEL REBALANCE: a lending action spends the UNDERLYING
+        // token (REPAY spends the debt token; DEPOSIT spends the opportunity's
+        // underlying). If the agent wallet holds a DIFFERENT stablecoin (user
+        // deposited USDT, position is USDC), swap first so the action can
+        // complete — the agent rebalances its own fuel, never the user's.
+        // Applies to Venus lending (repay/mint) and Aave (supply).
+        const isLendingSpend =
+          proposal.function === 'repayBorrowBehalf' ||
+          proposal.function === 'repayBorrow' ||
+          proposal.function === 'mintBehalf' ||
+          proposal.function === 'mint' ||
+          proposal.function === 'supply';
+        const underlyingSpent = (proposal.params?.underlying ?? proposal.token) as Address | undefined;
+        let rebalanceCalls: ExecutableCall[] = [];
+        if (isLendingSpend && underlyingSpent && /^0x[a-fA-F0-9]{40}$/.test(String(underlyingSpent))) {
+          rebalanceCalls = await buildFuelRebalanceCalls(
+            publicClient as never,
+            account.address,
+            underlyingSpent,
+            BigInt(proposal.amount ?? '0'),
+          );
+        }
+
+        // FULL ORDERED EXECUTION LIST: [fuel swap..., approve..., protocol...]
+        // — the exact sequence a real broadcast would send (each mined first).
+        const fullExecution = [...rebalanceCalls, ...calls];
+
+        // DRY-RUN HOOK (BAN_DRY_RUN=1): build + print EVERY call (decoded),
+        // then STOP — no transaction is broadcast. Same pattern as the
+        // __auditThrottle test hook: env-only, never set in production. The
+        // thrown message is classified as an awaitable config-gap by
+        // run-cycle, so the cycle reports an honest `awaited` with the full
+        // call list as the note.
+        if (process.env.BAN_DRY_RUN === '1') {
+          const decoded = fullExecution.map((c) => ({
+            to: c.to,
+            value: c.value.toString(),
+            selector: c.data.slice(0, 10),
+            data: c.data,
+          }));
+          logger.info('dry_run_calls_built', {
+            agentId,
+            proposalId: proposal.proposalId,
+            function: proposal.function,
+            calls: decoded,
+          });
+          const lines = decoded.map(
+            (c, i) => `  [${i}] to=${c.to} value=${c.value} selector=${c.selector} data=${c.data}`,
+          );
+          throw new BANError(
+            ErrorCode.EXECUTION_FAILED,
+            `DRY-RUN (BAN_DRY_RUN=1): ${fullExecution.length} call(s) built for ${proposal.function} — NOT broadcast. ${lines.join('\n')}`,
+            { retryable: false },
+          );
+        }
+
+        // Broadcast each call sequentially as a normal EOA tx. Every dependent
+        // tx (approve → swap → approve → repay) MUST be mined before the next
+        // is sent — a "fast" send with a reused nonce or an un-landed
+        // allowance is what makes the swap revert with STF.
         let lastTxHash: `0x${string}` | null = null;
-        // Every dependent tx (approve → swap → approve → repay) MUST be mined
-        // before the next is sent — a "fast" send with a reused nonce or an
-        // un-landed allowance is what makes the swap revert with STF.
         const sendAndWait = async (callItem: ExecutableCall): Promise<`0x${string}`> => {
           const hash = await walletClient.sendTransaction({
             to: callItem.to,
@@ -473,35 +525,10 @@ export async function createAltanaSigningBackend(
           return hash;
         };
 
-        if (proposal.function === 'repayBorrowBehalf' || proposal.function === 'repayBorrow') {
-          const underlying = (proposal.params?.underlying ?? proposal.token) as Address | undefined;
-          if (underlying && /^0x[a-fA-F0-9]{40}$/.test(String(underlying))) {
-            const rebalanceCalls = await buildFuelRebalanceCalls(
-              publicClient as never,
-              account.address,
-              underlying,
-              BigInt(proposal.amount ?? '0'),
-            );
-            for (const swapCall of rebalanceCalls) {
-              lastTxHash = await sendAndWait(swapCall);
-              logger.info('fuel_rebalance_swapped', {
-                agentId,
-                proposalId: proposal.proposalId,
-                to: swapCall.to.slice(0, 10),
-                txHash: lastTxHash,
-              });
-            }
-          }
-        }
-
-        // Broadcast each built call sequentially as a normal EOA tx. The
-        // approve MUST land before the protocol call (same as the relay
-        // batch), so we send in order and wait for each to mine first.
-        // The strategy builders ALREADY ABI-encoded `call.data`, so every
-        // call (native or ERC-20) is broadcast as a raw tx with that data.
-        for (const callItem of calls) {
+        for (let ci = 0; ci < fullExecution.length; ci++) {
+          const callItem = fullExecution[ci];
           lastTxHash = await sendAndWait(callItem);
-          logger.info('direct_tx_sent', {
+          logger.info(ci < rebalanceCalls.length ? 'fuel_rebalance_swapped' : 'direct_tx_sent', {
             agentId,
             proposalId: proposal.proposalId,
             to: callItem.to,
