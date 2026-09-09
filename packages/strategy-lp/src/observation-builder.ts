@@ -81,6 +81,7 @@ export class LpObservationBuilder {
           netProfitUsd: c.netProfitUsd,
           riskLevel: c.riskLevel,
           rank: c.rank,
+          unknownVolume: c.unknownVolume,
         })),
         basis: 'Integer cents USD / integer ticks; ranges generated deterministically by LpRangeCalculator.',
       },

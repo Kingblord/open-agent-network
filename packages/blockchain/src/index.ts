@@ -38,7 +38,8 @@ export interface LiquidityAdapter {
     sqrtPriceX96: string;
     tick: number;
     liquidity: string;
-    volumeUsd24h: string;
+    /** 24h USD volume in integer cents, or null when UNKNOWN (never fabricated). */
+    volumeUsd24h: string | null;
     timestamp: string;
   }>;
   getPoolPosition(poolAddress: string, owner: string): Promise<{

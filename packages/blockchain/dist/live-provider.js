@@ -500,7 +500,7 @@ export class LiveDataProvider {
                     sqrtPriceX96: slot0[0].toString(),
                     tick: slot0[1],
                     liquidity: liquidity.toString(),
-                    volumeUsd24h: '0', // not read here — always honest
+                    volumeUsd24h: null, // unknown — never fabricated (subgraph/API feeds are not trusted at runtime)
                     timestamp: new Date().toISOString(),
                 };
             },

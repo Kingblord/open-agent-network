@@ -79,6 +79,13 @@ export class LpStrategy {
                 throw err;
             }
         }
+        // The live adapter returns an HONEST 'none' position when the wallet holds
+        // no live liquidity (balance 0 or liquidity 0 — the NFT may still exist as
+        // a fee-debt arc). Treat that as NO position: a [0,0] range would otherwise
+        // surface a bogus REMOVE-on-nothing candidate to the AI.
+        if (position !== null && (position.positionId === 'none' || position.positionId === '' || (position.liquidity ?? '0') === '0')) {
+            position = null;
+        }
         const candidates = this.selector.select(pool, position);
         return [this.observationBuilder.build(agent, pool, position, candidates)];
     }

@@ -20,8 +20,8 @@ export interface LpPoolState {
     tick: number;
     /** In-range liquidity (wei integer string). */
     liquidity: string;
-    /** 24h volume in USD integer cents. */
-    volumeUsdCents: string;
+    /** 24h volume in USD integer cents, or null when UNKNOWN (never '0'-fabricated). */
+    volumeUsdCents: string | null;
     timestamp: string;
     /** Token decimal places (for human-readable price derivation). */
     decimals0?: number;
@@ -66,6 +66,8 @@ export interface LpRebalanceSignal {
     netProfitUsd: string;
     riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
     rank: number;
+    /** True when 24h volume is unknown (live reads) — fees are NOT projected. */
+    unknownVolume?: boolean;
 }
 /** Token human-readable orientation (optional — documented for the adapter). */
 export type TokenOrientation = 'token0ToToken1' | 'token1ToToken0';

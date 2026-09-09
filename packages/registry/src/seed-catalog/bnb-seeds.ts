@@ -166,8 +166,16 @@ export const BNB_SEED_CATALOG: BnbSeedCatalog = {
       contracts: {
         v3SwapRouter: '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4',
         router: '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4',
+        // PancakeSwap V3 NonfungiblePositionManager (NFPM) — the LP position
+        // NFT manager. Source: official pancake-v3-contracts deployment
+        // manifest (bscMainnet.json). Verified on-chain 2026-09-09: contract
+        // holds 24.4KB runtime code on BSC mainnet and implements the ERC-721
+        // position reads the LP strategy needs (balanceOf /
+        // tokenOfOwnerByIndex / positions / totalSupply / getApproved /
+        // safeTransferFrom + MintablePosition/liquidity periphery surface).
+        positionManager: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',
       },
-      verified: true, // code confirmed on BSC mainnet (getCode) 2026-08-28.
+      verified: true, // code confirmed on BSC mainnet (getCode) 2026-08-28; NFPM 2026-09-09.
       deployedAtBlock: 29_337_000,
       source: [...BNB_SEED_PROVENANCE.deployments],
     },

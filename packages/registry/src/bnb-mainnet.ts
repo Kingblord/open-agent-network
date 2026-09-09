@@ -145,8 +145,16 @@ export const BNB_MAINNET_DEPLOYMENTS: DeploymentRecord[] = [
       // swap adapter's requireDeploy('pancakeswap','router') resolves).
       v3SwapRouter: PANCAKE_SWAP_ROUTER,
       router: PANCAKE_SWAP_ROUTER,
+      // PancakeSwap V3 NonfungiblePositionManager (NFPM) — the LP position
+      // NFT manager. Source: official pancake-v3-contracts deployment
+      // manifest (bscMainnet.json → NonfungiblePositionManager).
+      // Verified on-chain 2026-09-09: 24.4KB runtime code on BSC mainnet,
+      // implements ERC-721 position reads (balanceOf / tokenOfOwnerByIndex /
+      // positions / totalSupply) + the LP liquidity periphery surface the
+      // strategy-lp + live-provider getPoolPosition adapter consume.
+      positionManager: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',
     },
-    verified: true, // code confirmed on BSC mainnet (getCode) 2026-08-28.
+    verified: true, // code confirmed on BSC mainnet (getCode) 2026-08-28; NFPM 2026-09-09.
   },
   {
     protocolId: 'venus',

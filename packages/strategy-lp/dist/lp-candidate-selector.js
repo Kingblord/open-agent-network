@@ -46,14 +46,23 @@ export class LpCandidateSelector {
         for (const range of ranges) {
             const action = position === null ? 'CREATE' : 'REPOSITION';
             const width = range.upperTick - range.lowerTick;
+            // Volume is null when the live adapter could not produce a real 24h
+            // volume (never a fabricated '0'). Unknown volume means fees CANNOT be
+            // projected — the candidate is still surfaced (never starved on
+            // uncertainty) with honest zero-fee + unknownVolume flag so the AI
+            // decides with full information.
+            const volumeKnown = pool.volumeUsdCents !== null && pool.volumeUsdCents !== undefined;
+            const volumeCents = volumeKnown ? pool.volumeUsdCents : '0';
+            const volumeAvailable = volumeKnown && BigInt(volumeCents) > 0n;
+            const unknownVolume = !volumeKnown;
             const riskFactors = {
-                volumeUsdCents: pool.volumeUsdCents,
+                volumeUsdCents: volumeCents,
                 rangeWidthTicks: width,
                 feeBps: pool.feeBps,
-                volumeAvailable: BigInt(pool.volumeUsdCents || '0') > 0n,
+                volumeAvailable,
             };
             const riskAssess = this.risk.assess(riskFactors);
-            const projectedFees = this.estimateProjectedFees(pool, position, range, width);
+            const projectedFees = unknownVolume ? '0' : this.estimateProjectedFees(pool, position, range, width);
             // Live gas is part of the pool snapshot. Missing gas makes a range
             // candidate ineligible; REMOVE remains available as a safety action.
             if (pool.gasEstimateAvailable === false)
@@ -63,8 +72,10 @@ export class LpCandidateSelector {
             const gasCents = pool.gasEstimateUsdCents ?? '50000';
             const slippageCents = this.estimateSlippageCents(range, width);
             const netProfit = this.calc.estimateNetProfitCents(projectedFees, gasCents, slippageCents, riskAssess.adjustmentCents);
-            // Skip range candidate if unprofitable (REMOVE is always kept)
-            if (BigInt(netProfit) < 0n)
+            // Skip range candidate ONLY when volume is KNOWN and it is unprofitable
+            // (REMOVE is always kept). Unknown volume keeps the candidate visible —
+            // starving on uncertainty would hide the opportunity from the AI.
+            if (volumeKnown && BigInt(netProfit) < 0n)
                 continue;
             candidates.push({
                 action,
@@ -74,13 +85,16 @@ export class LpCandidateSelector {
                 positionId: position?.positionId ?? '',
                 lowerTick: range.lowerTick,
                 upperTick: range.upperTick,
-                reason: this.buildReason(action, range.label, riskAssess),
+                reason: unknownVolume
+                    ? `Volume unknown (no 24h feed) — fees not projected; gas/slippage costs are on-chain real.`
+                    : this.buildReason(action, range.label, riskAssess),
                 feesUsd: projectedFees,
                 estimatedGasUsd: gasCents,
                 estimatedSlippageUsd: slippageCents,
                 netProfitUsd: netProfit,
                 riskLevel: riskAssess.level,
                 rank: 0,
+                unknownVolume,
             });
         }
         // 3. Sort: REMOVE first (safety action), then by net profit desc
@@ -98,11 +112,12 @@ export class LpCandidateSelector {
         return candidates.map((c, i) => ({ ...c, rank: i + 1 })).slice(0, this.maxCandidates);
     }
     buildRemoveCandidate(pool, position) {
+        const volumeKnown = pool.volumeUsdCents !== null && pool.volumeUsdCents !== undefined;
         const riskFactors = {
-            volumeUsdCents: pool.volumeUsdCents,
+            volumeUsdCents: volumeKnown ? pool.volumeUsdCents : '0',
             rangeWidthTicks: Math.abs(position.upperTick - position.lowerTick),
             feeBps: pool.feeBps,
-            volumeAvailable: BigInt(pool.volumeUsdCents || '0') > 0n,
+            volumeAvailable: volumeKnown && BigInt(pool.volumeUsdCents) > 0n,
         };
         const riskAssess = this.risk.assess(riskFactors);
         return {
